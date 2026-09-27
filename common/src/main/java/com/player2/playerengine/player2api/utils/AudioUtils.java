@@ -56,6 +56,10 @@ public class AudioUtils {
      * Returns {@code null} on failure (the caller should treat that chunk as skipped/degraded).
      */
     public static byte[] fetchAudioBytes(String clientId, String token, String text, double speed, String[] voiceIds) {
+        if (com.player2.playerengine.player2api.gateway.GatewayConfig.isEnabled()) {
+            // Voice is a Player2-platform feature with no gateway equivalent; text chat still works.
+            return null;
+        }
         String localApiUrl = LocalAPIDiscovery.getLocalApiUrl();
         if (localApiUrl != null) {
             byte[] local = fetchViaLocalApi(localApiUrl, clientId, token, text, speed, voiceIds);

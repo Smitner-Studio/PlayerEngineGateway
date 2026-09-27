@@ -1,6 +1,7 @@
 package com.player2.playerengine.player2api.auth;
 
 import com.player2.playerengine.automaton.utils.DirUtil;
+import com.player2.playerengine.player2api.gateway.GatewayConfig;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.NbtAccounter;
 import net.minecraft.nbt.NbtIo;
@@ -23,6 +24,9 @@ public class TokenStorage {
     }
 
     public static String getToken(String username, String clientId) {
+        if (GatewayConfig.isEnabled()) {
+            return GatewayConfig.TOKEN_PLACEHOLDER;
+        }
         return getInstance().tokensStored.getString(getInstance().makeKey(username, clientId));
     }
 
@@ -33,6 +37,9 @@ public class TokenStorage {
     public static String findFirstUsernameWithToken(String clientId) {
         if (clientId == null || clientId.isBlank()) {
             return null;
+        }
+        if (GatewayConfig.isEnabled()) {
+            return GatewayConfig.SYNTHETIC_USER;
         }
         String suffix = ":" + clientId;
         TokenStorage storage = getInstance();

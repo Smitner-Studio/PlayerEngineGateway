@@ -4,6 +4,8 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
+import com.player2.playerengine.player2api.gateway.GatewayConfig;
+import com.player2.playerengine.player2api.gateway.GatewayRouter;
 import com.player2.playerengine.player2api.LLMCompleter; // [DEBUG-INSTR:llm-latency-2026-06-13] import for debug flag
 import org.jetbrains.annotations.Nullable;
 import java.io.BufferedReader;
@@ -63,6 +65,17 @@ public class HTTPUtils {
                                                  @Nullable Map<String, String> extraHeaders,
                                                  int readTimeoutMs)
             throws Exception {
+        // Every Player2 call in both mods funnels through here or sendRequest below, which makes
+        // these two methods the single place the gateway can take over without per-caller edits.
+        if (GatewayConfig.isEnabled()) {
+            JsonElement local = GatewayRouter.localResponse(method, endpoint);
+            if (local != null) {
+                return local;
+            }
+            baseUrl = GatewayConfig.get().baseUrl();
+            requestBody = GatewayRouter.prepareBody(endpoint, requestBody);
+            extraHeaders = GatewayRouter.headers();
+        }
         URL url = new URI(baseUrl + endpoint).toURL();
         HttpURLConnection connection = (HttpURLConnection) url.openConnection();
         connection.setConnectTimeout(DEFAULT_CONNECT_TIMEOUT_MS);
@@ -124,6 +137,21 @@ public class HTTPUtils {
                                                        @Nullable Map<String, String> extraHeaders,
                                                        int readTimeoutMs)
             throws Exception {
+        if (GatewayConfig.isEnabled()) {
+            JsonElement local = GatewayRouter.localResponse(method, endpoint);
+            if (local != null) {
+                Map<String, JsonElement> localMap = new HashMap<>();
+                if (local.isJsonObject()) {
+                    for (Entry<String, JsonElement> entry : local.getAsJsonObject().entrySet()) {
+                        localMap.put(entry.getKey(), entry.getValue());
+                    }
+                }
+                return localMap;
+            }
+            baseUrl = GatewayConfig.get().baseUrl();
+            requestBody = GatewayRouter.prepareBody(endpoint, requestBody);
+            extraHeaders = GatewayRouter.headers();
+        }
         URL url = new URI(baseUrl + endpoint).toURL();
         HttpURLConnection connection = (HttpURLConnection) url.openConnection();
         connection.setConnectTimeout(DEFAULT_CONNECT_TIMEOUT_MS);

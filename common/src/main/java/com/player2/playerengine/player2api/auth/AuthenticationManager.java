@@ -1,6 +1,7 @@
 package com.player2.playerengine.player2api.auth;
 
 import com.google.gson.JsonObject;
+import com.player2.playerengine.player2api.gateway.GatewayConfig;
 import com.player2.playerengine.player2api.utils.HTTPUtils;
 import com.player2.playerengine.player2api.utils.HttpApiException;
 import com.player2.playerengine.player2api.utils.LocalAPIDiscovery;
@@ -121,6 +122,9 @@ public class AuthenticationManager {
         if (player == null || clientId == null || clientId.isBlank()) {
             return false;
         }
+        if (GatewayConfig.isEnabled()) {
+            return true;
+        }
         AuthKey authKey = new AuthKey(player.getUUID(), clientId);
         String username = player.getName().getString();
         try {
@@ -158,6 +162,9 @@ public class AuthenticationManager {
     }
 
     public CompletableFuture<String> authenticate(Player player, String clientId, Consumer<String> verificationUrlConsumer) {
+        if (GatewayConfig.isEnabled()) {
+            return CompletableFuture.completedFuture(GatewayConfig.TOKEN_PLACEHOLDER);
+        }
         AuthKey authKey = new AuthKey(player.getUUID(), clientId);
         String username = player.getName().getString();
 

@@ -2,6 +2,7 @@ package com.player2.playerengine.player2api;
 
 import com.player2.playerengine.PlayerEngineController;
 import com.player2.playerengine.player2api.auth.TokenStorage;
+import com.player2.playerengine.player2api.gateway.GatewayConfig;
 import com.player2.playerengine.player2api.config.Player2PayerMode;
 import com.player2.playerengine.player2api.config.Player2ServerConfigHolder;
 import net.minecraft.server.MinecraftServer;
@@ -110,6 +111,12 @@ public final class Player2PayerResolution {
             if (storedUser != null && !TokenStorage.getToken(storedUser, clientId).isEmpty()) {
                 return new ApiBillingContext(null, storedUser);
             }
+        }
+
+        // The gateway key belongs to the server operator, not a player, so server-wide work
+        // does not need anyone online to be billable.
+        if (GatewayConfig.isEnabled()) {
+            return new ApiBillingContext(null, GatewayConfig.SYNTHETIC_USER);
         }
 
         return new ApiBillingContext(null, null);
