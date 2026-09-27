@@ -59,6 +59,10 @@ public final class GatewaySelfTest {
                 GatewayProfilesSelfTest::reasoningTextIsStrippedFromChatContent,
                 GatewayProfilesSelfTest::contextRestoresOuterFrame,
                 GatewayProfilesSelfTest::operatorInstructionsCloseTheSystemPrompt,
+                GatewayLanesSelfTest::differentProfilesThinkAtOnce,
+                GatewayLanesSelfTest::oneLaneNeverOverlaps,
+                GatewayLanesSelfTest::hourlyCapHoldsAcrossLanes,
+                GatewayLanesSelfTest::lanesAreLazyAndCleanedUp,
         };
         try {
             for (Check check : checks) {
