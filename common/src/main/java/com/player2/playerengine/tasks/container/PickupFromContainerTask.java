@@ -1,7 +1,6 @@
 package com.player2.playerengine.tasks.container;
 
 import com.player2.playerengine.util.Debug;
-import com.player2.playerengine.tasks.movement.GetToBlockTask;
 import com.player2.playerengine.tasks.slot.EnsureFreeInventorySlotTask;
 import com.player2.playerengine.tasks.base.Task;
 import com.player2.playerengine.util.ItemTarget;
@@ -38,7 +37,7 @@ public class PickupFromContainerTask extends Task {
             ),
             4.5
          )) {
-         return new GetToBlockTask(this.containerPos);
+         return ContainerApproach.task(this.containerPos);
       } else if (!(this.controller.getWorld().getBlockEntity(this.containerPos) instanceof RandomizableContainerBlockEntity container)) {
          Debug.logWarning("Block at " + this.containerPos + " is not a lootable container. Stopping.");
          return null;

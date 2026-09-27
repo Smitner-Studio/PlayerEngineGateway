@@ -106,6 +106,18 @@ public class UserTaskChain extends SingleTaskChain {
             || task instanceof GatherLooseItemsTask;
    }
 
+   /**
+    * Whether a gesture installed now would drop {@code existing}: a live user task outside the
+    * resume-safe set (idle and a resumed task are not user work in progress).
+    */
+   static boolean gestureWouldDropTask(Task existing, boolean runningIdleTask, boolean resumingSuspended) {
+      if (existing == null || runningIdleTask || resumingSuspended || existing instanceof BodyLanguageTask) {
+         return false;
+      }
+      boolean live = (existing.isActive() || existing.isAssigned()) && !existing.stopped();
+      return live && !isResumeSafe(existing) && !existing.isFinished();
+   }
+
    /** Terminalizes and resolves a detached submission without letting callback re-entry orphan work. */
    private void abandonAndFinishSuspended(Task task, Runnable onFinish) {
       if (task != null && !task.stopped()) {
@@ -340,6 +352,21 @@ public class UserTaskChain extends SingleTaskChain {
          Runnable rejectedOnFinish = once(onFinish);
          if (rejectedOnFinish != null) {
             rejectedOnFinish.run();
+         }
+         return;
+      }
+      if (task instanceof BodyLanguageTask
+            && gestureWouldDropTask(this.mainTask, this.runningIdleTask, this.resumingSuspended)) {
+         // A gesture over a task that cannot resume would end that task (a deposit the same reply
+         // started died this way). The gesture is decoration; the task is the work, so skip the gesture.
+         LOGGER.info("[FollowDiag] GESTURE-SKIP: '{}' not shown over non-resume-safe task '{}'",
+               task.toString(), this.mainTask.toString());
+         task.controller = mod;
+         task.reset();
+         task.stop(null);
+         Runnable skippedOnFinish = once(onFinish);
+         if (skippedOnFinish != null) {
+            skippedOnFinish.run();
          }
          return;
       }

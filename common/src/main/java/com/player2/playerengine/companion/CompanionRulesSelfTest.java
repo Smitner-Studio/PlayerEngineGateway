@@ -42,6 +42,8 @@ public final class CompanionRulesSelfTest {
         hungerOffRegeneratesLikeAFullFoodBar();
         zombieBaseAttributesBecomeAPlayers();
         attackCooldownScalesDamageLikeAPlayer();
+        checks += com.player2.playerengine.tasks.container.ContainerDepositSelfTest.runAll();
+        checks += com.player2.playerengine.chains.GestureGuardSelfTest.runAll();
         System.out.println("companion self-test: " + checks + " checks passed");
     }
 

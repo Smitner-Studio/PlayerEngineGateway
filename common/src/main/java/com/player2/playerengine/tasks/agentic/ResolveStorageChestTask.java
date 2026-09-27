@@ -19,7 +19,7 @@ import com.player2.playerengine.tasks.crafting.CraftMacroResourceTask;
 import com.player2.playerengine.tasks.crafting.CraftMacroPhase;
 import com.player2.playerengine.tasks.crafting.CraftMacroTasks;
 import com.player2.playerengine.tasks.crafting.DescribesProgress;
-import com.player2.playerengine.tasks.movement.GetToBlockTask;
+import com.player2.playerengine.tasks.container.ContainerApproach;
 import com.player2.playerengine.util.ItemTarget;
 import com.player2.playerengine.util.helpers.ItemHelper;
 import com.player2.playerengine.util.helpers.WorldHelper;
@@ -228,7 +228,7 @@ public final class ResolveStorageChestTask extends Task implements DescribesProg
             phase = Phase.MOVING_TO_EXISTING;
             updateProgress("moving to existing chest at " + formatPos(targetPos));
             report("found existing chest at " + formatPos(targetPos), false);
-            child = new GetToBlockTask(targetPos);
+            child = ContainerApproach.task(targetPos);
             return child;
         }
         if (!params.allowPlacement()) {

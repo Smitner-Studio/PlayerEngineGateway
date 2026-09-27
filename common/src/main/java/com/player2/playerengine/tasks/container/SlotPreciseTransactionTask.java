@@ -10,7 +10,6 @@ import com.player2.playerengine.containeraccess.StorageAccessCode;
 import com.player2.playerengine.containeraccess.StorageItemArgs;
 import com.player2.playerengine.tasks.base.Task;
 import com.player2.playerengine.tasks.crafting.DescribesProgress;
-import com.player2.playerengine.tasks.movement.GetToBlockTask;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -218,7 +217,7 @@ public final class SlotPreciseTransactionTask extends Task implements DescribesP
                 }
                 this.setDebugState("navigating to " + targetPos.toShortString());
                 if (navigateChild == null) {
-                    navigateChild = new GetToBlockTask(targetPos);
+                    navigateChild = ContainerApproach.task(targetPos);
                 }
                 return navigateChild;
             }
