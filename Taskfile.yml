@@ -3,7 +3,7 @@ version: '3'
 vars:
   JDK: 'C:/Program Files/Eclipse Adoptium/jdk-21.0.12.101-hotspot'
   GRADLEW: '{{fromSlash .ROOT_DIR}}\gradlew.bat'
-  JAR: 'neoforge/build/libs/playerengine-neoforge-1.21.1-1.4.0-gateway.2.jar'
+  JAR: 'neoforge/build/libs/playerengine-neoforge-1.21.1-1.4.0-gateway.3.jar'
 
 x-need-jdk: &need-jdk
   sh: test -f "{{.JDK}}/bin/javac.exe"
