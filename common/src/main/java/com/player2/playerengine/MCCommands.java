@@ -17,11 +17,13 @@ import com.mojang.brigadier.builder.ArgumentBuilder;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
 
+import com.player2.playerengine.companion.CompanionRules;
 import com.player2.playerengine.executor.BudgetFallbackBehavior;
 import com.player2.playerengine.executor.BudgetTracker;
 import com.player2.playerengine.player2api.AiTaskClass;
 import com.player2.playerengine.player2api.JoulesCache;
 import com.player2.playerengine.player2api.ModelTierRouter;
+import com.player2.playerengine.player2api.gateway.GatewayConfig;
 import com.player2.playerengine.player2api.Player2PayerResolution;
 import com.player2.playerengine.player2api.ProfileUrlResolver;
 import com.player2.playerengine.player2api.RoutingResult;
@@ -114,6 +116,10 @@ public class MCCommands {
             PlayerEngine.resetBackgroundExecutorsShutdownGate();
             LOGGER.info("Server starting, registering MC commands");
             register(server);
+            // Both load lazily on first use; loading here puts the gateway endpoints and the
+            // companion rules in the startup log, where a deploy can be checked before anyone plays.
+            GatewayConfig.get();
+            CompanionRules.get();
             ModIntelligenceService.initialize(server);
             // EllieGPS (C5): load the per-world waypoint store + index, then swap the real
             // counting service into the MaterialAvailability seam (startup-only swap; the
