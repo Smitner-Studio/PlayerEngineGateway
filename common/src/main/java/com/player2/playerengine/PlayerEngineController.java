@@ -961,6 +961,10 @@ public class PlayerEngineController {
       if (message == null || message.isBlank()) {
          return;
       }
+      // 1c. operator filter (config/playerengine-companion.properties progressChat).
+      if (!com.player2.playerengine.companion.CompanionRules.get().progressChat().shows(milestone)) {
+         return;
+      }
       // 2. resolve server — there is no getServer() on the controller; use getPlayer().getServer().
       MinecraftServer server = (getPlayer() != null) ? getPlayer().getServer() : null;
       if (server == null) {
@@ -1022,6 +1026,10 @@ public class PlayerEngineController {
       // 1b. blank guard / dedup key (resolved server-side only for throttle/dedup, NOT broadcast).
       String dedupKey = message.getString();
       if (dedupKey.isBlank()) {
+         return;
+      }
+      // 1c. operator filter (config/playerengine-companion.properties progressChat).
+      if (!com.player2.playerengine.companion.CompanionRules.get().progressChat().shows(milestone)) {
          return;
       }
       // 2. resolve server — there is no getServer() on the controller; use getPlayer().getServer().

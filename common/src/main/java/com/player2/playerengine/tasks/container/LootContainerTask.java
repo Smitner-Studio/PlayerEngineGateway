@@ -62,13 +62,16 @@ public class LootContainerTask extends Task {
             ItemStack stack = containerInventory.getItem(i);
             if (!stack.isEmpty() && this.targets.contains(stack.getItem()) && this.check.test(stack)) {
                somethingToLoot = true;
-               if (!playerInventory.insertStack(new ItemStack(stack.getItem()))) {
+               // Check room without inserting: insertStack mutates the inventory.
+               if (playerInventory.getEmptySlot() < 0 && playerInventory.getOccupiedSlotWithRoomForStack(stack) < 0) {
                   this.setDebugState("Inventory is full, ensuring space.");
                   return new EnsureFreeInventorySlotTask();
                }
 
-               if (playerInventory.insertStack(stack.copy())) {
-                  containerInventory.setItem(i, ItemStack.EMPTY);
+               ItemStack moving = stack.copy();
+               if (playerInventory.insertStack(moving)) {
+                  // insertStack leaves the part that did not fit in `moving`.
+                  containerInventory.setItem(i, moving.isEmpty() ? ItemStack.EMPTY : moving);
                   container.setChanged();
                   this.controller.getItemStorage().registerSlotAction();
                   return null;

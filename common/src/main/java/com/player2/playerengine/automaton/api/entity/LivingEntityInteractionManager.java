@@ -21,6 +21,9 @@ import com.player2.playerengine.automaton.api.utils.IBucketAccessor;
 import com.mojang.logging.LogUtils;
 import java.util.Objects;
 
+import com.player2.playerengine.companion.CompanionRules;
+import com.player2.playerengine.companion.SurvivalCombat;
+import com.player2.playerengine.companion.SurvivalDigSpeed;
 import com.player2.playerengine.util.EnchantmentUtils;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -35,10 +38,14 @@ import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.InteractionResultHolder;
 import net.minecraft.world.ItemInteractionResult;
+import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffectUtil;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.ai.attributes.Attributes;
+import net.minecraft.world.entity.ai.attributes.DefaultAttributes;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.BucketItem;
 import net.minecraft.world.item.ItemStack;
@@ -106,8 +113,18 @@ public class LivingEntityInteractionManager {
       return this.gameMode.isCreative();
    }
 
+   @SuppressWarnings("unchecked")
    public void update() {
       this.tickCounter++;
+      if (!(this.livingEntity instanceof Player) && !this.world.isClientSide) {
+         // Every tick, because loading a saved companion restores its stored base values.
+         SurvivalCombat.applyBaseAttributes(
+            this.livingEntity.getAttributes(),
+            CompanionRules.survivalParityEnabled(),
+            DefaultAttributes.getSupplier((EntityType<? extends LivingEntity>)this.livingEntity.getType())
+         );
+      }
+
       if (this.failedToMine) {
          BlockState blockState = this.world.getBlockState(this.failedMiningPos);
          if (blockState.isAir()) {
@@ -133,7 +150,11 @@ public class LivingEntityInteractionManager {
 
    private float continueMining(BlockState state, BlockPos pos, int progress) {
       int i = this.tickCounter - progress;
-      float f = this.calcBlockBreakingDelta(state, this.livingEntity, this.livingEntity.level(), pos) * (i + 1);
+      // update() runs before the controller's tick, so i counts the ticks of attack after START. A
+      // player holding attack starts the next block with zero progress and adds one delta per
+      // later tick (MultiPlayerGameMode.continueDestroyBlock), so parity uses i, not i + 1.
+      int ticks = CompanionRules.survivalParityEnabled() ? i : i + 1;
+      float f = this.calcBlockBreakingDelta(state, this.livingEntity, this.livingEntity.level(), pos) * ticks;
       int j = (int)(f * 10.0F);
       if (j != this.blockBreakingProgress) {
          this.world.destroyBlockProgress(this.livingEntity.getId(), pos, j);
@@ -230,6 +251,21 @@ public class LivingEntityInteractionManager {
    }
 
    public float getBlockBreakingSpeed(LivingEntity entity, BlockState block) {
+      if (CompanionRules.survivalParityEnabled()) {
+         ItemStack held = this.livingEntity.getItemInHand(InteractionHand.MAIN_HAND);
+         MobEffectInstance fatigue = entity.getEffect(MobEffects.DIG_SLOWDOWN);
+         return SurvivalDigSpeed.digSpeed(
+            held.getDestroySpeed(block),
+            held.isEmpty() ? 0 : EnchantmentUtils.getEnchantmentLevel(held, Enchantments.EFFICIENCY),
+            MobEffectUtil.hasDigSpeed(entity) ? MobEffectUtil.getDigSpeedAmplification(entity) : -1,
+            fatigue == null ? -1 : fatigue.getAmplifier(),
+            entity.getAttributes().hasAttribute(Attributes.BLOCK_BREAK_SPEED) ? (float)entity.getAttributeValue(Attributes.BLOCK_BREAK_SPEED) : 1.0F,
+            entity.isEyeInFluid(FluidTags.WATER),
+            EnchantmentUtils.getEnchantmentLevel(entity.getItemBySlot(EquipmentSlot.HEAD), Enchantments.AQUA_AFFINITY) > 0,
+            entity.onGround()
+         );
+      }
+
       float f = this.livingEntity.getItemInHand(InteractionHand.MAIN_HAND).getDestroySpeed(block);
       if (f > 1.0F) {
          ItemStack itemStack = this.livingEntity.getItemInHand(InteractionHand.MAIN_HAND);

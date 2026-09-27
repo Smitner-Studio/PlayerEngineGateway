@@ -275,7 +275,10 @@ public class PlayerEngineSettings implements IFailableConfigFile {
    }
 
    public boolean isHungerEnabled() {
-      return this.hungerEnabled;
+      // config/playerengine-companion.properties `hunger`, when set, outranks this file: a
+      // singleplayer instance keeps its settings file across pack updates.
+      Boolean forced = com.player2.playerengine.companion.CompanionRules.get().hungerOverride();
+      return forced != null ? forced : this.hungerEnabled;
    }
 
    public boolean isDeathByHungerMatchesDifficulty() {

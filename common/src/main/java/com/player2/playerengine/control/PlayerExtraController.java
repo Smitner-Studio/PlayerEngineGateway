@@ -39,9 +39,44 @@ public class PlayerExtraController {
       return this.mod.getPlayer().closerThan(entity, this.mod.getModSettings().getEntityReachRange());
    }
 
+   /**
+    * Player2NPC's doHurtTarget always deals full damage. A player's hit is scaled by how charged
+    * the attack is and resets the charge, so wrap the call in a transient damage multiplier.
+    */
+   private void hurtWithCooldown(Entity entity) {
+      net.minecraft.world.entity.LivingEntity self = this.mod.getPlayer();
+      com.player2.playerengine.mixins.LivingEntityMixin ticker = (com.player2.playerengine.mixins.LivingEntityMixin)self;
+      float scale = com.player2.playerengine.companion.SurvivalCombat.strengthScale(
+         ticker.getLastAttackedTicks(),
+         com.player2.playerengine.companion.SurvivalCombat.attackDelayTicks(
+            com.player2.playerengine.companion.SurvivalCombat.attackSpeed(self.getMainHandItem())));
+      net.minecraft.world.entity.ai.attributes.AttributeInstance damage =
+         self.getAttribute(net.minecraft.world.entity.ai.attributes.Attributes.ATTACK_DAMAGE);
+      if (damage != null) {
+         damage.addOrUpdateTransientModifier(new net.minecraft.world.entity.ai.attributes.AttributeModifier(
+            com.player2.playerengine.companion.SurvivalCombat.COOLDOWN_MODIFIER,
+            com.player2.playerengine.companion.SurvivalCombat.damageMultiplier(scale) - 1.0,
+            net.minecraft.world.entity.ai.attributes.AttributeModifier.Operation.ADD_MULTIPLIED_TOTAL));
+      }
+
+      try {
+         self.doHurtTarget(entity);
+      } finally {
+         if (damage != null) {
+            damage.removeModifier(com.player2.playerengine.companion.SurvivalCombat.COOLDOWN_MODIFIER);
+         }
+
+         ticker.setLastAttackedTicks(0);
+      }
+   }
+
    public void attack(Entity entity) {
       if (this.inRange(entity)) {
-         this.mod.getPlayer().doHurtTarget(entity);
+         if (com.player2.playerengine.companion.CompanionRules.survivalParityEnabled()) {
+            this.hurtWithCooldown(entity);
+         } else {
+            this.mod.getPlayer().doHurtTarget(entity);
+         }
          this.mod.getPlayer().swing(InteractionHand.MAIN_HAND);
          // Exhaustion: attacking costs 0.1 per hit (vanilla FoodConstants.EXHAUSTION_ATTACK)
          if (this.mod.getModSettings().isHungerEnabled()) {

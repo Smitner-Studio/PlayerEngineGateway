@@ -8,4 +8,7 @@ import org.spongepowered.asm.mixin.gen.Accessor;
 public interface LivingEntityMixin {
    @Accessor(value="attackStrengthTicker")
    int getLastAttackedTicks();
+
+   @Accessor(value="attackStrengthTicker")
+   void setLastAttackedTicks(int ticks);
 }

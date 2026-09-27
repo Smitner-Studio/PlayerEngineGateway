@@ -20,6 +20,8 @@ package com.player2.playerengine.automaton.utils.player;
 import com.player2.playerengine.automaton.api.entity.IInteractionManagerProvider;
 import com.player2.playerengine.automaton.api.entity.LivingEntityInteractionManager;
 import com.player2.playerengine.automaton.api.utils.IInteractionController;
+import com.player2.playerengine.companion.CompanionRules;
+import com.player2.playerengine.companion.SurvivalDigSpeed;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.network.protocol.game.ServerboundPlayerActionPacket.Action;
@@ -34,6 +36,7 @@ import net.minecraft.world.phys.BlockHitResult;
 public class EntityInteractionController implements IInteractionController {
    private final LivingEntity player;
    private int sequence;
+   private int destroyDelay;
 
    public EntityInteractionController(LivingEntity player) {
       this.player = player;
@@ -47,6 +50,10 @@ public class EntityInteractionController implements IInteractionController {
    @Override
    public boolean onPlayerDamageBlock(BlockPos pos, Direction side) {
       LivingEntityInteractionManager interactionManager = this.getInteractionManager();
+      if (CompanionRules.survivalParityEnabled()) {
+         return this.continueDestroyBlock(interactionManager, pos, side);
+      }
+
       if (interactionManager.isMining()) {
          int progress = interactionManager.getBlockBreakingProgress();
          if (progress >= 10) {
@@ -60,6 +67,39 @@ public class EntityInteractionController implements IInteractionController {
       } else {
          return false;
       }
+   }
+
+   /**
+    * Survival pacing of {@code MultiPlayerGameMode.continueDestroyBlock}: after a block that took
+    * more than one tick, the next one cannot start for {@link SurvivalDigSpeed#DESTROY_DELAY_TICKS}
+    * ticks of held attack. Instant breaks carry no delay, as in vanilla.
+    */
+   private boolean continueDestroyBlock(LivingEntityInteractionManager manager, BlockPos pos, Direction side) {
+      if (this.destroyDelay > 0) {
+         this.destroyDelay--;
+         return true;
+      }
+
+      if (this.player.level().isEmptyBlock(pos)) {
+         return false;
+      }
+
+      int worldHeight = this.player.level().getMaxBuildHeight();
+      if (!manager.isMining() || !pos.equals(manager.getMiningPos())) {
+         if (manager.isMining()) {
+            manager.processBlockBreakingAction(manager.getMiningPos(), Action.ABORT_DESTROY_BLOCK, side, worldHeight, this.sequence++);
+         }
+
+         manager.processBlockBreakingAction(pos, Action.START_DESTROY_BLOCK, side, worldHeight, this.sequence++);
+         return true;
+      }
+
+      if (manager.getBlockBreakingProgress() >= 10) {
+         manager.processBlockBreakingAction(pos, Action.STOP_DESTROY_BLOCK, side, worldHeight, this.sequence++);
+         this.destroyDelay = SurvivalDigSpeed.DESTROY_DELAY_TICKS;
+      }
+
+      return true;
    }
 
    @Override
@@ -93,6 +133,9 @@ public class EntityInteractionController implements IInteractionController {
       BlockState state = this.player.level().getBlockState(loc);
       if (state.isAir()) {
          return false;
+      } else if (CompanionRules.survivalParityEnabled() && this.destroyDelay > 0) {
+         // continueDestroyBlock starts this block once the post-break delay has run out.
+         return true;
       } else {
          this.getInteractionManager()
             .processBlockBreakingAction(loc, Action.START_DESTROY_BLOCK, face, this.player.level().getMaxBuildHeight(), this.sequence++);

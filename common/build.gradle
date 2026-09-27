@@ -41,6 +41,15 @@ tasks.register('gatewaySelfTest', JavaExec) {
     }
 }
 
+tasks.register('companionSelfTest', JavaExec) {
+    group = 'verification'
+    description = 'Checks survival mining arithmetic against vanilla and the companion rules parsing.'
+    dependsOn tasks.named('classes')
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass.set('com.player2.playerengine.companion.CompanionRulesSelfTest')
+    enableAssertions = true
+}
+
 def ellieGpsAtomicCallerFiles = files(
         'src/main/java/com/player2/playerengine/commands/CreateWaypointCommand.java',
         'src/main/java/com/player2/playerengine/commands/AuditWaypointCommand.java',

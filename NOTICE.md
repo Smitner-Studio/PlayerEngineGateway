@@ -54,3 +54,47 @@ Files changed from upstream:
 
 The exact changes are the commits on branch `gateway` after `40732ba`:
 `git log --stat 40732ba..gateway`.
+
+## Companion rules
+
+`config/playerengine-companion.properties` sets how the companion plays. A missing file or key takes
+the default.
+
+- `survivalParity=true` (default): the companion mines at a survival player's pace. Break speed
+  follows `Player.getDigSpeed` (tool, Efficiency, Haste, Mining Fatigue, `block_break_speed`, the
+  underwater penalty that only Aqua Affinity lifts, the airborne penalty), and after each block that
+  took more than one tick it waits 5 ticks before starting the next, as `MultiPlayerGameMode` does.
+  Combat uses a player's numbers: base attack damage 1 and armour 0 instead of the zombie values
+  Player2NPC registers, and each hit is scaled by the attack-cooldown curve of `Player.attack`
+  (weapon attack speed included) and resets the charge. With hunger off, the companion acts as a
+  player whose food bar stays full: natural regeneration heals 1 every 80 ticks instead of being
+  frozen. `false` restores the upstream mining, combat and hunger behaviour.
+- `hunger` (default unset): `true` or `false` overrides `hungerEnabled` in
+  `playerengine/playerengine_settings.json`, which a singleplayer instance keeps across pack
+  updates. Unset leaves that file in charge (upstream default off).
+- `progressChat=off` (default): no task progress in the owner's chat. `milestones` shows outcomes
+  and failures, `all` also step chatter such as "breaking iron ore" (upstream). Conversational
+  replies are unaffected.
+
+Independently of these rules, taking items from a container no longer inserts one extra item per
+take (the room check used to insert a probe item), and a loot take that only partly fits leaves
+the rest in the container instead of deleting it.
+
+| File | Change |
+|---|---|
+| `common/src/main/java/com/player2/playerengine/companion/CompanionRules.java` | new: reads the companion rules file |
+| `common/src/main/java/com/player2/playerengine/companion/SurvivalDigSpeed.java` | new: vanilla dig-speed arithmetic |
+| `common/src/main/java/com/player2/playerengine/companion/SurvivalCombat.java` | new: player base attributes and attack-cooldown arithmetic |
+| `common/src/main/java/com/player2/playerengine/companion/CompanionRulesSelfTest.java` | new: break times, cooldown and regeneration against vanilla, rules parsing |
+| `common/src/main/java/com/player2/playerengine/automaton/api/entity/LivingEntityInteractionManager.java` | dig speed and progress under `survivalParity`; pins player base attributes each tick |
+| `common/src/main/java/com/player2/playerengine/automaton/api/entity/LivingEntityHungerManager.java` | full-food-bar regeneration when hunger is off under `survivalParity` |
+| `common/src/main/java/com/player2/playerengine/control/PlayerExtraController.java` | cooldown-scaled hits under `survivalParity` |
+| `common/src/main/java/com/player2/playerengine/control/KillAura.java`, `tasks/entity/AbstractKillEntityTask.java` | wait for the weapon's real cooldown under `survivalParity` |
+| `common/src/main/java/com/player2/playerengine/mixins/LivingEntityMixin.java` | setter for `attackStrengthTicker` |
+| `common/src/main/java/com/player2/playerengine/automaton/utils/player/EntityInteractionController.java` | post-break delay under `survivalParity` |
+| `common/src/main/java/com/player2/playerengine/PlayerEngineSettings.java` | `hunger` rule overrides `hungerEnabled` |
+| `common/src/main/java/com/player2/playerengine/PlayerEngineController.java` | progress lines filtered by `progressChat` |
+| `common/src/main/java/com/player2/playerengine/executor/TaskStepExecutorAdapter.java` | step-failure line hidden by `progressChat=off` |
+| `common/src/main/java/com/player2/playerengine/tasks/container/PickupFromContainerTask.java` | room check without inserting |
+| `common/src/main/java/com/player2/playerengine/tasks/container/LootContainerTask.java` | room check without inserting; partial takes keep the rest |
+| `common/build.gradle`, `Taskfile.yml` | `companionSelfTest` task, run by `task test` |
