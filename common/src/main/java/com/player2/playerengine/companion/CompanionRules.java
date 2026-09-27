@@ -42,6 +42,8 @@ public final class CompanionRules {
         }
     }
 
+    static final double SURVIVAL_DIG_TIME_SCALE = 2.5;
+
     private static volatile CompanionRules instance;
 
     private final boolean survivalParity;
@@ -138,6 +140,12 @@ public final class CompanionRules {
     }
 
     public boolean survivalParity() { return survivalParity; }
+    /**
+     * Factor on the time budget of a task that digs. Upstream budgets assume the upstream dig speed;
+     * under survival parity a block takes up to 2.5 times as long with an unenchanted pickaxe (the
+     * post-break delay dominates fast tools). companionSelfTest pins that bound.
+     */
+    public double digTimeScale() { return survivalParity ? SURVIVAL_DIG_TIME_SCALE : 1.0; }
     public ProgressChat progressChat() { return progressChat; }
     /** Operator override of the settings file's hungerEnabled; null leaves the file in charge. */
     public Boolean hungerOverride() { return hungerOverride; }

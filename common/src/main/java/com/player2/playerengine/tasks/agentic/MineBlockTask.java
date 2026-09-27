@@ -3,6 +3,7 @@ package com.player2.playerengine.tasks.agentic;
 import com.player2.playerengine.agentic.AgenticRunRegistry;
 import com.player2.playerengine.agentic.AgenticRunRegistry.DegradationLevel;
 import com.player2.playerengine.agentic.MaterialReservationService;
+import com.player2.playerengine.companion.CompanionRules;
 import com.player2.playerengine.tasks.base.Task;
 import com.player2.playerengine.tasks.construction.DestroyBlockTask;
 import com.player2.playerengine.tasks.movement.PickupDroppedItemTask;
@@ -203,9 +204,11 @@ public final class MineBlockTask extends Task {
             return null;
         }
 
-        // Overall timeout: partial-success if any block was mined, else a hard failure.
+        // Overall timeout: partial-success if any block was mined, else a hard failure. The budget
+        // was sized for the upstream dig speed, so it stretches with the survival-parity dig time.
         double elapsedSec = (System.currentTimeMillis() - startMs) / 1000.0;
-        if (elapsedSec >= params.timeoutSeconds() && phase != Phase.RESOLVING) {
+        double budgetSec = params.timeoutSeconds() * CompanionRules.get().digTimeScale();
+        if (elapsedSec >= budgetSec && phase != Phase.RESOLVING) {
             if (minedTotal > 0) {
                 finishPartial("timeout after partial mine", PartialCause.TIMEOUT);
             } else {

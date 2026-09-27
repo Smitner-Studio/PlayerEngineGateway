@@ -42,6 +42,7 @@ public final class CompanionRulesSelfTest {
         hungerOffRegeneratesLikeAFullFoodBar();
         zombieBaseAttributesBecomeAPlayers();
         attackCooldownScalesDamageLikeAPlayer();
+        digTimeScaleCoversTheParitySlowdown();
         checks += com.player2.playerengine.tasks.container.ContainerDepositSelfTest.runAll();
         checks += com.player2.playerengine.chains.GestureGuardSelfTest.runAll();
         checks += com.player2.playerengine.automaton.utils.player.FeetChunkSelfTest.runAll();
@@ -131,6 +132,31 @@ public final class CompanionRulesSelfTest {
         require(rules("progressChat", "ALL").progressChat() == CompanionRules.ProgressChat.ALL, "progressChat=ALL");
         require(rules("progressChat", "chatty").progressChat() == CompanionRules.ProgressChat.OFF,
                 "an unknown progressChat keeps the default");
+    }
+
+    /**
+     * Ticks per block under parity are t + the post-break delay; upstream credited one tick more and
+     * had no delay, so t - 1. The budget scale must cover that ratio for unenchanted pickaxes from
+     * wood to netherite on stone, iron ore and deepslate (gold, at speed 12, is the one exception).
+     */
+    private static void digTimeScaleCoversTheParitySlowdown() {
+        require(new CompanionRules(new Properties()).digTimeScale() == CompanionRules.SURVIVAL_DIG_TIME_SCALE,
+                "parity stretches dig budgets");
+        require(rules("survivalParity", "false").digTimeScale() == 1.0, "upstream pace keeps upstream budgets");
+        float[] pickaxes = {WOODEN_PICKAXE, 4.0F, IRON_PICKAXE, DIAMOND_PICKAXE, 9.0F};
+        float[] hardness = {STONE, 3.0F, 3.0F * 1.5F};
+        double worst = 0.0;
+        for (float tool : pickaxes) {
+            for (float h : hardness) {
+                float speed = SurvivalDigSpeed.digSpeed(tool, 0, -1, -1, 1.0F, false, false, true);
+                float delta = SurvivalDigSpeed.progressPerTick(h, speed, true);
+                int parity = (int) Math.ceil(1.0F / delta);
+                int upstream = Math.max(1, parity - 1);
+                worst = Math.max(worst, (parity + SurvivalDigSpeed.DESTROY_DELAY_TICKS) / (double) upstream);
+            }
+        }
+        require(worst <= CompanionRules.SURVIVAL_DIG_TIME_SCALE,
+                "dig budget scale " + CompanionRules.SURVIVAL_DIG_TIME_SCALE + " covers the worst slowdown " + worst);
     }
 
     private static void progressChatLevels() {
