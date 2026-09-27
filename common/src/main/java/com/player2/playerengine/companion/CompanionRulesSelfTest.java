@@ -1,10 +1,19 @@
 package com.player2.playerengine.companion;
 
+import com.player2.playerengine.automaton.api.entity.LivingEntityHungerManager;
 import java.util.Properties;
+import net.minecraft.SharedConstants;
+import net.minecraft.server.Bootstrap;
+import net.minecraft.world.entity.ai.attributes.AttributeMap;
+import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
+import net.minecraft.world.entity.ai.attributes.Attributes;
+import net.minecraft.world.entity.monster.Zombie;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 
 /**
- * Checks the survival mining arithmetic against vanilla 1.21.1 break times and the operator rules
- * parsing. Break times are the Minecraft Wiki "Breaking" table values for stone (hardness 1.5),
+ * Checks the survival mining and combat arithmetic against vanilla 1.21.1, the well-fed hunger
+ * stand-in, and the operator rules parsing. Break times are the Minecraft Wiki "Breaking" table values for stone (hardness 1.5),
  * which follow from {@code Player.getDigSpeed} and {@code BlockBehaviour.getDestroyProgress}.
  * Run with {@code ./gradlew :common:companionSelfTest}.
  */
@@ -21,6 +30,8 @@ public final class CompanionRulesSelfTest {
     }
 
     public static void main(String[] args) {
+        SharedConstants.tryDetectVersion();
+        Bootstrap.bootStrap();
         stoneBreakTimesMatchVanilla();
         effectsScaleLikeVanilla();
         waterPenaltyNeedsAquaAffinityToLift();
@@ -28,6 +39,9 @@ public final class CompanionRulesSelfTest {
         unbreakableAndInstantBlocks();
         rulesDefaultsAndParsing();
         progressChatLevels();
+        hungerOffRegeneratesLikeAFullFoodBar();
+        zombieBaseAttributesBecomeAPlayers();
+        attackCooldownScalesDamageLikeAPlayer();
         System.out.println("companion self-test: " + checks + " checks passed");
     }
 
@@ -101,14 +115,18 @@ public final class CompanionRulesSelfTest {
     private static void rulesDefaultsAndParsing() {
         CompanionRules empty = new CompanionRules(new Properties());
         require(empty.survivalParity(), "survivalParity defaults on");
-        require(empty.progressChat() == CompanionRules.ProgressChat.MILESTONES, "progressChat defaults to milestones");
+        require(empty.progressChat() == CompanionRules.ProgressChat.OFF, "progressChat defaults to off");
+        require(empty.hungerOverride() == null, "hunger unset leaves the settings file in charge");
+        require(rules("hunger", "false").hungerOverride() == Boolean.FALSE, "hunger=false overrides the settings file");
+        require(rules("hunger", "true").hungerOverride() == Boolean.TRUE, "hunger=true overrides the settings file");
+        require(rules("hunger", "maybe").hungerOverride() == null, "an unreadable hunger value is ignored");
 
         require(!rules("survivalParity", "false").survivalParity(), "survivalParity=false is honoured");
         require(!rules("survivalParity", " FALSE ").survivalParity(), "boolean parsing trims and ignores case");
         require(rules("survivalParity", "nope").survivalParity(), "an unreadable boolean keeps the default");
         require(rules("progressChat", "off").progressChat() == CompanionRules.ProgressChat.OFF, "progressChat=off");
         require(rules("progressChat", "ALL").progressChat() == CompanionRules.ProgressChat.ALL, "progressChat=ALL");
-        require(rules("progressChat", "chatty").progressChat() == CompanionRules.ProgressChat.MILESTONES,
+        require(rules("progressChat", "chatty").progressChat() == CompanionRules.ProgressChat.OFF,
                 "an unknown progressChat keeps the default");
     }
 
@@ -117,6 +135,67 @@ public final class CompanionRulesSelfTest {
         require(!CompanionRules.ProgressChat.MILESTONES.shows(false), "milestones hides step chatter such as 'breaking iron ore'");
         require(CompanionRules.ProgressChat.MILESTONES.shows(true), "milestones keeps outcomes and failures");
         require(!CompanionRules.ProgressChat.OFF.shows(false) && !CompanionRules.ProgressChat.OFF.shows(true), "off hides everything");
+    }
+
+    private static void hungerOffRegeneratesLikeAFullFoodBar() {
+        LivingEntityHungerManager hunger = new LivingEntityHungerManager();
+        hunger.add(-12, 0.0F);
+        require(hunger.getFoodLevel() == 8, "setup: food bar drained to 8");
+
+        int heals = 0;
+        for (int tick = 1; tick <= 160; tick++) {
+            boolean heal = hunger.tickWellFed(true, true);
+            if (heal) {
+                heals++;
+            }
+            if (tick == 79) {
+                require(heals == 0, "no heal before 80 ticks");
+            }
+        }
+        require(heals == 2, "one heal per 80 ticks, as vanilla's food >= 18 regeneration: got " + heals);
+        require(hunger.getFoodLevel() == 20, "the food bar is pinned full");
+
+        boolean healedWithoutRegen = false;
+        for (int tick = 0; tick < 200; tick++) {
+            healedWithoutRegen |= hunger.tickWellFed(false, true);
+        }
+        require(!healedWithoutRegen, "naturalRegeneration=false stops regeneration");
+        for (int tick = 0; tick < 79; tick++) {
+            hunger.tickWellFed(true, true);
+        }
+        require(!hunger.tickWellFed(true, false), "full health does not heal");
+        require(!hunger.tickWellFed(true, true), "full health resets the regeneration timer");
+    }
+
+    private static void zombieBaseAttributesBecomeAPlayers() {
+        AttributeSupplier zombie = Zombie.createAttributes().build();
+        AttributeMap attributes = new AttributeMap(zombie);
+        require(attributes.getBaseValue(Attributes.ATTACK_DAMAGE) == 3.0, "setup: zombie attack damage 3");
+        require(attributes.getBaseValue(Attributes.ARMOR) == 2.0, "setup: zombie armour 2");
+
+        SurvivalCombat.applyBaseAttributes(attributes, true, zombie);
+        require(attributes.getBaseValue(Attributes.ATTACK_DAMAGE) == 1.0, "parity: player attack damage 1");
+        require(attributes.getBaseValue(Attributes.ARMOR) == 0.0, "parity: player armour 0");
+
+        SurvivalCombat.applyBaseAttributes(attributes, false, zombie);
+        require(attributes.getBaseValue(Attributes.ATTACK_DAMAGE) == 3.0, "parity off restores the registered attack damage");
+        require(attributes.getBaseValue(Attributes.ARMOR) == 2.0, "parity off restores the registered armour");
+    }
+
+    private static void attackCooldownScalesDamageLikeAPlayer() {
+        require(SurvivalCombat.attackSpeed(ItemStack.EMPTY) == 4.0, "empty hand attacks at speed 4");
+        double sword = SurvivalCombat.attackSpeed(new ItemStack(Items.DIAMOND_SWORD));
+        require(Math.abs(sword - 1.6) < 1e-6, "a sword attacks at speed 1.6, got " + sword);
+        float swordDelay = SurvivalCombat.attackDelayTicks(sword);
+        require(Math.abs(swordDelay - 12.5F) < 1e-4F, "a sword recharges in 12.5 ticks, got " + swordDelay);
+        require(SurvivalCombat.attackDelayTicks(4.0) == 5.0F, "an empty hand recharges in 5 ticks");
+
+        require(Math.abs(SurvivalCombat.damageMultiplier(SurvivalCombat.strengthScale(12, swordDelay)) - 1.0F) < 1e-6F,
+                "a charged sword hit deals full damage");
+        float spam = SurvivalCombat.damageMultiplier(SurvivalCombat.strengthScale(0, swordDelay));
+        require(Math.abs(spam - 0.20128F) < 1e-4F, "an uncharged hit deals about 20%, got " + spam);
+        float half = SurvivalCombat.damageMultiplier(SurvivalCombat.strengthScale(5, swordDelay));
+        require(Math.abs(half - (0.2F + 0.44F * 0.44F * 0.8F)) < 1e-4F, "a sword hit 5 ticks after the last deals 35%, got " + half);
     }
 
     private static CompanionRules rules(String key, String value) {

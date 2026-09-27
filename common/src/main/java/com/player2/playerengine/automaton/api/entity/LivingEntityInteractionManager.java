@@ -22,6 +22,7 @@ import com.mojang.logging.LogUtils;
 import java.util.Objects;
 
 import com.player2.playerengine.companion.CompanionRules;
+import com.player2.playerengine.companion.SurvivalCombat;
 import com.player2.playerengine.companion.SurvivalDigSpeed;
 import com.player2.playerengine.util.EnchantmentUtils;
 import net.minecraft.core.BlockPos;
@@ -42,7 +43,9 @@ import net.minecraft.world.effect.MobEffectUtil;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.ai.attributes.Attributes;
+import net.minecraft.world.entity.ai.attributes.DefaultAttributes;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.BucketItem;
 import net.minecraft.world.item.ItemStack;
@@ -110,8 +113,18 @@ public class LivingEntityInteractionManager {
       return this.gameMode.isCreative();
    }
 
+   @SuppressWarnings("unchecked")
    public void update() {
       this.tickCounter++;
+      if (!(this.livingEntity instanceof Player) && !this.world.isClientSide) {
+         // Every tick, because loading a saved companion restores its stored base values.
+         SurvivalCombat.applyBaseAttributes(
+            this.livingEntity.getAttributes(),
+            CompanionRules.survivalParityEnabled(),
+            DefaultAttributes.getSupplier((EntityType<? extends LivingEntity>)this.livingEntity.getType())
+         );
+      }
+
       if (this.failedToMine) {
          BlockState blockState = this.world.getBlockState(this.failedMiningPos);
          if (blockState.isAir()) {

@@ -140,6 +140,11 @@ public class KillAura {
    }
 
    public float getAttackCooldownProgressPerTick(LivingEntity entity) {
+      if (com.player2.playerengine.companion.CompanionRules.survivalParityEnabled()) {
+         return com.player2.playerengine.companion.SurvivalCombat.attackDelayTicks(
+            com.player2.playerengine.companion.SurvivalCombat.attackSpeed(entity.getMainHandItem()));
+      }
+
       return 5.0F;
    }
 

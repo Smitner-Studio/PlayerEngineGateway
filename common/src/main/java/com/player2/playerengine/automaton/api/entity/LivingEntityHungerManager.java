@@ -17,6 +17,7 @@
 
 package com.player2.playerengine.automaton.api.entity;
 
+import com.player2.playerengine.companion.CompanionRules;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.world.Difficulty;
@@ -72,6 +73,12 @@ public class LivingEntityHungerManager {
    public void update(LivingEntity player) {
       // WS2 master gate: when hunger simulation is disabled, freeze the bar entirely (no drain, regen, or starve).
       if (!this.hungerEnabled) {
+         // Survival parity replaces the freeze with a player whose food bar never drops, so health
+         // still regenerates.
+         if (CompanionRules.survivalParityEnabled()
+               && this.tickWellFed(player.level().getGameRules().getBoolean(GameRules.RULE_NATURAL_REGENERATION), this.canFoodHeal(player))) {
+            player.heal(1.0F);
+         }
          return;
       }
 
@@ -118,6 +125,31 @@ public class LivingEntityHungerManager {
       } else {
          this.foodTickTimer = 0;
       }
+   }
+
+   /**
+    * One tick of a food bar pinned full with no saturation: vanilla {@code FoodData}'s food >= 18
+    * branch heals 1 every 80 ticks while natural regeneration is on and health is not full. The
+    * exhaustion that heal would cost is dropped, so the bar never moves.
+    *
+    * @return whether to heal 1 this tick
+    */
+   public boolean tickWellFed(boolean naturalRegeneration, boolean canHeal) {
+      this.foodLevel = 20;
+      this.prevFoodLevel = 20;
+      this.foodSaturationLevel = 0.0F;
+      this.exhaustion = 0.0F;
+      if (!naturalRegeneration || !canHeal) {
+         this.foodTickTimer = 0;
+         return false;
+      }
+
+      if (++this.foodTickTimer >= 80) {
+         this.foodTickTimer = 0;
+         return true;
+      }
+
+      return false;
    }
 
    public void readNbt(CompoundTag nbt) {

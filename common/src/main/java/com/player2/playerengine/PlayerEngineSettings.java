@@ -52,9 +52,7 @@ public class PlayerEngineSettings implements IFailableConfigFile {
    private boolean autoCloseScreenWhenLookingOrMining = true;
    private boolean extinguishSelfWithWater = true;
    private boolean autoEat = true;
-   // master gate for the hunger sim + auto-eat; off also freezes natural regeneration. The default
-   // applies only when the settings file lacks the key, so an operator's explicit value wins.
-   private boolean hungerEnabled = com.player2.playerengine.companion.CompanionRules.survivalParityEnabled();
+   private boolean hungerEnabled = false;                    // master gate for the hunger sim + auto-eat
    private boolean deathByHungerMatchesDifficulty = true;    // true = vanilla difficulty starve; false = no starvation damage
    private boolean autoMLGBucket = true;
    private boolean autoReconnect = true;
@@ -277,7 +275,10 @@ public class PlayerEngineSettings implements IFailableConfigFile {
    }
 
    public boolean isHungerEnabled() {
-      return this.hungerEnabled;
+      // config/playerengine-companion.properties `hunger`, when set, outranks this file: a
+      // singleplayer instance keeps its settings file across pack updates.
+      Boolean forced = com.player2.playerengine.companion.CompanionRules.get().hungerOverride();
+      return forced != null ? forced : this.hungerEnabled;
    }
 
    public boolean isDeathByHungerMatchesDifficulty() {
