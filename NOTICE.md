@@ -33,6 +33,13 @@ how a LAN model's thinking is switched off on its profile alone
 (`param.chat_template_kwargs={"enable_thinking":false}`). A `<think>` block, or reasoning text
 closed by a lone `</think>`, is removed from a chat completion's content before it is parsed.
 
+Companion LLM calls are dispatched on lanes keyed by billing key and endpoint profile, where
+upstream had one lane per billing key. Each lane still carries one request at a time, so one
+companion's calls stay in order, while two companions of the same player on different profiles
+(a LAN model and OpenAI, say) think at the same time instead of queueing behind each other. A
+companion's conversation summary runs inside its own lane. Hourly caps and the per-player budget
+are unchanged. Idle lanes are dropped after ten minutes and rebuilt on the next call.
+
 Files changed from upstream:
 
 | File | Change |
@@ -43,6 +50,9 @@ Files changed from upstream:
 | `common/src/main/java/com/player2/playerengine/player2api/gateway/GatewayRouter.java` | new: splits forwarded OpenAI endpoints from locally answered Player2 endpoints; picks the endpoint profile, enforces its hourly cap and strips reasoning text from chat content |
 | `common/src/main/java/com/player2/playerengine/player2api/gateway/GatewaySelfTest.java` | new: self-test of the routing through the production HTTP path |
 | `common/src/main/java/com/player2/playerengine/player2api/gateway/GatewayProfilesSelfTest.java` | new: self-test of per-character endpoint profiles against two loopback gateways |
+| `common/src/main/java/com/player2/playerengine/player2api/gateway/GatewayLanesSelfTest.java` | new: self-test of parallel dispatch lanes against two slow loopback gateways |
+| `common/src/main/java/com/player2/playerengine/player2api/manager/LlmLanes.java` | new: LLM dispatch lanes per billing key and endpoint profile |
+| `common/src/main/java/com/player2/playerengine/player2api/manager/ConversationManager.java` | dispatches companions through `LlmLanes` |
 | `common/src/main/java/com/player2/playerengine/player2api/utils/HTTPUtils.java` | gateway takeover in `sendRequest` and `sendRequestElement`; gateway chat responses lose reasoning text |
 | `common/src/main/java/com/player2/playerengine/player2api/Player2APIService.java` | companion calls carry their character and billing key to the gateway router |
 | `common/src/main/java/com/player2/playerengine/player2api/Player2ApiDispatcher.java` | client-proxy relay refused for a companion on a non-default endpoint profile |
@@ -53,7 +63,7 @@ Files changed from upstream:
 | `common/src/main/java/com/player2/playerengine/player2api/Player2PayerResolution.java` | server-wide work is billable with no player online when the gateway is enabled |
 | `common/src/main/java/com/player2/playerengine/player2api/utils/AudioUtils.java` | text-to-speech skipped when the gateway is enabled |
 | `common/build.gradle` | `gatewaySelfTest` task |
-| `gradle.properties` | version `1.21.1-1.4.0-gateway.3` |
+| `gradle.properties` | version `1.21.1-1.4.0-gateway.4` |
 | `neoforge/src/main/resources/META-INF/neoforge.mods.toml` | display name "PlayerEngine (OpenAI-gateway fork)" |
 | `README.md`, `NOTICE.md`, `Taskfile.yml`, `.gitignore` | fork documentation and build entries |
 

@@ -24,6 +24,8 @@
 > file `"endpoint": "<name>"` and declare the profile with `endpoint.<name>.*` keys. Its chat
 > completions then go only there, with only its key. Calls from other companions, and calls with no
 > companion (memory extraction, mod-intelligence enrichment, embeddings), use the default profile.
+> Companions on different profiles think in parallel: each (player, profile) pair has its own
+> dispatch lane with one call in flight, so one companion's calls stay in order.
 >
 > | Key | Meaning |
 > |---|---|
