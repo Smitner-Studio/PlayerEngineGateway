@@ -28,6 +28,10 @@ absent or `enabled=false`, behaviour is identical to upstream.
 With endpoint profiles (`endpoint.<name>.*`), a companion whose character names `"endpoint"`
 sends its chat completions to that profile's URL with that profile's key and model instead; every
 other call keeps the default endpoint. A profile missing its key is refused before any request.
+A profile's `param.<field>` written as a JSON object or array is sent as that structure, which is
+how a LAN model's thinking is switched off on its profile alone
+(`param.chat_template_kwargs={"enable_thinking":false}`). A `<think>` block, or reasoning text
+closed by a lone `</think>`, is removed from a chat completion's content before it is parsed.
 
 Files changed from upstream:
 
@@ -36,10 +40,10 @@ Files changed from upstream:
 | `common/src/main/java/com/player2/playerengine/player2api/gateway/GatewayConfig.java` | new: reads the gateway config file, an optional key file, `PLAYERENGINE_GATEWAY_*` environment overrides and endpoint profiles |
 | `common/src/main/java/com/player2/playerengine/player2api/gateway/EndpointProfile.java` | new: one endpoint profile and its request-body rewrite |
 | `common/src/main/java/com/player2/playerengine/player2api/gateway/GatewayCallContext.java` | new: the calling companion's character and billing key for the current thread |
-| `common/src/main/java/com/player2/playerengine/player2api/gateway/GatewayRouter.java` | new: splits forwarded OpenAI endpoints from locally answered Player2 endpoints; picks the endpoint profile and enforces its hourly cap |
+| `common/src/main/java/com/player2/playerengine/player2api/gateway/GatewayRouter.java` | new: splits forwarded OpenAI endpoints from locally answered Player2 endpoints; picks the endpoint profile, enforces its hourly cap and strips reasoning text from chat content |
 | `common/src/main/java/com/player2/playerengine/player2api/gateway/GatewaySelfTest.java` | new: self-test of the routing through the production HTTP path |
 | `common/src/main/java/com/player2/playerengine/player2api/gateway/GatewayProfilesSelfTest.java` | new: self-test of per-character endpoint profiles against two loopback gateways |
-| `common/src/main/java/com/player2/playerengine/player2api/utils/HTTPUtils.java` | gateway takeover in `sendRequest` and `sendRequestElement` |
+| `common/src/main/java/com/player2/playerengine/player2api/utils/HTTPUtils.java` | gateway takeover in `sendRequest` and `sendRequestElement`; gateway chat responses lose reasoning text |
 | `common/src/main/java/com/player2/playerengine/player2api/Player2APIService.java` | companion calls carry their character and billing key to the gateway router |
 | `common/src/main/java/com/player2/playerengine/player2api/Player2ApiDispatcher.java` | client-proxy relay refused for a companion on a non-default endpoint profile |
 | `common/src/main/java/com/player2/playerengine/player2api/Prompts.java` | appends the characters file's operator `instructions` to the companion system prompt when the gateway is enabled |
@@ -48,7 +52,7 @@ Files changed from upstream:
 | `common/src/main/java/com/player2/playerengine/player2api/Player2PayerResolution.java` | server-wide work is billable with no player online when the gateway is enabled |
 | `common/src/main/java/com/player2/playerengine/player2api/utils/AudioUtils.java` | text-to-speech skipped when the gateway is enabled |
 | `common/build.gradle` | `gatewaySelfTest` task |
-| `gradle.properties` | version `1.21.1-1.4.0-gateway.1` |
+| `gradle.properties` | version `1.21.1-1.4.0-gateway.2` |
 | `neoforge/src/main/resources/META-INF/neoforge.mods.toml` | display name "PlayerEngine (OpenAI-gateway fork)" |
 | `README.md`, `NOTICE.md`, `Taskfile.yml`, `.gitignore` | fork documentation and build entries |
 

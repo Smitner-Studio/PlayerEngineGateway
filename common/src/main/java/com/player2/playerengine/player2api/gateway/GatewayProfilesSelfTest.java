@@ -1,6 +1,7 @@
 package com.player2.playerengine.player2api.gateway;
 
 import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.player2.playerengine.player2api.Prompts;
@@ -39,6 +40,20 @@ final class GatewayProfilesSelfTest {
     /** A loopback gateway that records every request it receives. */
     private record Mock(HttpServer server, List<String> auth, List<JsonObject> bodies) implements AutoCloseable {
         static Mock start() throws IOException {
+            return start("ok");
+        }
+
+        /** Answers every request with a chat completion whose content is {@code content}. */
+        static Mock start(String content) throws IOException {
+            JsonObject reply = new JsonObject();
+            JsonArray choices = new JsonArray();
+            JsonObject choice = new JsonObject();
+            JsonObject message = new JsonObject();
+            message.addProperty("content", content);
+            choice.add("message", message);
+            choices.add(choice);
+            reply.add("choices", choices);
+            byte[] out = reply.toString().getBytes(StandardCharsets.UTF_8);
             List<String> auth = new CopyOnWriteArrayList<>();
             List<JsonObject> bodies = new CopyOnWriteArrayList<>();
             HttpServer server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
@@ -46,7 +61,6 @@ final class GatewayProfilesSelfTest {
                 auth.add(String.valueOf(ex.getRequestHeaders().getFirst("Authorization")));
                 bodies.add(JsonParser.parseString(new String(ex.getRequestBody().readAllBytes(), StandardCharsets.UTF_8))
                         .getAsJsonObject());
-                byte[] out = "{\"choices\":[{\"message\":{\"content\":\"ok\"}}]}".getBytes(StandardCharsets.UTF_8);
                 ex.sendResponseHeaders(200, out.length);
                 try (OutputStream os = ex.getResponseBody()) {
                     os.write(out);
@@ -309,6 +323,59 @@ final class GatewayProfilesSelfTest {
             GatewayConfig.install(new GatewayConfig(off, dir, name -> null));
             require(Prompts.withOperatorInstructions("base\n").equals("base\n"), "a disabled gateway adds nothing");
         }
+    }
+
+    private static final String THINKING_OFF = "{\"enable_thinking\":false}";
+
+    static void thinkingSwitchStaysOnItsProfile(Path dir) throws Exception {
+        writeCharacters(dir, ROSTER);
+        try (Mock lan = Mock.start(); Mock openai = Mock.start()) {
+            twoProfiles(dir, lan, openai, OPENAI_KEY, "endpoint.gx10.param.chat_template_kwargs", THINKING_OFF);
+            chatAs("foreman-ada", "player-1");
+            chatAs(null, null);
+            chatAs("rivet", "player-1");
+            require(lan.hits() == 2 && openai.hits() == 1, "each call must reach its own endpoint");
+            for (JsonObject lanBody : lan.bodies()) {
+                JsonElement sent = lanBody.get("chat_template_kwargs");
+                JsonObject kwargs = sent != null && sent.isJsonObject() ? sent.getAsJsonObject() : null;
+                require(kwargs != null && kwargs.has("enable_thinking")
+                                && !kwargs.get("enable_thinking").getAsBoolean(),
+                        "a JSON-object param must reach the LAN endpoint as an object with enable_thinking=false");
+            }
+            require(!openai.bodies().get(0).has("chat_template_kwargs"),
+                    "the LAN profile's thinking switch must never reach the OpenAI endpoint");
+
+            GatewayConfig broken = twoProfiles(dir, lan, openai, OPENAI_KEY,
+                    "endpoint.openai.param.chat_template_kwargs", "{\"enable_thinking\":");
+            require(!broken.profile("openai").usable() && broken.profile("openai").problem().contains("not valid JSON"),
+                    "a malformed JSON param must disable its profile instead of sending a string");
+            require(broken.defaultProfile().usable(), "a malformed param on one profile leaves the others usable");
+        }
+    }
+
+    static void reasoningTextIsStrippedFromChatContent(Path dir) throws Exception {
+        writeCharacters(dir, ROSTER);
+        String answer = "{\"reason\":\"x\",\"message\":\"hi\"}";
+        String[] replies = {
+                "<think>\nplan the reply\n</think>\n\n" + answer,
+                "plan the reply, template opened the block\n</think>\n" + answer,
+                answer,
+        };
+        for (String reply : replies) {
+            try (Mock lan = Mock.start(reply); Mock openai = Mock.start()) {
+                twoProfiles(dir, lan, openai, OPENAI_KEY);
+                Map<String, JsonElement> response = GatewayCallContext.call("foreman-ada", "p",
+                        () -> HTTPUtils.sendRequest("https://api.player2.game", CHAT, "POST", chatRequest(), new HashMap<>()));
+                String content = response.get("choices").getAsJsonArray().get(0).getAsJsonObject()
+                        .getAsJsonObject("message").get("content").getAsString();
+                require(answer.equals(content), "reasoning text must be removed before the answer is parsed, got: " + content);
+                JsonElement element = GatewayCallContext.call("foreman-ada", "p",
+                        () -> HTTPUtils.sendRequestElement("https://api.player2.game", CHAT, "POST", chatRequest(), new HashMap<>()));
+                require(answer.equals(element.getAsJsonObject().getAsJsonArray("choices").get(0).getAsJsonObject()
+                        .getAsJsonObject("message").get("content").getAsString()), "the element path must strip it too");
+            }
+        }
+        require(GatewayRouter.stripThinking("no tags here ").equals("no tags here "), "content without tags is untouched");
     }
 
     static void contextRestoresOuterFrame(Path dir) throws Exception {

@@ -120,7 +120,11 @@ public class HTTPUtils {
             response.append(line);
         }
         reader.close();
-        return JsonParser.parseString(response.toString());
+        JsonElement parsed = JsonParser.parseString(response.toString());
+        if (GatewayConfig.isEnabled() && parsed.isJsonObject()) {
+            GatewayRouter.withoutThinking(endpoint, parsed.getAsJsonObject());
+        }
+        return parsed;
     }
 
     public static Map<String, JsonElement> sendRequest(String baseUrl, String endpoint, String method, JsonObject requestBody,
@@ -180,6 +184,9 @@ public class HTTPUtils {
         }
 
         JsonObject jsonResponse = getJsonObject(connection);
+        if (GatewayConfig.isEnabled()) {
+            GatewayRouter.withoutThinking(endpoint, jsonResponse);
+        }
         Map<String, JsonElement> responseMap = new HashMap<>();
 
         for (Entry<String, JsonElement> entry : jsonResponse.entrySet()) {

@@ -19,6 +19,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.LongSupplier;
+import java.util.regex.Pattern;
 
 /**
  * Splits Player2 endpoints into the two OpenAI-compatible ones the gateway can serve and the
@@ -31,6 +32,8 @@ public final class GatewayRouter {
     private static final String CHAT = "/v1/chat/completions";
     private static final String EMBEDDINGS = "/v1/embeddings";
     private static final long HOUR_MS = 3_600_000L;
+    private static final Pattern THINK_BLOCK = Pattern.compile("(?s)<think>.*?</think>");
+    private static final String THINK_END = "</think>";
 
     /** Binding value for a character id the characters file makes ambiguous; its calls are refused. */
     private static final String AMBIGUOUS = "\u0000ambiguous";
@@ -178,6 +181,40 @@ public final class GatewayRouter {
             return copy;
         }
         return profile.chatBody(body);
+    }
+
+    /**
+     * Removes reasoning text a model left in a chat completion's {@code message.content}, in place.
+     * Reasoning models served through a chat template can emit a {@code <think>} block before the
+     * answer, or only its closing tag when the template opened it in the prompt; either would break
+     * the JSON parse of the answer. Other endpoints' responses are returned untouched.
+     */
+    public static JsonObject withoutThinking(String endpoint, JsonObject response) {
+        if (response == null || !path(endpoint).equals(CHAT) || !response.has("choices")
+                || !response.get("choices").isJsonArray()) {
+            return response;
+        }
+        for (JsonElement choice : response.getAsJsonArray("choices")) {
+            if (!choice.isJsonObject() || !choice.getAsJsonObject().has("message")
+                    || !choice.getAsJsonObject().get("message").isJsonObject()) {
+                continue;
+            }
+            JsonObject message = choice.getAsJsonObject().getAsJsonObject("message");
+            JsonElement content = message.get("content");
+            if (content != null && content.isJsonPrimitive() && content.getAsJsonPrimitive().isString()) {
+                message.addProperty("content", stripThinking(content.getAsString()));
+            }
+        }
+        return response;
+    }
+
+    static String stripThinking(String content) {
+        String out = THINK_BLOCK.matcher(content).replaceAll("");
+        int end = out.lastIndexOf(THINK_END);
+        if (end >= 0) {
+            out = out.substring(end + THINK_END.length());
+        }
+        return out.equals(content) ? content : out.strip();
     }
 
     /** Only the chosen profile's own key; the Player2 headers of the caller are dropped. */

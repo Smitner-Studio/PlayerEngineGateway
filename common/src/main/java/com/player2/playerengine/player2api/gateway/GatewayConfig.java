@@ -1,6 +1,9 @@
 package com.player2.playerengine.player2api.gateway;
 
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonParseException;
+import com.google.gson.JsonParser;
 import com.google.gson.JsonPrimitive;
 import com.player2.playerengine.automaton.utils.DirUtil;
 import org.apache.logging.log4j.LogManager;
@@ -40,7 +43,9 @@ import java.util.regex.Pattern;
  * {@code .model}, {@code .apiKeyEnv} (name of the environment variable holding its key) and
  * {@code .apiKeyFile} (default {@code playerengine-gateway-<name>.key} beside this file). Any profile,
  * the default included, takes the tuning keys {@code .tokenParam}, {@code .maxOutputTokens},
- * {@code .jsonMode}, {@code .dropParams}, {@code .callsPerHour} and {@code .param.<field>}. A character
+ * {@code .jsonMode}, {@code .dropParams}, {@code .callsPerHour} and {@code .param.<field>}; a
+ * {@code param} value written as a JSON object or array is sent as that structure, so a LAN model's
+ * {@code param.chat_template_kwargs={"enable_thinking":false}} stays on that profile alone. A character
  * in the characters file selects a profile with {@code "endpoint": "<name>"}. An extra profile never
  * falls back to the default profile's URL or key: missing either disables it.
  */
@@ -258,7 +263,11 @@ public final class GatewayConfig {
                 if (RESERVED_PARAMS.contains(field)) {
                     problem = k + " is not allowed; the caller or a dedicated key sets " + field;
                 } else {
-                    params.add(field, literal(p.getProperty(k).trim()));
+                    try {
+                        params.add(field, literal(p.getProperty(k).trim()));
+                    } catch (JsonParseException e) {
+                        problem = k + " is not valid JSON";
+                    }
                 }
             }
         }
@@ -286,8 +295,20 @@ public final class GatewayConfig {
         }
     }
 
-    /** {@code param.*} values are sent as JSON: true/false as booleans, integers as numbers, else strings. */
-    private static JsonPrimitive literal(String raw) {
+    /**
+     * {@code param.*} values are sent as JSON: true/false as booleans, integers as numbers, a value
+     * starting with a brace or bracket as that object or array, else strings.
+     *
+     * @throws JsonParseException when a brace- or bracket-led value is not one complete JSON value
+     */
+    private static JsonElement literal(String raw) {
+        if (raw.startsWith("{") || raw.startsWith("[")) {
+            JsonElement parsed = JsonParser.parseString(raw);
+            if (!parsed.isJsonObject() && !parsed.isJsonArray()) {
+                throw new JsonParseException("not an object or array");
+            }
+            return parsed;
+        }
         if (raw.equals("true") || raw.equals("false")) {
             return new JsonPrimitive(Boolean.parseBoolean(raw));
         }

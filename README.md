@@ -35,7 +35,7 @@
 > | `endpoint.<name>.maxOutputTokens` | replaces the mod's output limit (reasoning models spend reasoning tokens from it); 0 keeps it |
 > | `endpoint.<name>.jsonMode` | `false` strips `response_format` (default `true`) |
 > | `endpoint.<name>.dropParams` | comma list of body fields to remove, e.g. `temperature,top_p` |
-> | `endpoint.<name>.param.<field>` | extra body field, e.g. `param.reasoning_effort=max`; `true`/`false`/integers are sent as JSON values |
+> | `endpoint.<name>.param.<field>` | extra body field, e.g. `param.reasoning_effort=max`; `true`/`false`/integers are sent as JSON values, a value starting with `{` or `[` as that JSON structure (invalid JSON disables the profile) |
 > | `endpoint.<name>.callsPerHour` | chat completions per player per rolling hour on this profile; 0 = no cap here |
 >
 > The tuning keys (`tokenParam` to `callsPerHour`) also apply to the default profile under
@@ -49,6 +49,13 @@
 > Use it for persona policy such as staying in-world. Unlike a character's `description`, which is
 > saved with a summoned companion, it is read from the file, so an edit reaches companions already
 > in the world at their next prompt rebuild.
+>
+> **Thinking off for a local model.** A Qwen-style model behind vLLM thinks before answering
+> unless its chat template is told not to; `reasoning_effort` does not switch that off. Set it on
+> that model's profile only, since other providers reject the field:
+> `endpoint.gx10.param.chat_template_kwargs={"enable_thinking":false}`. Whatever reasoning text a
+> model still returns in `content` (`<think>…</think>`, or text before a lone `</think>`) is
+> removed before the reply is parsed.
 >
 > Build with `task build` (jar in `neoforge/build/libs/`); check the routing with `task test`.
 > Both need a JDK 21 (`JDK=<path>`, default the Temurin 21 install).

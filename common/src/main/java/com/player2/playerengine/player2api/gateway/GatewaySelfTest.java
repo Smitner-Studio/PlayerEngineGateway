@@ -55,6 +55,8 @@ public final class GatewaySelfTest {
                 GatewayProfilesSelfTest::ambiguousCharacterIdIsRefused,
                 GatewayProfilesSelfTest::clientProxyRefusesNonDefaultProfile,
                 GatewayProfilesSelfTest::profileConfigParsing,
+                GatewayProfilesSelfTest::thinkingSwitchStaysOnItsProfile,
+                GatewayProfilesSelfTest::reasoningTextIsStrippedFromChatContent,
                 GatewayProfilesSelfTest::contextRestoresOuterFrame,
                 GatewayProfilesSelfTest::operatorInstructionsCloseTheSystemPrompt,
         };
