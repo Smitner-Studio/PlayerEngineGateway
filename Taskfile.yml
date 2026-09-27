@@ -27,10 +27,10 @@ tasks:
         silent: true
 
   test:
-    desc: 'Run the gateway self-test [JDK]'
+    desc: 'Run the gateway and companion-rules self-tests [JDK]'
     preconditions:
       - *need-jdk
     env:
       JAVA_HOME: '{{.JDK}}'
     cmds:
-      - cmd /d /c "{{.GRADLEW}}" :common:gatewaySelfTest --no-daemon -q
+      - cmd /d /c "{{.GRADLEW}}" :common:gatewaySelfTest :common:companionSelfTest --no-daemon -q
