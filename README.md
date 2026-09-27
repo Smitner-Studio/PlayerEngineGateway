@@ -1,5 +1,26 @@
 # PlayerEngine: The AI Embodiment Framework for Minecraft
 
+> **This is a modified PlayerEngine: the OpenAI-gateway fork (LGPL-3.0).** With
+> `config/playerengine-gateway.properties` enabled, it talks only to the OpenAI-compatible
+> gateway you configure, instead of the Player2 API and desktop app. See [NOTICE.md](NOTICE.md)
+> for what changed and why; the upstream description follows unchanged.
+>
+> Configuration (`config/playerengine-gateway.properties`; each key can be overridden by an
+> environment variable):
+>
+> | Key | Environment variable | Meaning |
+> |---|---|---|
+> | `enabled` | `PLAYERENGINE_GATEWAY_ENABLED` | `true` routes everything to the gateway |
+> | `baseUrl` | `PLAYERENGINE_GATEWAY_URL` | gateway root, e.g. `http://host:4001/v1` |
+> | `apiKey` | `PLAYERENGINE_GATEWAY_KEY` | sent as `Authorization: Bearer`; prefer the variable |
+> | `model` | `PLAYERENGINE_GATEWAY_MODEL` | model for chat completions |
+> | `embeddingModel` | `PLAYERENGINE_GATEWAY_EMBEDDING_MODEL` | empty disables embeddings (memory falls back to lexical) |
+> | `patronTier` | `PLAYERENGINE_GATEWAY_PATRON_TIER` | non-empty unlocks patron-only features (more LLM calls) |
+> | `charactersFile` | `PLAYERENGINE_GATEWAY_CHARACTERS` | companion list in `config/`, same shape as Player2's `/v1/selected_characters` |
+>
+> Build with `task build` (jar in `neoforge/build/libs/`); check the routing with `task test`.
+> Both need a JDK 21 (`JDK=<path>`, default the Temurin 21 install).
+
 [![Player2 AI Game Jam](https://img.shields.io/badge/Player2-AI_Game_Jam-blueviolet)](https://itch.io/jam/ai-npc-jam)
 [![Powered by Automatone](https://img.shields.io/badge/Powered%20by-Automatone-orange)](https://github.com/Ladysnake/Automatone/tree/1.20)
 [![Based on ChatClef](https://img.shields.io/badge/Based%20on-ChatClef-9cf)](https://github.com/elefant-ai/chatclef/tree/main)
