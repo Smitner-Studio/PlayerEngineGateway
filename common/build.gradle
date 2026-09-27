@@ -28,6 +28,19 @@ def farmingSelfTest = tasks.register('farmingSelfTest', JavaExec) {
     enableAssertions = true
 }
 
+tasks.register('gatewaySelfTest', JavaExec) {
+    group = 'verification'
+    description = 'Checks the OpenAI-gateway routing through the production HTTP path.'
+    dependsOn tasks.named('classes')
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass.set('com.player2.playerengine.player2api.gateway.GatewaySelfTest')
+    enableAssertions = true
+    // Blank values are ignored by GatewayConfig, so an operator's shell cannot leak into the test.
+    ['ENABLED', 'URL', 'KEY', 'MODEL', 'EMBEDDING_MODEL', 'PATRON_TIER', 'CHARACTERS'].each {
+        environment("PLAYERENGINE_GATEWAY_${it}", '')
+    }
+}
+
 def ellieGpsAtomicCallerFiles = files(
         'src/main/java/com/player2/playerengine/commands/CreateWaypointCommand.java',
         'src/main/java/com/player2/playerengine/commands/AuditWaypointCommand.java',
