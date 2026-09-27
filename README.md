@@ -26,8 +26,9 @@
 >
 > | Key | Default | Meaning |
 > |---|---|---|
-> | `survivalParity` | `true` | mine at a survival player's pace; hunger on unless the settings file says otherwise |
-> | `progressChat` | `milestones` | task progress in chat: `all`, `milestones` (outcomes and failures) or `off` |
+> | `survivalParity` | `true` | mine and fight with a survival player's numbers; with hunger off, regenerate like a full food bar |
+> | `hunger` | unset | `true`/`false` overrides `hungerEnabled` in `playerengine/playerengine_settings.json` |
+> | `progressChat` | `off` | task progress in chat: `all`, `milestones` (outcomes and failures) or `off` |
 
 [![Player2 AI Game Jam](https://img.shields.io/badge/Player2-AI_Game_Jam-blueviolet)](https://itch.io/jam/ai-npc-jam)
 [![Powered by Automatone](https://img.shields.io/badge/Powered%20by-Automatone-orange)](https://github.com/Ladysnake/Automatone/tree/1.20)
