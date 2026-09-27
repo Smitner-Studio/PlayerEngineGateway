@@ -180,7 +180,8 @@ public class TaskStepExecutorAdapter implements IStepExecutorAdapter {
                             + "' stopped unexpectedly \u2014 " + lastEntry;
                     mod.log(msg);
                     Player owner = mod.getOwner();
-                    if (owner instanceof ServerPlayer sp) {
+                    if (owner instanceof ServerPlayer sp
+                            && com.player2.playerengine.companion.CompanionRules.get().progressChat().shows(true)) {
                         sp.sendSystemMessage(
                                 Component.translatable("message.playerengine.executor.step_stopped_unexpectedly",
                                         exec.getStepKind(), lastEntry)
