@@ -1,0 +1,36 @@
+version: '3'
+
+vars:
+  JDK: 'C:/Program Files/Eclipse Adoptium/jdk-21.0.12.101-hotspot'
+  GRADLEW: '{{fromSlash .ROOT_DIR}}\gradlew.bat'
+  JAR: 'neoforge/build/libs/playerengine-neoforge-1.21.1-1.4.0-gateway.1.jar'
+
+x-need-jdk: &need-jdk
+  sh: test -f "{{.JDK}}/bin/javac.exe"
+  msg: 'JDK 21 not found at {{.JDK}}. Install it (winget install EclipseAdoptium.Temurin.21.JDK -e) or pass JDK=<JDK 21 home>.'
+
+tasks:
+  default:
+    cmds:
+      - task --list
+    silent: true
+
+  build:
+    desc: 'Build the NeoForge jar into {{.JAR}} [JDK]'
+    preconditions:
+      - *need-jdk
+    env:
+      JAVA_HOME: '{{.JDK}}'
+    cmds:
+      - cmd /d /c "{{.GRADLEW}}" :neoforge:build -x test --no-daemon
+      - cmd: test -f "{{.JAR}}" && echo "built {{.JAR}}"
+        silent: true
+
+  test:
+    desc: 'Run the gateway self-test [JDK]'
+    preconditions:
+      - *need-jdk
+    env:
+      JAVA_HOME: '{{.JDK}}'
+    cmds:
+      - cmd /d /c "{{.GRADLEW}}" :common:gatewaySelfTest --no-daemon -q
