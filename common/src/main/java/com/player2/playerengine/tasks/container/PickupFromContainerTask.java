@@ -53,7 +53,8 @@ public class PickupFromContainerTask extends Task {
                   ItemStack stack = containerInventory.getItem(i);
                   if (target.matches(stack.getItem())) {
                      this.setDebugState("Looting " + target);
-                     if (!playerInventory.insertStack(new ItemStack(stack.getItem()))) {
+                     // Check room without inserting: insertStack mutates the inventory.
+                     if (playerInventory.getEmptySlot() < 0 && playerInventory.getOccupiedSlotWithRoomForStack(stack) < 0) {
                         return new EnsureFreeInventorySlotTask();
                      }
 
@@ -61,7 +62,7 @@ public class PickupFromContainerTask extends Task {
                      int moveAmount = Math.min(toMove.getCount(), needed);
                      toMove.setCount(moveAmount);
                      if (playerInventory.insertStack(toMove)) {
-                        stack.shrink(moveAmount);
+                        stack.shrink(moveAmount - toMove.getCount());
                         containerInventory.setItem(i, stack);
                         container.setChanged();
                         this.controller.getItemStorage().registerSlotAction();
