@@ -44,3 +44,36 @@ Files changed from upstream:
 
 The exact changes are the commits on branch `gateway` after `40732ba`:
 `git log --stat 40732ba..gateway`.
+
+## Companion rules
+
+`config/playerengine-companion.properties` sets how the companion plays. A missing file or key takes
+the default.
+
+- `survivalParity=true` (default): the companion mines at a survival player's pace. Break speed
+  follows `Player.getDigSpeed` (tool, Efficiency, Haste, Mining Fatigue, `block_break_speed`, the
+  underwater penalty that only Aqua Affinity lifts, the airborne penalty), and after each block that
+  took more than one tick it waits 5 ticks before starting the next, as `MultiPlayerGameMode` does.
+  Hunger (with its natural regeneration) is on unless `playerengine/playerengine_settings.json`
+  already sets `hungerEnabled`. `false` restores the upstream mining and hunger defaults.
+- `progressChat=milestones` (default): step chatter such as "breaking iron ore" stays out of the
+  owner's chat; outcomes and failures still appear. `all` restores upstream, `off` sends none.
+  Conversational replies are unaffected.
+
+Independently of these rules, taking items from a container no longer inserts one extra item per
+take (the room check used to insert a probe item), and a loot take that only partly fits leaves
+the rest in the container instead of deleting it.
+
+| File | Change |
+|---|---|
+| `common/src/main/java/com/player2/playerengine/companion/CompanionRules.java` | new: reads the companion rules file |
+| `common/src/main/java/com/player2/playerengine/companion/SurvivalDigSpeed.java` | new: vanilla dig-speed arithmetic |
+| `common/src/main/java/com/player2/playerengine/companion/CompanionRulesSelfTest.java` | new: break times against vanilla, rules parsing |
+| `common/src/main/java/com/player2/playerengine/automaton/api/entity/LivingEntityInteractionManager.java` | dig speed and progress under `survivalParity` |
+| `common/src/main/java/com/player2/playerengine/automaton/utils/player/EntityInteractionController.java` | post-break delay under `survivalParity` |
+| `common/src/main/java/com/player2/playerengine/PlayerEngineSettings.java` | `hungerEnabled` default follows `survivalParity` |
+| `common/src/main/java/com/player2/playerengine/PlayerEngineController.java` | progress lines filtered by `progressChat` |
+| `common/src/main/java/com/player2/playerengine/executor/TaskStepExecutorAdapter.java` | step-failure line hidden by `progressChat=off` |
+| `common/src/main/java/com/player2/playerengine/tasks/container/PickupFromContainerTask.java` | room check without inserting |
+| `common/src/main/java/com/player2/playerengine/tasks/container/LootContainerTask.java` | room check without inserting; partial takes keep the rest |
+| `common/build.gradle`, `Taskfile.yml` | `companionSelfTest` task, run by `task test` |
