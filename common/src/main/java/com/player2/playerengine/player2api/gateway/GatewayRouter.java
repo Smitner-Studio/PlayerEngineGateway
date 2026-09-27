@@ -151,6 +151,14 @@ public final class GatewayRouter {
         return profileFor(characterId).name();
     }
 
+    /**
+     * Content-character budget for a companion's chat request: its profile's {@code maxRequestChars},
+     * or 0 (the mod-wide budget) when the gateway is off or the profile sets none.
+     */
+    public static int requestCharsFor(String characterId) {
+        return GatewayConfig.isEnabled() ? profileFor(characterId).maxRequestChars() : 0;
+    }
+
     /** The profile for a companion's character id; {@code null} (no companion) means the default. */
     static EndpointProfile profileFor(String characterId) {
         GatewayConfig cfg = GatewayConfig.get();

@@ -415,31 +415,27 @@ public class AgentConversationData {
                     return;
                 }
                 try {
-                    // DESIGN.md §3: a model JSON parse failure must reach BOTH audiences, each tailored.
-                    //   - Model: reflect "your last reply was unparseable; re-send valid JSON" into the
-                    //     conversation feedback (an InfoMessage) so it retries truthfully next round.
-                    //   - Player: a concise human line — NEVER the raw com.google.gson exception string.
-                    // The raw payload is already logged in Utils.parseCleanedJson; do not surface it here.
-                    if (errMsg != null && errMsg.startsWith(
-                            com.player2.playerengine.player2api.utils.LlmJsonParseException.SENTINEL)) {
+                    // DESIGN.md §3: a model JSON parse failure is reflected to the model as an
+                    // InfoMessage so it retries truthfully next round. The player hears nothing: a
+                    // system-voiced line from the companion breaks character, and the retry usually
+                    // lands. Giving up leaves the current task running. The raw payload is already
+                    // logged in Utils.parseCleanedJson; do not surface it here.
+                    if (isModelParseFailure(errMsg)) {
                         consecutiveParseFailures++;
                         if (consecutiveParseFailures <= MAX_PARSE_RETRY) {
                             LOGGER.warn("[AICommandBridge]: LLM reply failed to parse as JSON for bot={} "
-                                    + "(attempt {}/{}); asking model to resend valid JSON and notifying player.",
+                                    + "(attempt {}/{}); asking model to resend valid JSON.",
                                     getName(), consecutiveParseFailures, MAX_PARSE_RETRY);
                             addEventToQueue(new InfoMessage(
                                     "Your previous reply could not be read because it was not valid JSON. "
                                     + "Resend ONLY a single valid JSON object with the \"message\" and \"command\" fields, "
                                     + "no extra text, no markdown code fences."));
-                            extOnErrMsg.accept(getName() + " had trouble understanding that — let me try again.");
                         } else {
-                            // Repeated unparseable output: stop re-prompting and tell the player plainly.
                             LOGGER.error("[AICommandBridge]: LLM reply still unparseable after {} retries for bot={}; "
                                     + "giving up this chain.", MAX_PARSE_RETRY, getName());
                             consecutiveParseFailures = 0;
                             // Give-up aborts before a model response can acknowledge this finish round.
                             commandAwaitingFinishAck = null;
-                            extOnErrMsg.accept(getName() + " couldn't respond clearly just now. Please try again.");
                         }
                         return;
                     }
@@ -859,6 +855,15 @@ public class AgentConversationData {
         activeLlmCompleter = completer;
         activeLlmSubmission = submission;
         return true;
+    }
+
+    /**
+     * True for the error a decision turn reports when the model's reply was not JSON. Such an error
+     * is retried with feedback to the model and never shown to the player.
+     */
+    static boolean isModelParseFailure(String errMsg) {
+        return errMsg != null && errMsg.startsWith(
+                com.player2.playerengine.player2api.utils.LlmJsonParseException.SENTINEL);
     }
 
     static boolean hasDispatchableEvents(Deque<Event> events) {

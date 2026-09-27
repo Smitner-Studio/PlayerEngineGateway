@@ -43,7 +43,8 @@ import java.util.regex.Pattern;
  * {@code .model}, {@code .apiKeyEnv} (name of the environment variable holding its key) and
  * {@code .apiKeyFile} (default {@code playerengine-gateway-<name>.key} beside this file). Any profile,
  * the default included, takes the tuning keys {@code .tokenParam}, {@code .maxOutputTokens},
- * {@code .jsonMode}, {@code .dropParams}, {@code .callsPerHour} and {@code .param.<field>}; a
+ * {@code .jsonMode}, {@code .dropParams}, {@code .callsPerHour}, {@code .maxRequestChars} and
+ * {@code .param.<field>}; a
  * {@code param} value written as a JSON object or array is sent as that structure, so a LAN model's
  * {@code param.chat_template_kwargs={"enable_thinking":false}} stays on that profile alone. A character
  * in the characters file selects a profile with {@code "endpoint": "<name>"}. An extra profile never
@@ -68,7 +69,10 @@ public final class GatewayConfig {
     private static final Pattern INTEGER = Pattern.compile("-?\\d{1,9}");
     private static final Set<String> CORE_KEYS = Set.of("baseUrl", "model", "apiKeyEnv", "apiKeyFile");
     private static final Set<String> TUNING_KEYS = Set.of("tokenParam", "maxOutputTokens", "jsonMode", "dropParams",
-            "callsPerHour");
+            "callsPerHour", "maxRequestChars");
+    /** Bounds for {@code maxRequestChars}: room for a system prompt plus a turn, and no runaway request. */
+    static final int MIN_REQUEST_CHARS = 4096;
+    static final int MAX_REQUEST_CHARS = 256 * 1024;
     /** Body fields a {@code param.*} entry may not set, because a dedicated key or the caller owns them. */
     private static final Set<String> RESERVED_PARAMS = Set.of("model", "messages", EndpointProfile.MAX_TOKENS,
             EndpointProfile.MAX_COMPLETION_TOKENS);
@@ -252,6 +256,13 @@ public final class GatewayConfig {
         }
         int maxOutputTokens = intProperty(p, prefix + "maxOutputTokens");
         int callsPerHour = intProperty(p, prefix + "callsPerHour");
+        int maxRequestChars = intProperty(p, prefix + "maxRequestChars");
+        if (maxRequestChars != 0 && (maxRequestChars < MIN_REQUEST_CHARS || maxRequestChars > MAX_REQUEST_CHARS)) {
+            int clamped = Math.max(MIN_REQUEST_CHARS, Math.min(MAX_REQUEST_CHARS, maxRequestChars));
+            LOGGER.warn("Gateway property {}maxRequestChars={} is outside {}..{}; using {}", prefix, maxRequestChars,
+                    MIN_REQUEST_CHARS, MAX_REQUEST_CHARS, clamped);
+            maxRequestChars = clamped;
+        }
         boolean jsonMode = Boolean.parseBoolean(p.getProperty(prefix + "jsonMode", "true").trim());
         Set<String> drop = new LinkedHashSet<>();
         Arrays.stream(p.getProperty(prefix + "dropParams", "").split(","))
@@ -282,7 +293,7 @@ public final class GatewayConfig {
             }
         }
         return new EndpointProfile(name, url, mdl, key, keySource, tokenParam, maxOutputTokens, jsonMode,
-                Collections.unmodifiableSet(drop), params, callsPerHour, problem);
+                Collections.unmodifiableSet(drop), params, callsPerHour, maxRequestChars, problem);
     }
 
     private static int intProperty(Properties p, String key) {
