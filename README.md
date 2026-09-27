@@ -44,6 +44,12 @@
 > one error line at startup, and the other profiles keep working. In dedicated client-proxy mode a
 > companion on a non-default profile is refused, because the client's own config would serve it.
 >
+> **Operator instructions.** A top-level `"instructions"` in the characters file (a string or an
+> array of lines) is appended to every companion's system prompt, after the built-in guidelines.
+> Use it for persona policy such as staying in-world. Unlike a character's `description`, which is
+> saved with a summoned companion, it is read from the file, so an edit reaches companions already
+> in the world at their next prompt rebuild.
+>
 > Build with `task build` (jar in `neoforge/build/libs/`); check the routing with `task test`.
 > Both need a JDK 21 (`JDK=<path>`, default the Temurin 21 install).
 

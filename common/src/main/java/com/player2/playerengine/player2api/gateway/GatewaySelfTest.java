@@ -56,6 +56,7 @@ public final class GatewaySelfTest {
                 GatewayProfilesSelfTest::clientProxyRefusesNonDefaultProfile,
                 GatewayProfilesSelfTest::profileConfigParsing,
                 GatewayProfilesSelfTest::contextRestoresOuterFrame,
+                GatewayProfilesSelfTest::operatorInstructionsCloseTheSystemPrompt,
         };
         try {
             for (Check check : checks) {

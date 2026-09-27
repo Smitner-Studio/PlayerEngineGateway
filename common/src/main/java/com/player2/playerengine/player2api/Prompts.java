@@ -5,6 +5,8 @@ import java.util.Map;
 
 import com.player2.playerengine.commands.base.Command;
 import com.player2.playerengine.player2api.config.Player2ServerConfigHolder;
+import com.player2.playerengine.player2api.gateway.GatewayConfig;
+import com.player2.playerengine.player2api.gateway.GatewayRouter;
 import com.player2.playerengine.player2api.utils.Utils;
 import com.player2.playerengine.retrieval.RagDeepSearchCommands;
 
@@ -123,7 +125,20 @@ public class Prompts {
             "validCommands", validCommandsFormatted,
             "ownerUsername", ownerUsername,
             "commandFieldInstructions", commandFieldInstructionsForPrompt()));
-    return newPrompt;
+    return withOperatorInstructions(newPrompt);
+  }
+
+  /**
+   * Appends the gateway characters file's {@code instructions} (operator persona policy, e.g. stay
+   * in-world) after the template, so they read last and override its meta framing. Stable while the
+   * file is unchanged, which keeps the system message byte-stable across turns.
+   */
+  public static String withOperatorInstructions(String prompt) {
+    if (!GatewayConfig.isEnabled()) {
+      return prompt;
+    }
+    String extra = GatewayRouter.companionInstructions();
+    return extra.isEmpty() ? prompt : prompt + "Operator Instructions (these take precedence over the guidelines above):\n" + extra + "\n";
   }
 
   /**
@@ -139,13 +154,13 @@ public class Prompts {
       String validCommandsBlock,
       String ownerUsername) {
     String block = validCommandsBlock == null ? "" : validCommandsBlock;
-    return Utils.replacePlaceholders(aiNPCPromptTemplateBase + validCommandsSection,
+    return withOperatorInstructions(Utils.replacePlaceholders(aiNPCPromptTemplateBase + validCommandsSection,
         Map.of(
             "characterDescription", character.description(),
             "characterName", character.name(),
             "validCommands", block,
             "ownerUsername", ownerUsername,
-            "commandFieldInstructions", commandFieldInstructionsForPrompt()));
+            "commandFieldInstructions", commandFieldInstructionsForPrompt())));
   }
 
   /**
@@ -157,12 +172,12 @@ public class Prompts {
   public static String getAINPCSystemPromptNoCommandsBlock(
       Character character,
       String ownerUsername) {
-    return Utils.replacePlaceholders(aiNPCPromptTemplateBase,
+    return withOperatorInstructions(Utils.replacePlaceholders(aiNPCPromptTemplateBase,
         Map.of(
             "characterDescription", character.description(),
             "characterName", character.name(),
             "ownerUsername", ownerUsername,
-            "commandFieldInstructions", commandFieldInstructionsForPrompt()));
+            "commandFieldInstructions", commandFieldInstructionsForPrompt())));
   }
 
   private static String commandFieldInstructionsForPrompt() {

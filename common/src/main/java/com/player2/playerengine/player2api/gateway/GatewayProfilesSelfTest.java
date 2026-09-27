@@ -3,6 +3,7 @@ package com.player2.playerengine.player2api.gateway;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import com.player2.playerengine.player2api.Prompts;
 import com.player2.playerengine.player2api.utils.HTTPUtils;
 import com.player2.playerengine.player2api.utils.HttpApiException;
 import com.sun.net.httpserver.HttpServer;
@@ -282,6 +283,31 @@ final class GatewayProfilesSelfTest {
             require(!body.get("parallel_tool_calls").getAsBoolean() && body.get("seed").getAsInt() == 42,
                     "param values are typed as JSON booleans and numbers");
             require(!cfg.profile("openai").describe().contains(OPENAI_KEY), "the log form must never carry the key");
+        }
+    }
+
+    static void operatorInstructionsCloseTheSystemPrompt(Path dir) throws Exception {
+        try (Mock lan = Mock.start(); Mock openai = Mock.start()) {
+            writeCharacters(dir, ROSTER);
+            twoProfiles(dir, lan, openai, OPENAI_KEY);
+            require(Prompts.withOperatorInstructions("base\n").equals("base\n"), "no instructions leave the prompt unchanged");
+
+            writeCharacters(dir, ROSTER.replace("{\"characters\"",
+                    "{\"instructions\":[\"Stay in the world.\",\"Never mention commands.\"],\"characters\""));
+            GatewayRouter.resetCallCounts();
+            String prompt = Prompts.withOperatorInstructions("base\n");
+            require(prompt.startsWith("base\n") && prompt.endsWith("Stay in the world.\nNever mention commands.\n"),
+                    "instructions must be appended after the template, one line each");
+
+            writeCharacters(dir, ROSTER.replace("{\"characters\"", "{\"instructions\":\"One line.\",\"characters\""));
+            GatewayRouter.resetCallCounts();
+            require(Prompts.withOperatorInstructions("base\n").endsWith("One line.\n"), "a string form is accepted");
+
+            Properties off = new Properties();
+            off.setProperty("enabled", "false");
+            off.setProperty("charactersFile", "profiles-chars.json");
+            GatewayConfig.install(new GatewayConfig(off, dir, name -> null));
+            require(Prompts.withOperatorInstructions("base\n").equals("base\n"), "a disabled gateway adds nothing");
         }
     }
 

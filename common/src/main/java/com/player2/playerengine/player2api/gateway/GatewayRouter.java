@@ -39,7 +39,7 @@ public final class GatewayRouter {
     private static final Set<String> WARNED = ConcurrentHashMap.newKeySet();
     static volatile LongSupplier clock = System::currentTimeMillis;
 
-    private record Bindings(Path file, long modified, long size, Map<String, String> byId) {
+    private record Bindings(Path file, long modified, long size, Map<String, String> byId, String instructions) {
     }
 
     private static volatile Bindings bindings;
@@ -226,8 +226,23 @@ public final class GatewayRouter {
         return cfg.configDir().resolve(cfg.charactersFile());
     }
 
-    /** id → endpoint name ("" = default) from the characters file, re-read when the file changes. */
+    /**
+     * Operator text appended to every companion's system prompt: the characters file's top-level
+     * {@code instructions} (a string, or an array of lines). Empty when absent. Lives beside the
+     * personas because it is persona policy, and unlike a persona it is not frozen into a summoned
+     * companion's saved data, so an edit reaches companions already in the world.
+     */
+    public static String companionInstructions() {
+        return parsed().instructions();
+    }
+
+    /** id → endpoint name ("" = default) from the characters file. */
     private static Map<String, String> bindings() {
+        return parsed().byId();
+    }
+
+    /** The characters file's routing and instructions, re-read when the file changes. */
+    private static Bindings parsed() {
         Path file = charactersPath();
         long modified = -1;
         long size = -1;
@@ -241,11 +256,22 @@ public final class GatewayRouter {
         }
         Bindings cached = bindings;
         if (cached != null && cached.file().equals(file) && cached.modified() == modified && cached.size() == size) {
-            return cached.byId();
+            return cached;
         }
         Map<String, String> byId = new HashMap<>();
+        StringBuilder instructions = new StringBuilder();
         JsonElement parsed = readCharacters(file);
         if (parsed != null) {
+            JsonElement text = parsed.getAsJsonObject().get("instructions");
+            if (text != null && text.isJsonArray()) {
+                for (JsonElement line : text.getAsJsonArray()) {
+                    if (line.isJsonPrimitive()) {
+                        instructions.append(line.getAsString()).append('\n');
+                    }
+                }
+            } else if (text != null && text.isJsonPrimitive()) {
+                instructions.append(text.getAsString()).append('\n');
+            }
             for (JsonElement el : parsed.getAsJsonObject().getAsJsonArray("characters")) {
                 if (!el.isJsonObject()) {
                     continue;
@@ -280,9 +306,9 @@ public final class GatewayRouter {
                         e.getKey(), name, profile.problem());
             }
         }
-        Map<String, String> frozen = Collections.unmodifiableMap(byId);
-        bindings = new Bindings(file, modified, size, frozen);
-        return frozen;
+        Bindings fresh = new Bindings(file, modified, size, Collections.unmodifiableMap(byId), instructions.toString().strip());
+        bindings = fresh;
+        return fresh;
     }
 
     private static String string(JsonObject o, String key) {
