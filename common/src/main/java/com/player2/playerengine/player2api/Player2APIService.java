@@ -10,6 +10,7 @@ import com.player2.playerengine.player2api.config.Player2PayerMode;
 import com.player2.playerengine.player2api.config.Player2ServerConfigHolder;
 import com.player2.playerengine.player2api.config.Player2ServerRuntimeConfig;
 import com.player2.playerengine.player2api.gateway.GatewayCallContext;
+import com.player2.playerengine.player2api.gateway.GatewayRouter;
 import com.player2.playerengine.player2api.manager.HeartbeatManager;
 import com.player2.playerengine.player2api.network.TtsClientPreferenceStore;
 import com.player2.playerengine.player2api.utils.Player2HTTPUtils;
@@ -74,11 +75,35 @@ public class Player2APIService {
    private Map<String, JsonElement> api(String method, String endpoint, JsonObject body) throws Exception {
       Player2PayerResolution.ApiBillingContext billing = billingOrFallback();
       // The gateway routes a companion's calls to its character's endpoint profile.
-      AIPersistantData data = controller.getAIPersistantData();
-      Character character = data != null ? data.getCharacter() : null;
-      return GatewayCallContext.call(character != null ? character.id() : null,
+      return GatewayCallContext.call(characterId(),
             billing != null ? billing.billingKey() : null,
             () -> Player2ApiDispatcher.route(controller, clientId, method, endpoint, body, billing));
+   }
+
+   /** The calling companion's character id; {@code null} without one. Overridden by self-tests. */
+   String characterId() {
+      AIPersistantData data = controller != null ? controller.getAIPersistantData() : null;
+      Character character = data != null ? data.getCharacter() : null;
+      return character != null ? character.id() : null;
+   }
+
+   /**
+    * Request body for the companion's decision turn: capped messages, the output-token ceiling, and
+    * {@code response_format: json_object}. The reply must be one JSON object, and a model left to
+    * itself answers in prose now and then; guided decoding rules that out. Profiles with
+    * {@code jsonMode=false} strip the field on the way out.
+    *
+    * @param requestChars content-character budget for the serving endpoint; 0 = the mod-wide budget
+    */
+   static JsonObject decisionRequestBody(List<JsonObject> messages, int requestChars) {
+      JsonObject requestBody = new JsonObject();
+      requestBody.add("messages", LogEgressGuard.cappedMessages(
+            messages, "Player2APIService.completeConversation", requestChars));
+      LogEgressGuard.applyChatCompletionRequestCaps(requestBody, "Player2APIService.completeConversation");
+      JsonObject responseFormat = new JsonObject();
+      responseFormat.addProperty("type", "json_object");
+      requestBody.add("response_format", responseFormat);
+      return requestBody;
    }
 
    /**
@@ -97,14 +122,11 @@ public class Player2APIService {
     * profile based on {@code taskClass} (B3) and the A4 budget guard.
     */
    public JsonObject completeConversation(ConversationHistory conversationHistory, AiTaskClass taskClass) throws Exception {
-      JsonObject requestBody = new JsonObject();
-      JsonArray messagesArray = LogEgressGuard.cappedMessages(
-            conversationHistory.getListJSON(), "Player2APIService.completeConversation");
+      JsonObject requestBody = decisionRequestBody(conversationHistory.getListJSON(),
+            GatewayRouter.requestCharsFor(characterId()));
+      JsonArray messagesArray = requestBody.getAsJsonArray("messages");
       String lastMessageForDebug = LogEgressGuard.capForModel(
             conversationHistory.getListJSON().get(conversationHistory.getListJSON().size() - 1).toString(), "debug");
-
-      requestBody.add("messages", messagesArray);
-      LogEgressGuard.applyChatCompletionRequestCaps(requestBody, "Player2APIService.completeConversation");
       // [DEBUG-INSTR:llm-latency-2026-06-13] PROBE 2a: log outgoing request message count and body char length (NOT tokens)
       if (LLMCompleter.DEBUG_LLM_PROBE) {
          int dbgMsgCount = messagesArray.size();
@@ -204,7 +226,8 @@ public class Player2APIService {
       return JoulesCache.isFreshPatronSnapshot(snapshot, thresholds);
    }
 
-   private Map<String, JsonElement> sendChatCompletionRequest(JsonObject requestBody, AiTaskClass taskClass) throws Exception {
+   /** Budget guard, tier routing and dispatch. Package-private so self-tests can stand in for the network. */
+   Map<String, JsonElement> sendChatCompletionRequest(JsonObject requestBody, AiTaskClass taskClass) throws Exception {
       Player2PayerResolution.ApiBillingContext billing = billingOrFallback();
       String billingKey = billing != null ? billing.billingKey() : null;
       Player2ServerRuntimeConfig config = Player2ServerConfigHolder.get();

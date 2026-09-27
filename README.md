@@ -39,8 +39,15 @@
 > | `endpoint.<name>.dropParams` | comma list of body fields to remove, e.g. `temperature,top_p` |
 > | `endpoint.<name>.param.<field>` | extra body field, e.g. `param.reasoning_effort=max`; `true`/`false`/integers are sent as JSON values, a value starting with `{` or `[` as that JSON structure (invalid JSON disables the profile) |
 > | `endpoint.<name>.callsPerHour` | chat completions per player per rolling hour on this profile; 0 = no cap here |
+> | `endpoint.<name>.maxRequestChars` | content characters one chat request may carry (4096 to 262144); 0 keeps the mod's 24576, sized for small-context models |
 >
-> The tuning keys (`tokenParam` to `callsPerHour`) also apply to the default profile under
+> A companion's decision turn asks for `response_format: {"type":"json_object"}`, so a JSON-mode
+> profile served by vLLM or OpenAI always answers with one JSON object. A request over its budget
+> loses its oldest history first; a status turn that still does not fit has its largest fields
+> (the command list first) shortened, never the player's words or the format reminder, and stays
+> valid JSON.
+>
+> The tuning keys (`tokenParam` to `maxRequestChars`) also apply to the default profile under
 > `endpoint.<defaultEndpoint>.*`; its URL, model and key stay the top-level keys. An extra profile
 > without a URL, model or key is disabled: its companions' calls fail before any network I/O, with
 > one error line at startup, and the other profiles keep working. In dedicated client-proxy mode a

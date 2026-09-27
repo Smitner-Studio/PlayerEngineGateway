@@ -41,7 +41,9 @@ public class MineCommand extends Command {
                         + " companion deterministically picks and acquires the right pickaxe tier if it"
                         + " lacks one, breaks the block(s), and collects the drops. Count is a number of"
                         + " BLOCKS to break (a block may drop multiple items or, with too-weak a tool,"
-                        + " none) and defaults to 1. Examples: `mine iron_ore 8`, `mine cobblestone 32`,"
+                        + " none) and defaults to 1. Name the block as it stands in the world, not the"
+                        + " item it drops: stone drops cobblestone and deepslate drops cobbled deepslate,"
+                        + " so for cobblestone mine stone. Examples: `mine iron_ore 8`, `mine stone 32`,"
                         + " `mine minecraft:deepslate`.",
                 new Arg<>(String.class, "block"),
                 new Arg<>(Integer.class, "count", 1, 1));
@@ -120,8 +122,30 @@ public class MineCommand extends Command {
                             + o.lostDrops() + " drop(s) fell into water/void and could not be collected");
             case FAILED ->
                     this.finishWithError("could not mine " + o.blockId() + ": "
-                            + readable(o.reasonToken()));
+                            + readable(o.reasonToken()) + dropSourceHint(o.blockId(), o.reasonToken()));
         }
+    }
+
+    /**
+     * Model-facing hint when the model named a drop instead of the block that yields it: natural
+     * stone drops cobblestone, so a search for cobblestone blocks finds only what someone placed.
+     * Empty unless the search came up empty for such a drop.
+     */
+    public static String dropSourceHint(String blockId, String reasonToken) {
+        if (blockId == null || !"no_target_block_in_range".equals(reasonToken)) {
+            return "";
+        }
+        String id = blockId.trim().toLowerCase(java.util.Locale.ROOT);
+        if (id.startsWith("minecraft:")) {
+            id = id.substring("minecraft:".length());
+        }
+        String source = switch (id) {
+            case "cobblestone" -> "stone";
+            case "cobbled_deepslate" -> "deepslate";
+            default -> null;
+        };
+        return source == null ? ""
+                : ". " + id.replace('_', ' ') + " is what " + source + " drops; mine " + source + " to get it";
     }
 
     /** Concise, human-readable player chat line for each terminal outcome. */

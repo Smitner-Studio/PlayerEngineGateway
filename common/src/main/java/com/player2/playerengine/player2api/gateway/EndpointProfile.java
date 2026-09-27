@@ -18,10 +18,13 @@ import java.util.Set;
  *                        tokens from this same budget, so the mod-wide 2048 cap would starve them.
  * @param jsonMode        false strips {@code response_format} for targets that reject it
  * @param callsPerHour    chat completions per billing key per rolling hour; 0 = no cap here
+ * @param maxRequestChars content characters one chat request may carry; 0 = the mod-wide
+ *                        {@code LogEgressGuard} budget, sized for Player2's small-context models
  */
 public record EndpointProfile(String name, String baseUrl, String model, String apiKey, String keySource,
                               String tokenParam, int maxOutputTokens, boolean jsonMode, Set<String> dropParams,
-                              JsonObject extraParams, int callsPerHour, String problem) {
+                              JsonObject extraParams, int callsPerHour, int maxRequestChars,
+                              String problem) {
 
     public static final String MAX_TOKENS = "max_tokens";
     public static final String MAX_COMPLETION_TOKENS = "max_completion_tokens";
@@ -31,7 +34,7 @@ public record EndpointProfile(String name, String baseUrl, String model, String 
     }
 
     static EndpointProfile unusable(String name, String problem) {
-        return new EndpointProfile(name, "", "", "", "", MAX_TOKENS, 0, true, Set.of(), new JsonObject(), 0, problem);
+        return new EndpointProfile(name, "", "", "", "", MAX_TOKENS, 0, true, Set.of(), new JsonObject(), 0, 0, problem);
     }
 
     /** Chat-completion body for this profile. Never mutates {@code body}. */
@@ -65,8 +68,8 @@ public record EndpointProfile(String name, String baseUrl, String model, String 
     /** Log form. Never includes the key. */
     String describe() {
         return String.format("endpoint '%s': baseUrl=%s model=%s apiKeySet=%s keySource=%s tokenParam=%s maxOutputTokens=%d"
-                        + " jsonMode=%s dropParams=%s params=%s callsPerHour=%d%s",
+                        + " jsonMode=%s dropParams=%s params=%s callsPerHour=%d maxRequestChars=%d%s",
                 name, baseUrl, model, !apiKey.isEmpty(), keySource, tokenParam, maxOutputTokens, jsonMode, dropParams,
-                extraParams, callsPerHour, problem == null ? "" : " DISABLED: " + problem);
+                extraParams, callsPerHour, maxRequestChars, problem == null ? "" : " DISABLED: " + problem);
     }
 }

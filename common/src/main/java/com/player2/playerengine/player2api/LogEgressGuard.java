@@ -3,11 +3,13 @@ package com.player2.playerengine.player2api;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import com.player2.playerengine.player2api.config.Player2ServerConfigHolder;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -23,6 +25,14 @@ public final class LogEgressGuard {
    private static final int MIN_PARTIAL_MESSAGE_CHARS = 1024;
    private static final int OMISSION_NOTICE_RESERVE_CHARS = 160;
    private static final int TRUNCATION_MARKER_RESERVE_CHARS = 256;
+   /**
+    * Fields of the per-turn status object ({@code ConversationHistory.copyThenWrapLatestWithStatus})
+    * that are never trimmed: what the player said and the output-format reminder.
+    */
+   static final Set<String> PROTECTED_STATUS_FIELDS = Set.of("userMessage", "reminders");
+   private static final int FIELD_MARKER_RESERVE_CHARS = 64;
+   private static final int MIN_TRIMMABLE_FIELD_CHARS = 96;
+   private static final int MAX_FIELD_TRIM_PASSES = 16;
 
    private LogEgressGuard() {
    }
@@ -30,6 +40,10 @@ public final class LogEgressGuard {
    public static String capForModel(String content, String role) {
       if (content == null || content.length() <= MAX_MODEL_MESSAGE_CHARS) {
          return content;
+      }
+      String trimmed = trimStatusFields(content, MAX_MODEL_MESSAGE_CHARS, role);
+      if (trimmed != null) {
+         return trimmed;
       }
       int cut = Math.max(0, MAX_MODEL_MESSAGE_CHARS - TRUNCATION_MARKER_RESERVE_CHARS);
       if (cut > 0 && java.lang.Character.isHighSurrogate(content.charAt(cut - 1))) {
@@ -75,6 +89,16 @@ public final class LogEgressGuard {
 
    /** Keeps the system prompt and a contiguous newest suffix within message/content budgets. */
    public static JsonArray cappedMessages(List<JsonObject> messages, String surface) {
+      return cappedMessages(messages, surface, 0);
+   }
+
+   /**
+    * As {@link #cappedMessages(List, String)} with a content-character budget chosen by the caller
+    * for the endpoint that will serve the request; {@code contentCharsBudget <= 0} means
+    * {@link #MAX_CHAT_COMPLETION_CONTENT_CHARS}.
+    */
+   public static JsonArray cappedMessages(List<JsonObject> messages, String surface, int contentCharsBudget) {
+      final int budget = contentCharsBudget > 0 ? contentCharsBudget : MAX_CHAT_COMPLETION_CONTENT_CHARS;
       JsonArray result = new JsonArray();
       if (messages == null || messages.isEmpty()) {
          return result;
@@ -103,7 +127,7 @@ public final class LogEgressGuard {
          cappedSource.add(capped);
          sourceChars += contentChars(capped);
       }
-      if (sourceChars <= MAX_CHAT_COMPLETION_CONTENT_CHARS && omittedByCount == 0) {
+      if (sourceChars <= budget && omittedByCount == 0) {
          for (JsonObject message : cappedSource) {
             result.add(message);
          }
@@ -117,8 +141,8 @@ public final class LogEgressGuard {
          JsonObject system = first;
          int systemChars = contentChars(system);
          int maxSystemChars = cappedSource.size() > 1
-               ? MAX_CHAT_COMPLETION_CONTENT_CHARS - MIN_PARTIAL_MESSAGE_CHARS - OMISSION_NOTICE_RESERVE_CHARS
-               : MAX_CHAT_COMPLETION_CONTENT_CHARS;
+               ? budget - MIN_PARTIAL_MESSAGE_CHARS - OMISSION_NOTICE_RESERVE_CHARS
+               : budget;
          if (systemChars > maxSystemChars) {
             system = copyWithCappedContent(system, maxSystemChars, "system");
             systemChars = contentChars(system);
@@ -130,7 +154,7 @@ public final class LogEgressGuard {
 
       List<JsonObject> suffix = new ArrayList<>();
       int omitted = omittedByCount;
-      int remaining = Math.max(0, MAX_CHAT_COMPLETION_CONTENT_CHARS - used - OMISSION_NOTICE_RESERVE_CHARS);
+      int remaining = Math.max(0, budget - used - OMISSION_NOTICE_RESERVE_CHARS);
       for (int i = cappedSource.size() - 1; i >= start; i--) {
          JsonObject capped = cappedSource.get(i);
          int chars = contentChars(capped);
@@ -150,7 +174,7 @@ public final class LogEgressGuard {
       if (omitted > 0) {
          LOGGER.warn(
                "[LogEgressGuard] Chat-completion request capped: surface={} sourceMessages={} omittedMessages={} contentCharsCap={}",
-               surface, messages.size(), omitted, MAX_CHAT_COMPLETION_CONTENT_CHARS);
+               surface, messages.size(), omitted, budget);
          JsonObject notice = new JsonObject();
          notice.addProperty("role", "system");
          notice.addProperty("content", "Context notice: " + omitted
@@ -230,23 +254,95 @@ public final class LogEgressGuard {
       if (content.length() <= maxChars) {
          return msg;
       }
-      int cut = Math.max(0, maxChars - TRUNCATION_MARKER_RESERVE_CHARS);
-      if (cut > 0 && java.lang.Character.isHighSurrogate(content.charAt(cut - 1))) {
-         cut--;
+      String capped = trimStatusFields(content, maxChars, role);
+      if (capped == null) {
+         int cut = Math.max(0, maxChars - TRUNCATION_MARKER_RESERVE_CHARS);
+         if (cut > 0 && java.lang.Character.isHighSurrogate(content.charAt(cut - 1))) {
+            cut--;
+         }
+         int overflow = content.length() - cut;
+         capped = content.substring(0, cut) + "\n...[TRUNCATED " + overflow + " chars by LogEgressGuard request cap]";
+         LOGGER.warn(
+               "[LogEgressGuard] Oversized model-facing message capped by request budget: role={} originalChars={} cap={} truncatedChars={}",
+               role, content.length(), maxChars, overflow);
       }
-      int overflow = content.length() - cut;
       JsonObject copy = new JsonObject();
       for (Map.Entry<String, JsonElement> entry : msg.entrySet()) {
          if ("content".equals(entry.getKey())) {
-            copy.addProperty("content", content.substring(0, cut)
-                  + "\n...[TRUNCATED " + overflow + " chars by LogEgressGuard request cap]");
+            copy.addProperty("content", capped);
          } else {
             copy.add(entry.getKey(), entry.getValue());
          }
       }
-      LOGGER.warn(
-            "[LogEgressGuard] Oversized model-facing message capped by request budget: role={} originalChars={} cap={} truncatedChars={}",
-            role, content.length(), maxChars, overflow);
       return copy;
+   }
+
+   /**
+    * Fits a per-turn status object (a flat JSON object of string fields) into {@code maxChars} by
+    * shortening its largest fields, never {@link #PROTECTED_STATUS_FIELDS}. A head cut of the
+    * serialized object would instead drop whichever fields serialize last (the command list, the
+    * character prompt) and leave the model an unterminated JSON string to imitate.
+    *
+    * @return the trimmed object, still valid JSON; {@code null} when {@code content} is not such an
+    *         object or cannot be fitted this way, so the caller falls back to a head cut
+    */
+   static String trimStatusFields(String content, int maxChars, String role) {
+      if (content == null || content.isEmpty() || content.charAt(0) != '{') {
+         return null;
+      }
+      JsonObject obj;
+      try {
+         JsonElement parsed = JsonParser.parseString(content);
+         if (!parsed.isJsonObject()) {
+            return null;
+         }
+         obj = parsed.getAsJsonObject();
+      } catch (RuntimeException e) {
+         return null;
+      }
+      for (Map.Entry<String, JsonElement> entry : obj.entrySet()) {
+         JsonElement v = entry.getValue();
+         if (!v.isJsonPrimitive() || !v.getAsJsonPrimitive().isString()) {
+            return null;
+         }
+      }
+      String out = obj.toString();
+      List<String> trimmed = new ArrayList<>();
+      for (int pass = 0; out.length() > maxChars && pass < MAX_FIELD_TRIM_PASSES; pass++) {
+         String largest = null;
+         int largestChars = MIN_TRIMMABLE_FIELD_CHARS;
+         for (Map.Entry<String, JsonElement> entry : obj.entrySet()) {
+            int chars = entry.getValue().getAsString().length();
+            if (!PROTECTED_STATUS_FIELDS.contains(entry.getKey()) && chars > largestChars) {
+               largest = entry.getKey();
+               largestChars = chars;
+            }
+         }
+         if (largest == null) {
+            break;
+         }
+         String value = obj.get(largest).getAsString();
+         // Serialized overflow bounds the raw cut from above: every raw char serializes to >= 1 char.
+         int keep = Math.max(0, value.length() - (out.length() - maxChars) - FIELD_MARKER_RESERVE_CHARS);
+         int newline = value.lastIndexOf('\n', keep);
+         if (newline > keep - keep / 5) {
+            keep = newline;
+         }
+         if (keep > 0 && java.lang.Character.isHighSurrogate(value.charAt(keep - 1))) {
+            keep--;
+         }
+         int dropped = value.length() - keep;
+         obj.addProperty(largest, value.substring(0, keep) + " ...[trimmed " + dropped + " chars to fit the request]");
+         trimmed.add(largest + "-" + dropped);
+         out = obj.toString();
+      }
+      if (out.length() > maxChars) {
+         return null;
+      }
+      LOGGER.warn(
+            "[LogEgressGuard] Oversized model-facing status trimmed by field: role={} originalChars={} cap={} fields={}",
+            role, content.length(), maxChars, trimmed.size());
+      LOGGER.debug("[LogEgressGuard] status fields trimmed (field-droppedChars): {}", trimmed);
+      return out;
    }
 }

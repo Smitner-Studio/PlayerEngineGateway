@@ -63,6 +63,11 @@ public final class GatewaySelfTest {
                 GatewayLanesSelfTest::oneLaneNeverOverlaps,
                 GatewayLanesSelfTest::hourlyCapHoldsAcrossLanes,
                 GatewayLanesSelfTest::lanesAreLazyAndCleanedUp,
+                GatewayJsonSelfTest::jsonObjectOnlyForJsonModeProfiles,
+                GatewayJsonSelfTest::proseReplyIsASilentRetry,
+                GatewayJsonSelfTest::oversizedTurnKeepsInstructionsAndStaysJson,
+                GatewayJsonSelfTest::largeContextProfileSendsWholeTurn,
+                ignored -> com.player2.playerengine.player2api.LogEgressGuardSelfTest.main(new String[0]),
         };
         try {
             for (Check check : checks) {
