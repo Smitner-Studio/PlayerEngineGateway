@@ -18,6 +18,31 @@
 > | `embeddingModel` | `PLAYERENGINE_GATEWAY_EMBEDDING_MODEL` | empty disables embeddings (memory falls back to lexical) |
 > | `patronTier` | `PLAYERENGINE_GATEWAY_PATRON_TIER` | non-empty unlocks patron-only features (more LLM calls) |
 > | `charactersFile` | `PLAYERENGINE_GATEWAY_CHARACTERS` | companion list in `config/`, same shape as Player2's `/v1/selected_characters` |
+> | `defaultEndpoint` | — | name of the endpoint profile the keys above form (default `default`) |
+>
+> **Endpoint profiles.** A companion can use its own endpoint: give its entry in the characters
+> file `"endpoint": "<name>"` and declare the profile with `endpoint.<name>.*` keys. Its chat
+> completions then go only there, with only its key. Calls from other companions, and calls with no
+> companion (memory extraction, mod-intelligence enrichment, embeddings), use the default profile.
+>
+> | Key | Meaning |
+> |---|---|
+> | `endpoint.<name>.baseUrl` | endpoint root, e.g. `https://api.openai.com/v1` (extra profiles only) |
+> | `endpoint.<name>.model` | model id (extra profiles only) |
+> | `endpoint.<name>.apiKeyEnv` | environment variable that holds the key (extra profiles only) |
+> | `endpoint.<name>.apiKeyFile` | used when that variable is unset: first line of this file in `config/` (default `playerengine-gateway-<name>.key`) |
+> | `endpoint.<name>.tokenParam` | `max_tokens` (default) or `max_completion_tokens`, the field the output limit is sent in |
+> | `endpoint.<name>.maxOutputTokens` | replaces the mod's output limit (reasoning models spend reasoning tokens from it); 0 keeps it |
+> | `endpoint.<name>.jsonMode` | `false` strips `response_format` (default `true`) |
+> | `endpoint.<name>.dropParams` | comma list of body fields to remove, e.g. `temperature,top_p` |
+> | `endpoint.<name>.param.<field>` | extra body field, e.g. `param.reasoning_effort=max`; `true`/`false`/integers are sent as JSON values |
+> | `endpoint.<name>.callsPerHour` | chat completions per player per rolling hour on this profile; 0 = no cap here |
+>
+> The tuning keys (`tokenParam` to `callsPerHour`) also apply to the default profile under
+> `endpoint.<defaultEndpoint>.*`; its URL, model and key stay the top-level keys. An extra profile
+> without a URL, model or key is disabled: its companions' calls fail before any network I/O, with
+> one error line at startup, and the other profiles keep working. In dedicated client-proxy mode a
+> companion on a non-default profile is refused, because the client's own config would serve it.
 >
 > Build with `task build` (jar in `neoforge/build/libs/`); check the routing with `task test`.
 > Both need a JDK 21 (`JDK=<path>`, default the Temurin 21 install).

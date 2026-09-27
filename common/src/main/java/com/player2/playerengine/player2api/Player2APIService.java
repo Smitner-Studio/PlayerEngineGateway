@@ -9,6 +9,7 @@ import com.player2.playerengine.player2api.config.BudgetThresholds;
 import com.player2.playerengine.player2api.config.Player2PayerMode;
 import com.player2.playerengine.player2api.config.Player2ServerConfigHolder;
 import com.player2.playerengine.player2api.config.Player2ServerRuntimeConfig;
+import com.player2.playerengine.player2api.gateway.GatewayCallContext;
 import com.player2.playerengine.player2api.manager.HeartbeatManager;
 import com.player2.playerengine.player2api.network.TtsClientPreferenceStore;
 import com.player2.playerengine.player2api.utils.Player2HTTPUtils;
@@ -71,7 +72,13 @@ public class Player2APIService {
    }
 
    private Map<String, JsonElement> api(String method, String endpoint, JsonObject body) throws Exception {
-      return Player2ApiDispatcher.route(controller, clientId, method, endpoint, body, billingOrFallback());
+      Player2PayerResolution.ApiBillingContext billing = billingOrFallback();
+      // The gateway routes a companion's calls to its character's endpoint profile.
+      AIPersistantData data = controller.getAIPersistantData();
+      Character character = data != null ? data.getCharacter() : null;
+      return GatewayCallContext.call(character != null ? character.id() : null,
+            billing != null ? billing.billingKey() : null,
+            () -> Player2ApiDispatcher.route(controller, clientId, method, endpoint, body, billing));
    }
 
    /**

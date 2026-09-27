@@ -4,6 +4,7 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.player2.playerengine.PlayerEngineController;
 import com.player2.playerengine.player2api.config.Player2ServerConfigHolder;
+import com.player2.playerengine.player2api.gateway.GatewayRouter;
 import com.player2.playerengine.player2api.utils.Player2HTTPUtils;
 import net.minecraft.server.level.ServerPlayer;
 
@@ -27,6 +28,7 @@ public final class Player2ApiDispatcher {
         }
 
         if (cfg.isDedicatedClientProxy()) {
+            GatewayRouter.checkProxyAllowed();
             if (billing.onlinePayer() == null) {
                 throw new IllegalStateException(
                         "Dedicated client-proxy mode requires the billing player to be online.");

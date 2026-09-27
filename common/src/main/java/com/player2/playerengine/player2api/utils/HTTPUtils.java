@@ -5,6 +5,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
 import com.player2.playerengine.player2api.gateway.GatewayConfig;
+import com.player2.playerengine.player2api.gateway.EndpointProfile;
 import com.player2.playerengine.player2api.gateway.GatewayRouter;
 import com.player2.playerengine.player2api.LLMCompleter; // [DEBUG-INSTR:llm-latency-2026-06-13] import for debug flag
 import org.jetbrains.annotations.Nullable;
@@ -72,9 +73,10 @@ public class HTTPUtils {
             if (local != null) {
                 return local;
             }
-            baseUrl = GatewayConfig.get().baseUrl();
-            requestBody = GatewayRouter.prepareBody(endpoint, requestBody);
-            extraHeaders = GatewayRouter.headers();
+            EndpointProfile profile = GatewayRouter.forward(endpoint);
+            baseUrl = profile.baseUrl();
+            requestBody = GatewayRouter.prepareBody(profile, endpoint, requestBody);
+            extraHeaders = GatewayRouter.headers(profile);
         }
         URL url = new URI(baseUrl + endpoint).toURL();
         HttpURLConnection connection = (HttpURLConnection) url.openConnection();
@@ -148,9 +150,10 @@ public class HTTPUtils {
                 }
                 return localMap;
             }
-            baseUrl = GatewayConfig.get().baseUrl();
-            requestBody = GatewayRouter.prepareBody(endpoint, requestBody);
-            extraHeaders = GatewayRouter.headers();
+            EndpointProfile profile = GatewayRouter.forward(endpoint);
+            baseUrl = profile.baseUrl();
+            requestBody = GatewayRouter.prepareBody(profile, endpoint, requestBody);
+            extraHeaders = GatewayRouter.headers(profile);
         }
         URL url = new URI(baseUrl + endpoint).toURL();
         HttpURLConnection connection = (HttpURLConnection) url.openConnection();

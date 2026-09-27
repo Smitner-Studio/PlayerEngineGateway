@@ -30,24 +30,43 @@ public final class GatewaySelfTest {
     }
 
     public static void main(String[] args) throws Exception {
-        runAll();
-        System.out.println("gateway self-test: 8 checks passed");
+        int checks = runAll();
+        System.out.println("gateway self-test: " + checks + " checks passed");
     }
 
-    public static void runAll() throws Exception {
+    private interface Check {
+        void run(Path dir) throws Exception;
+    }
+
+    public static int runAll() throws Exception {
         Path dir = Files.createTempDirectory("gateway-selftest");
+        Check[] checks = {
+                GatewaySelfTest::baseUrlDropsV1Suffix,
+                GatewaySelfTest::chatIsForwardedWithKeyAndModel,
+                GatewaySelfTest::player2OnlyEndpointsStayLocal,
+                GatewaySelfTest::embeddingsRefusedWithoutModel,
+                GatewaySelfTest::charactersDefaultAndFile,
+                GatewaySelfTest::prepareBodyDoesNotMutateCaller,
+                GatewaySelfTest::disabledConfigLeavesUpstreamBehaviour,
+                GatewaySelfTest::keyFileUsedOnlyWithoutDirectKey,
+                GatewayProfilesSelfTest::eachCharacterReachesItsOwnEndpoint,
+                GatewayProfilesSelfTest::missingProfileKeyFailsClosedWithoutNetwork,
+                GatewayProfilesSelfTest::hourlyCapIsPerProfileAndPerBillingKey,
+                GatewayProfilesSelfTest::ambiguousCharacterIdIsRefused,
+                GatewayProfilesSelfTest::clientProxyRefusesNonDefaultProfile,
+                GatewayProfilesSelfTest::profileConfigParsing,
+                GatewayProfilesSelfTest::contextRestoresOuterFrame,
+        };
         try {
-            baseUrlDropsV1Suffix(dir);
-            chatIsForwardedWithKeyAndModel(dir);
-            player2OnlyEndpointsStayLocal(dir);
-            embeddingsRefusedWithoutModel(dir);
-            charactersDefaultAndFile(dir);
-            prepareBodyDoesNotMutateCaller(dir);
-            disabledConfigLeavesUpstreamBehaviour(dir);
-            keyFileUsedOnlyWithoutDirectKey(dir);
+            for (Check check : checks) {
+                GatewayRouter.resetCallCounts();
+                check.run(dir);
+            }
         } finally {
             GatewayConfig.install(null);
+            GatewayRouter.resetCallCounts();
         }
+        return checks.length;
     }
 
     private static GatewayConfig config(Path dir, String... kv) {
@@ -164,7 +183,7 @@ public final class GatewaySelfTest {
         config(dir);
         JsonObject original = new JsonObject();
         original.addProperty("model", "caller-choice");
-        JsonObject prepared = GatewayRouter.prepareBody("/v1/chat/completions", original);
+        JsonObject prepared = GatewayRouter.prepareBody(GatewayConfig.get().defaultProfile(), "/v1/chat/completions", original);
         require("selftest-model".equals(prepared.get("model").getAsString()), "configured model wins");
         require("caller-choice".equals(original.get("model").getAsString()), "caller body must be untouched");
     }

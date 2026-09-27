@@ -25,14 +25,23 @@ endpoints (login, heartbeat, credits, AI profiles, characters, speech-to-text, c
 schematic search) are answered inside the process. Text-to-speech is disabled. When the file is
 absent or `enabled=false`, behaviour is identical to upstream.
 
+With endpoint profiles (`endpoint.<name>.*`), a companion whose character names `"endpoint"`
+sends its chat completions to that profile's URL with that profile's key and model instead; every
+other call keeps the default endpoint. A profile missing its key is refused before any request.
+
 Files changed from upstream:
 
 | File | Change |
 |---|---|
-| `common/src/main/java/com/player2/playerengine/player2api/gateway/GatewayConfig.java` | new: reads the gateway config file, an optional key file and `PLAYERENGINE_GATEWAY_*` environment overrides |
-| `common/src/main/java/com/player2/playerengine/player2api/gateway/GatewayRouter.java` | new: splits forwarded OpenAI endpoints from locally answered Player2 endpoints |
+| `common/src/main/java/com/player2/playerengine/player2api/gateway/GatewayConfig.java` | new: reads the gateway config file, an optional key file, `PLAYERENGINE_GATEWAY_*` environment overrides and endpoint profiles |
+| `common/src/main/java/com/player2/playerengine/player2api/gateway/EndpointProfile.java` | new: one endpoint profile and its request-body rewrite |
+| `common/src/main/java/com/player2/playerengine/player2api/gateway/GatewayCallContext.java` | new: the calling companion's character and billing key for the current thread |
+| `common/src/main/java/com/player2/playerengine/player2api/gateway/GatewayRouter.java` | new: splits forwarded OpenAI endpoints from locally answered Player2 endpoints; picks the endpoint profile and enforces its hourly cap |
 | `common/src/main/java/com/player2/playerengine/player2api/gateway/GatewaySelfTest.java` | new: self-test of the routing through the production HTTP path |
+| `common/src/main/java/com/player2/playerengine/player2api/gateway/GatewayProfilesSelfTest.java` | new: self-test of per-character endpoint profiles against two loopback gateways |
 | `common/src/main/java/com/player2/playerengine/player2api/utils/HTTPUtils.java` | gateway takeover in `sendRequest` and `sendRequestElement` |
+| `common/src/main/java/com/player2/playerengine/player2api/Player2APIService.java` | companion calls carry their character and billing key to the gateway router |
+| `common/src/main/java/com/player2/playerengine/player2api/Player2ApiDispatcher.java` | client-proxy relay refused for a companion on a non-default endpoint profile |
 | `common/src/main/java/com/player2/playerengine/player2api/auth/AuthenticationManager.java` | no Player2 login when the gateway is enabled |
 | `common/src/main/java/com/player2/playerengine/player2api/auth/TokenStorage.java` | placeholder token instead of stored Player2 tokens when the gateway is enabled |
 | `common/src/main/java/com/player2/playerengine/player2api/Player2PayerResolution.java` | server-wide work is billable with no player online when the gateway is enabled |

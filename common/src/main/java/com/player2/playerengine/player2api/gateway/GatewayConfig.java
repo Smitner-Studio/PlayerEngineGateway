@@ -1,5 +1,7 @@
 package com.player2.playerengine.player2api.gateway;
 
+import com.google.gson.JsonObject;
+import com.google.gson.JsonPrimitive;
 import com.player2.playerengine.automaton.utils.DirUtil;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -9,7 +11,16 @@ import java.io.Reader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.Map;
 import java.util.Properties;
+import java.util.Set;
+import java.util.TreeSet;
+import java.util.function.UnaryOperator;
+import java.util.regex.Pattern;
 
 /**
  * Operator-supplied OpenAI-compatible gateway that replaces the Player2 cloud and desktop app.
@@ -23,6 +34,15 @@ import java.util.Properties;
  *
  * <p>The API key is only ever attached to requests addressed to {@link #baseUrl()}; it is never
  * persisted to the Player2 token store and never sent to a Player2 host.
+ *
+ * <p>Endpoint profiles: the keys above form the default profile, named by {@code defaultEndpoint}
+ * (default {@code default}). Further profiles are declared as {@code endpoint.<name>.baseUrl},
+ * {@code .model}, {@code .apiKeyEnv} (name of the environment variable holding its key) and
+ * {@code .apiKeyFile} (default {@code playerengine-gateway-<name>.key} beside this file). Any profile,
+ * the default included, takes the tuning keys {@code .tokenParam}, {@code .maxOutputTokens},
+ * {@code .jsonMode}, {@code .dropParams}, {@code .callsPerHour} and {@code .param.<field>}. A character
+ * in the characters file selects a profile with {@code "endpoint": "<name>"}. An extra profile never
+ * falls back to the default profile's URL or key: missing either disables it.
  */
 public final class GatewayConfig {
     private static final Logger LOGGER = LogManager.getLogger();
@@ -38,8 +58,19 @@ public final class GatewayConfig {
     /** Synthetic billing identity used when no player is online to "pay" for a call. */
     public static final String SYNTHETIC_USER = "__gateway__";
 
+    private static final String PROFILE_PREFIX = "endpoint.";
+    private static final Pattern PROFILE_NAME = Pattern.compile("[a-z0-9][a-z0-9_-]{0,31}");
+    private static final Pattern INTEGER = Pattern.compile("-?\\d{1,9}");
+    private static final Set<String> CORE_KEYS = Set.of("baseUrl", "model", "apiKeyEnv", "apiKeyFile");
+    private static final Set<String> TUNING_KEYS = Set.of("tokenParam", "maxOutputTokens", "jsonMode", "dropParams",
+            "callsPerHour");
+    /** Body fields a {@code param.*} entry may not set, because a dedicated key or the caller owns them. */
+    private static final Set<String> RESERVED_PARAMS = Set.of("model", "messages", EndpointProfile.MAX_TOKENS,
+            EndpointProfile.MAX_COMPLETION_TOKENS);
+
     private static volatile GatewayConfig instance;
 
+    private final UnaryOperator<String> env;
     private final boolean enabled;
     private final String baseUrl;
     private final String apiKey;
@@ -48,8 +79,16 @@ public final class GatewayConfig {
     private final String patronTier;
     private final String charactersFile;
     private final Path configDir;
+    private final String defaultEndpoint;
+    private final Map<String, EndpointProfile> profiles;
 
     GatewayConfig(Properties p, Path configDir) {
+        this(p, configDir, System::getenv);
+    }
+
+    /** {@code env} stands in for {@link System#getenv(String)} so self-tests can supply variables. */
+    GatewayConfig(Properties p, Path configDir, UnaryOperator<String> env) {
+        this.env = env;
         this.configDir = configDir;
         this.enabled = Boolean.parseBoolean(value(p, "enabled", "PLAYERENGINE_GATEWAY_ENABLED", "false"));
         this.baseUrl = stripTrailingSlashAndV1(value(p, "baseUrl", "PLAYERENGINE_GATEWAY_URL", ""));
@@ -58,6 +97,8 @@ public final class GatewayConfig {
         this.embeddingModel = value(p, "embeddingModel", "PLAYERENGINE_GATEWAY_EMBEDDING_MODEL", "");
         this.patronTier = value(p, "patronTier", "PLAYERENGINE_GATEWAY_PATRON_TIER", "");
         this.charactersFile = value(p, "charactersFile", "PLAYERENGINE_GATEWAY_CHARACTERS", "playerengine-gateway-characters.json");
+        this.defaultEndpoint = p.getProperty("defaultEndpoint", "default").trim();
+        this.profiles = Collections.unmodifiableMap(buildProfiles(p));
     }
 
     public static GatewayConfig get() {
@@ -95,6 +136,16 @@ public final class GatewayConfig {
         }
         LOGGER.info("Gateway config: enabled={} baseUrl={} model={} embeddingModel={} apiKeySet={}",
                 cfg.enabled, cfg.baseUrl, cfg.model, cfg.embeddingModel, !cfg.apiKey.isEmpty());
+        if (cfg.enabled) {
+            for (EndpointProfile profile : cfg.profiles.values()) {
+                if (profile.usable()) {
+                    LOGGER.info("Gateway {}", profile.describe());
+                } else {
+                    LOGGER.error("Gateway {}. Companions bound to it will not answer; other endpoints are unaffected.",
+                            profile.describe());
+                }
+            }
+        }
         return cfg;
     }
 
@@ -105,26 +156,149 @@ public final class GatewayConfig {
         }
     }
 
-    private static String resolveApiKey(Properties p, Path configDir) {
+    private String resolveApiKey(Properties p, Path configDir) {
         String direct = value(p, "apiKey", "PLAYERENGINE_GATEWAY_KEY", "");
         if (!direct.isEmpty() || configDir == null) {
             return direct;
         }
-        Path keyFile = configDir.resolve(value(p, "apiKeyFile", "PLAYERENGINE_GATEWAY_KEY_FILE", "playerengine-gateway.key"));
+        return readKeyFile(configDir.resolve(value(p, "apiKeyFile", "PLAYERENGINE_GATEWAY_KEY_FILE", "playerengine-gateway.key")));
+    }
+
+    /** First non-blank line; a UTF-8 byte-order mark (Windows editors add one) is not part of the key. */
+    private static String readKeyFile(Path keyFile) {
         if (!Files.isRegularFile(keyFile)) {
             return "";
         }
         try {
             return Files.readAllLines(keyFile, StandardCharsets.UTF_8).stream()
-                    .map(String::trim).filter(line -> !line.isEmpty()).findFirst().orElse("");
+                    .map(line -> line.replace("﻿", "").trim())
+                    .filter(line -> !line.isEmpty()).findFirst().orElse("");
         } catch (IOException e) {
             LOGGER.error("Gateway key file {} unreadable: {}", keyFile, e.getMessage());
             return "";
         }
     }
 
-    private static String value(Properties p, String key, String env, String fallback) {
-        String fromEnv = System.getenv(env);
+    private Map<String, EndpointProfile> buildProfiles(Properties p) {
+        Set<String> names = new TreeSet<>();
+        for (String key : p.stringPropertyNames()) {
+            if (key.startsWith(PROFILE_PREFIX)) {
+                int dot = key.indexOf('.', PROFILE_PREFIX.length());
+                names.add(dot < 0 ? key.substring(PROFILE_PREFIX.length()) : key.substring(PROFILE_PREFIX.length(), dot));
+            }
+        }
+        Map<String, EndpointProfile> out = new LinkedHashMap<>();
+        out.put(defaultEndpoint, profile(p, defaultEndpoint, true));
+        for (String name : names) {
+            if (name.equals(defaultEndpoint)) {
+                continue;
+            }
+            if (!PROFILE_NAME.matcher(name).matches()) {
+                LOGGER.error("Gateway endpoint name '{}' is invalid (lower-case letters, digits, '-', '_'); ignored", name);
+                continue;
+            }
+            out.put(name, profile(p, name, false));
+        }
+        return out;
+    }
+
+    private EndpointProfile profile(Properties p, String name, boolean isDefault) {
+        String prefix = PROFILE_PREFIX + name + ".";
+        for (String key : p.stringPropertyNames()) {
+            if (!key.startsWith(prefix)) {
+                continue;
+            }
+            String field = key.substring(prefix.length());
+            if (!TUNING_KEYS.contains(field) && !field.startsWith("param.") && !CORE_KEYS.contains(field)) {
+                LOGGER.warn("Gateway property {} is not recognised; ignored", key);
+            } else if (isDefault && CORE_KEYS.contains(field)) {
+                LOGGER.warn("Gateway property {} ignored: the default endpoint takes its URL, model and key from the top-level keys", key);
+            }
+        }
+
+        String url;
+        String mdl;
+        String key;
+        String keySource;
+        if (isDefault) {
+            url = baseUrl;
+            mdl = model;
+            key = apiKey;
+            keySource = "env PLAYERENGINE_GATEWAY_KEY, apiKey, apiKeyFile";
+        } else {
+            url = stripTrailingSlashAndV1(p.getProperty(prefix + "baseUrl", "").trim());
+            mdl = p.getProperty(prefix + "model", "").trim();
+            String envName = p.getProperty(prefix + "apiKeyEnv", "").trim();
+            String fileName = p.getProperty(prefix + "apiKeyFile", "playerengine-gateway-" + name + ".key").trim();
+            String fromEnv = envName.isEmpty() ? null : env.apply(envName);
+            if (fromEnv != null && !fromEnv.isBlank()) {
+                key = fromEnv.trim();
+            } else {
+                key = configDir == null ? "" : readKeyFile(configDir.resolve(fileName));
+            }
+            keySource = (envName.isEmpty() ? "" : "env " + envName + ", ") + "file " + fileName;
+        }
+
+        String problem = null;
+        String tokenParam = p.getProperty(prefix + "tokenParam", EndpointProfile.MAX_TOKENS).trim();
+        if (!tokenParam.equals(EndpointProfile.MAX_TOKENS) && !tokenParam.equals(EndpointProfile.MAX_COMPLETION_TOKENS)) {
+            problem = "tokenParam must be max_tokens or max_completion_tokens";
+            tokenParam = EndpointProfile.MAX_TOKENS;
+        }
+        int maxOutputTokens = intProperty(p, prefix + "maxOutputTokens");
+        int callsPerHour = intProperty(p, prefix + "callsPerHour");
+        boolean jsonMode = Boolean.parseBoolean(p.getProperty(prefix + "jsonMode", "true").trim());
+        Set<String> drop = new LinkedHashSet<>();
+        Arrays.stream(p.getProperty(prefix + "dropParams", "").split(","))
+                .map(String::trim).filter(s -> !s.isEmpty()).forEach(drop::add);
+        JsonObject params = new JsonObject();
+        for (String k : new TreeSet<>(p.stringPropertyNames())) {
+            if (k.startsWith(prefix + "param.")) {
+                String field = k.substring((prefix + "param.").length());
+                if (RESERVED_PARAMS.contains(field)) {
+                    problem = k + " is not allowed; the caller or a dedicated key sets " + field;
+                } else {
+                    params.add(field, literal(p.getProperty(k).trim()));
+                }
+            }
+        }
+
+        if (!isDefault) {
+            if (url.isEmpty()) {
+                problem = "no baseUrl";
+            } else if (mdl.isEmpty()) {
+                problem = "no model";
+            } else if (key.isEmpty()) {
+                problem = "no API key (" + keySource + ")";
+            }
+        }
+        return new EndpointProfile(name, url, mdl, key, keySource, tokenParam, maxOutputTokens, jsonMode,
+                Collections.unmodifiableSet(drop), params, callsPerHour, problem);
+    }
+
+    private static int intProperty(Properties p, String key) {
+        String raw = p.getProperty(key, "0").trim();
+        try {
+            return Math.max(0, Integer.parseInt(raw));
+        } catch (NumberFormatException e) {
+            LOGGER.error("Gateway property {}={} is not an integer; using 0", key, raw);
+            return 0;
+        }
+    }
+
+    /** {@code param.*} values are sent as JSON: true/false as booleans, integers as numbers, else strings. */
+    private static JsonPrimitive literal(String raw) {
+        if (raw.equals("true") || raw.equals("false")) {
+            return new JsonPrimitive(Boolean.parseBoolean(raw));
+        }
+        if (INTEGER.matcher(raw).matches()) {
+            return new JsonPrimitive(Integer.parseInt(raw));
+        }
+        return new JsonPrimitive(raw);
+    }
+
+    private String value(Properties p, String key, String envName, String fallback) {
+        String fromEnv = env.apply(envName);
         if (fromEnv != null && !fromEnv.isBlank()) {
             return fromEnv.trim();
         }
@@ -155,4 +329,16 @@ public final class GatewayConfig {
     public String patronTier() { return patronTier; }
     public String charactersFile() { return charactersFile; }
     public Path configDir() { return configDir; }
+    public String defaultEndpoint() { return defaultEndpoint; }
+    public Map<String, EndpointProfile> profiles() { return profiles; }
+
+    public EndpointProfile defaultProfile() {
+        return profiles.get(defaultEndpoint);
+    }
+
+    /** The named profile, or an unusable stand-in when no such profile is declared. */
+    public EndpointProfile profile(String name) {
+        EndpointProfile profile = profiles.get(name);
+        return profile != null ? profile : EndpointProfile.unusable(name, "no endpoint profile named '" + name + "'");
+    }
 }
