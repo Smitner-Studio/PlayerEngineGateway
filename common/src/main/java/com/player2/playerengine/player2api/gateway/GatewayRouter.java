@@ -146,6 +146,11 @@ public final class GatewayRouter {
         }
     }
 
+    /** Name of the profile a companion's chat calls go to; its LLM dispatch lane is keyed by it. */
+    public static String profileNameFor(String characterId) {
+        return profileFor(characterId).name();
+    }
+
     /** The profile for a companion's character id; {@code null} (no companion) means the default. */
     static EndpointProfile profileFor(String characterId) {
         GatewayConfig cfg = GatewayConfig.get();

@@ -69,24 +69,17 @@ public class ConversationManager {
     }
 
     /**
-     * Per-billing-client LLM completers. One bucket per resolved billing key (online payer UUID
-     * for PROMPTER_PAYS / OWNER_PAYS_ALL online, or "token:&lt;username&gt;" for stored-token mode).
-     * A slow/busy client only blocks its own bucket — other buckets remain free to dispatch.
+     * LLM dispatch lanes keyed by (billing key, endpoint profile). The billing key is the online payer
+     * UUID for PROMPTER_PAYS / OWNER_PAYS_ALL online, or "token:&lt;username&gt;" for stored-token mode.
+     * A slow lane only blocks itself: two companions of one player on different profiles think at once.
      */
-    private static final ConcurrentHashMap<String, LLMCompleter> llmCompletersByBillingKey = new ConcurrentHashMap<>();
+    private static final LlmLanes llmLanes = new LlmLanes();
 
     /**
      * Extra completers (e.g. build-structure) that own their own lifecycle. Tracked separately so
-     * shutdown can drain them without touching the main billing-bucket pool.
+     * shutdown can drain them without touching the dispatch lanes.
      */
     private static final CopyOnWriteArrayList<LLMCompleter> extraLLMCompleters = new CopyOnWriteArrayList<>();
-
-    private static LLMCompleter getOrCreateCompleterForBillingKey(String billingKey) {
-        return llmCompletersByBillingKey.computeIfAbsent(billingKey, k -> {
-            LOGGER.info("ConversationManager: creating LLMCompleter bucket for billingKey={}", k);
-            return new LLMCompleter();
-        });
-    }
 
     /** Extra completers (e.g. build-structure) register here; included in server shutdown. */
     public static void registerLLMCompleter(LLMCompleter completer) {
@@ -102,15 +95,12 @@ public class ConversationManager {
     }
 
     /**
-     * Shuts down every registered completer (per-billing buckets + extras) and clears the maps so
+     * Shuts down every registered completer (dispatch lanes + extras) and clears the maps so
      * the next session (e.g. integrated server restart in the same JVM) starts with fresh executors.
-     * Buckets are lazily recreated on first dispatch.
+     * Lanes are lazily recreated on first dispatch.
      */
     public static void shutdownAndResetLLMCompleters() {
-        for (LLMCompleter c : new ArrayList<>(llmCompletersByBillingKey.values())) {
-            c.shutdown();
-        }
-        llmCompletersByBillingKey.clear();
+        llmLanes.shutdownAll();
         for (LLMCompleter c : new ArrayList<>(extraLLMCompleters)) {
             c.shutdown();
         }
@@ -118,19 +108,12 @@ public class ConversationManager {
     }
 
     /**
-     * Drop the bucket for a given billing key (e.g. on player disconnect under PROMPTER_PAYS).
-     * The in-flight worker thread is shut down; new dispatch for that key will lazily build a
-     * fresh bucket if/when the player rejoins.
+     * Drop every lane of a billing key (e.g. on player disconnect under PROMPTER_PAYS). In-flight
+     * worker threads are shut down; new dispatch for that key lazily builds fresh lanes if/when the
+     * player rejoins.
      */
     public static void shutdownCompleterForBillingKey(String billingKey) {
-        if (billingKey == null) {
-            return;
-        }
-        LLMCompleter removed = llmCompletersByBillingKey.remove(billingKey);
-        if (removed != null) {
-            LOGGER.info("ConversationManager: shutting down LLMCompleter bucket for billingKey={}", billingKey);
-            removed.shutdown();
-        }
+        llmLanes.shutdownBilling(billingKey);
     }
 
     // ## Utils
@@ -404,10 +387,12 @@ public class ConversationManager {
 
     private static void process(Consumer<Event.CharacterMessage> onCharacterEvent,
             BiConsumer<String, ServerPlayer> onErrEvent) {
-        // Group ready candidates by billing key, then dispatch at most one per bucket so a slow
-        // bucket doesn't starve the others. Within a bucket we still pick max(priority) to match
-        // the previous head-of-line semantics.
-        Map<String, AgentConversationData> bestPerBucket = new HashMap<>();
+        // Dispatch at most one ready candidate per (billing key, endpoint profile) lane so a slow lane
+        // doesn't starve the others. Within a lane the highest priority goes first. A companion is
+        // never dispatched twice at once: getPriority() is 0 while it is processing, and its lane
+        // holds one request at a time.
+        List<AgentConversationData> ready = new ArrayList<>();
+        Map<AgentConversationData, LlmLanes.LaneKey> keys = new HashMap<>();
         for (AgentConversationData data : queueData.values()) {
             if (data.getPriority() == 0
                     || data.getEntity() == null
@@ -422,23 +407,17 @@ public class ConversationManager {
                 // No usable billing — let AgentConversationData.process emit the standard "no billing" error.
                 billingKey = "__no_billing__:" + data.getUUID();
             }
-            AgentConversationData current = bestPerBucket.get(billingKey);
-            if (current == null || data.getPriority() > current.getPriority()) {
-                bestPerBucket.put(billingKey, data);
-            }
+            Character character = data.getMod().getAIPersistantData() != null
+                    ? data.getMod().getAIPersistantData().getCharacter() : null;
+            keys.put(data, LlmLanes.LaneKey.of(billingKey, character != null ? character.id() : null));
+            ready.add(data);
         }
-        for (Map.Entry<String, AgentConversationData> entry : bestPerBucket.entrySet()) {
-            String billingKey = entry.getKey();
-            AgentConversationData data = entry.getValue();
-            LLMCompleter completer = getOrCreateCompleterForBillingKey(billingKey);
-            if (!completer.isAvailible()) {
-                continue; // bucket busy with prior in-flight call; other buckets keep moving.
-            }
+        llmLanes.dispatch(ready, keys::get, AgentConversationData::getPriority, (data, completer) -> {
             Player owner = data.getMod().getOwner();
             MinecraftServer srv = owner != null ? owner.getServer() : null;
             ServerPlayer ownerServerPlayer = (srv != null) ? srv.getPlayerList().getPlayer(owner.getUUID()) : null;
             data.process(onCharacterEvent, errMsg -> onErrEvent.accept(errMsg, ownerServerPlayer), completer);
-        }
+        });
     }
 
     // side effects are here:
@@ -456,9 +435,9 @@ public class ConversationManager {
             AgentSideEffects.onError(server, errMsg, player);
         };
 
-        // No global gate: each per-billing bucket gates only its own in-flight call, and per-bot
+        // No global gate: each dispatch lane gates only its own in-flight call, and per-bot
         // TTS pacing lives in AgentConversationData. Other bots continue to make progress while one
-        // bucket waits on a slow client.
+        // lane waits on a slow client.
         process(onCharacterEvent, onErrEvent);
     }
 
@@ -519,8 +498,8 @@ public class ConversationManager {
 
     /**
      * Flush every {@link AgentConversationData} event queue, reset per-bot greeting / in-flight
-     * flags, and shut down all per-billing LLM completer buckets. Persisted conversation history
-     * is preserved (this drains pending work, not memory). Lazy bucket reconstruction takes care
+     * flags, and shut down all LLM dispatch lanes. Persisted conversation history
+     * is preserved (this drains pending work, not memory). Lazy lane reconstruction takes care
      * of the next dispatch.
      */
     public static QueueClearSummary clearPendingWork() {
@@ -529,11 +508,7 @@ public class ConversationManager {
             data.resetForClear();
             queuesCleared++;
         }
-        int bucketsShutdown = llmCompletersByBillingKey.size();
-        for (LLMCompleter c : new ArrayList<>(llmCompletersByBillingKey.values())) {
-            c.shutdown();
-        }
-        llmCompletersByBillingKey.clear();
+        int bucketsShutdown = llmLanes.shutdownAll();
         LOGGER.info("ConversationManager.clearPendingWork: queuesCleared={} bucketsShutdown={}",
                 queuesCleared, bucketsShutdown);
         return new QueueClearSummary(queuesCleared, bucketsShutdown);
@@ -541,8 +516,8 @@ public class ConversationManager {
 
     /**
      * Scoped variant of {@link #clearPendingWork}: only touches conversations whose owner UUID
-     * matches. Bucket shutdown is best-effort here — if the owner is also the billing key (e.g.
-     * OWNER_PAYS_ALL online) we shut that bucket, otherwise we leave shared buckets alone.
+     * matches. Lane shutdown is best-effort here — if the owner is also the billing key (e.g.
+     * OWNER_PAYS_ALL online) we shut that key's lanes, otherwise we leave shared lanes alone.
      */
     public static QueueClearSummary clearPendingWorkFor(UUID ownerUuid) {
         if (ownerUuid == null) {
@@ -569,11 +544,7 @@ public class ConversationManager {
         }
         int bucketsShutdown = 0;
         for (String billingKey : seenBillingKeys) {
-            LLMCompleter removed = llmCompletersByBillingKey.remove(billingKey);
-            if (removed != null) {
-                removed.shutdown();
-                bucketsShutdown++;
-            }
+            bucketsShutdown += llmLanes.shutdownBilling(billingKey);
         }
         LOGGER.info("ConversationManager.clearPendingWorkFor owner={}: queuesCleared={} bucketsShutdown={}",
                 ownerUuid, queuesCleared, bucketsShutdown);
