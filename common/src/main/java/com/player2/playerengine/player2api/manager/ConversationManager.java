@@ -427,6 +427,15 @@ public class ConversationManager {
                 despwnCompanion(k);
             }
         });
+        queueData.forEach((k, v) -> {
+            if (v.getMod().getPlayer().getServer() == server) {
+                try {
+                    v.tickPlan();
+                } catch (RuntimeException e) {
+                    LOGGER.error("[Plan] tick failed for bot={}", v.getName(), e);
+                }
+            }
+        });
 
         Consumer<Event.CharacterMessage> onCharacterEvent = (data) -> {
             AgentSideEffects.onEntityMessage(server, data);

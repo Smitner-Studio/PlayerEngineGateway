@@ -62,6 +62,8 @@ public class PlayerEngineCommands {
                   new SetupFarmCommand(),
                   new HarvestFarmCommand(),
                   new PlantFarmCommand(),
-                  new LocateWaypointsCommand());
+                  new LocateWaypointsCommand(),
+                  new ExcavateCommand(),
+                  new FillCommand());
    }
 }

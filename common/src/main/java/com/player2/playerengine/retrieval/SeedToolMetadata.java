@@ -598,7 +598,7 @@ public final class SeedToolMetadata {
                      "destroy block", "ore", "ores", "iron ore", "gold ore", "diamond ore", "coal ore",
                      "copper ore", "stone", "cobblestone", "deepslate", "obsidian", "rock", "boulder",
                      "pickaxe", "tool tier", "wooden pickaxe", "stone pickaxe", "iron pickaxe",
-                     "diamond pickaxe", "mineable", "excavate", "extract", "quarry", "harvest block",
+                     "diamond pickaxe", "mineable", "extract", "quarry", "harvest block",
                      "mine the ore", "mine some stone", "dig out", "break the rock"),
                 list("resources", "mining", "tools")),
 
@@ -612,8 +612,27 @@ public final class SeedToolMetadata {
                      "diamond ore", "copper ore", "redstone ore", "lapis ore", "emerald ore",
                      "cobblestone", "stone", "deepslate", "obsidian", "gravel", "harvest block",
                      "extract ore", "mine ore", "mine some", "mine a block", "mine the", "pickaxe",
-                     "quarry", "excavate"),
-                list("resources", "mining", "tools"))
+                     "quarry"),
+                list("resources", "mining", "tools")),
+
+            doc("excavate",
+                "excavate",
+                "Area dig: clears every block in a box to air in survival (real tools, real dig time), leaving blocks people placed and containers standing. Sized relative to an anchor (here, owner, last area, or x,y,z) or by two corners. Refuses next to water or lava, near the world border or spawn, and anything over about 20 minutes of digging; reports the finished area so it can be extended.",
+                "Use when the owner wants a space dug out rather than a named block collected: a room, underground room, cellar, basement, bunker, storage room, tunnel section, hole, pit, clearing, or making an existing room bigger. For a big job use several excavate steps in a plan (for example one half, then the other). 'Keep it 1:1' or square means equal dx and dz. To extend a room, dig the new part next to the last area using its corners.",
+                list("excavate 9 4 9", "excavate 7 3 7 anchor=owner", "excavate 5 3 9 anchor=last facing=east", "excavate 100 60 -20 108 63 -12"),
+                list("room", "underground room", "dig a room", "dig out", "hollow out", "cellar", "basement",
+                     "bunker", "cave out", "clear area", "clear space", "excavate", "expand the room", "make it bigger",
+                     "widen", "extend", "enlarge", "tunnel", "hole", "pit", "space for us", "square room", "1:1"),
+                list("building", "mining", "area")),
+
+            doc("fill",
+                "fill",
+                "Area place: puts one block type from the inventory into every empty cell of a box, for floors, walls, ceilings and plugs. Fails with the exact shortfall when the inventory holds too few.",
+                "Use when the owner wants a floor laid, a wall or ceiling built, a hole plugged, or an area paved with one block. A floor is dy 1; a wall has one side 1. Get the blocks first (get or mine) when the inventory is short.",
+                list("fill cobblestone 9 1 9 anchor=last", "fill oak_planks 100 64 -20 108 64 -12", "fill stone_bricks 1 3 7"),
+                list("floor", "lay a floor", "pave", "wall", "build a wall", "ceiling", "fill in", "plug the hole",
+                     "cover", "patch", "platform", "fill"),
+                list("building", "area"))
 
         );
     }

@@ -129,6 +129,16 @@ public class AgentSideEffects {
 
     public static void onCommandListGenerated(PlayerEngineController mod, String command,
                                               Consumer<CommandExecutionStopReason> onStop) {
+        onCommandListGenerated(mod, command, onStop, null);
+    }
+
+    /**
+     * @param onAcceptedSeq receives the controller's command dispatch seq once the line has parsed and
+     *                      is about to run; null when the caller does not track supersession
+     */
+    public static void onCommandListGenerated(PlayerEngineController mod, String command,
+                                              Consumer<CommandExecutionStopReason> onStop,
+                                              java.util.function.LongConsumer onAcceptedSeq) {
         CommandExecutor cmdExecutor = mod.getCommandExecutor();
         String commandWithPrefix = cmdExecutor.isClientCommand(command) ? command
                 : (cmdExecutor.getCommandPrefix() + command);
@@ -212,6 +222,9 @@ public class AgentSideEffects {
                         cmdExecutor.execute(
                                 processedCommandWithPrefix,
                                 () -> {
+                                    if (onAcceptedSeq != null) {
+                                        onAcceptedSeq.accept(mod.getCommandDispatchSeq());
+                                    }
                                     if (server != null && ownerUuid != null && acceptedCommandId != null) {
                                         AliasLearningService.onCommandAccepted(
                                                 server, ownerUuid, botUuid, acceptedCommandId, cmdExecutor);

@@ -63,6 +63,12 @@ public class AIPersistantData {
         loadAdditionalPromptFromDiskTolerant();
     }
 
+    /** {@code plan.json} beside this companion's mood and conversation files, or null when unresolved. */
+    public Path getPlanFileOrNull() {
+        Path mood = this.moodFile;
+        return mood == null ? null : mood.resolveSibling("plan.json");
+    }
+
     /**
      * Re-resolves owner-scoped persistence after a controller gains its owner later in entity load.
      * This only moves from the current fallback/legacy path to the current owner's canonical path; it

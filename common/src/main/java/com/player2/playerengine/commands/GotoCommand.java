@@ -36,4 +36,9 @@ public class GotoCommand extends Command {
       GotoTarget target = parser.get(GotoTarget.class);
       mod.runUserTask(getMovementTaskFor(target), () -> this.finish());
    }
+
+   @Override
+   public boolean isIdempotent() {
+      return true;
+   }
 }

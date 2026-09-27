@@ -34,6 +34,11 @@ public class CommandExecutor {
       this.mod = mod;
    }
 
+   /** The registered command a name or alias resolves to, or null. */
+   public Command getRegisteredCommand(String name) {
+      return name == null ? null : this.commandSheet.get(resolveName(name.toLowerCase(java.util.Locale.ROOT)));
+   }
+
    public void registerNewCommand(Command... commands) {
       for (Command command : commands) {
          if (this.commandSheet.containsKey(command.getName())) {
@@ -146,6 +151,10 @@ public class CommandExecutor {
          return;
       }
       line = line.substring(this.getCommandPrefix().length());
+      // Gestures suspend and resume the running task rather than replace it, so they do not count.
+      if (!line.trim().toLowerCase(java.util.Locale.ROOT).startsWith("bodylang")) {
+         this.mod.bumpCommandDispatchSeq();
+      }
       String[] parts = line.split(";");
       Command[] commands = new Command[parts.length];
 
