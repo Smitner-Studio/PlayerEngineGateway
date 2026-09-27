@@ -67,6 +67,7 @@
 > | `survivalParity` | `true` | mine and fight with a survival player's numbers; with hunger off, regenerate like a full food bar |
 > | `hunger` | unset | `true`/`false` overrides `hungerEnabled` in `playerengine/playerengine_settings.json` |
 > | `progressChat` | `off` | task progress in chat: `all`, `milestones` (outcomes and failures) or `off` |
+> | `peerReplies` | `1` | answers a companion may give other companions, only when named, before a human speaks again; `0` = never |
 
 [![Player2 AI Game Jam](https://img.shields.io/badge/Player2-AI_Game_Jam-blueviolet)](https://itch.io/jam/ai-npc-jam)
 [![Powered by Automatone](https://img.shields.io/badge/Powered%20by-Automatone-orange)](https://github.com/Ladysnake/Automatone/tree/1.20)

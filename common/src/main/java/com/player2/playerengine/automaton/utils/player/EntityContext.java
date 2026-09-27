@@ -35,6 +35,7 @@ import java.util.List;
 import java.util.function.Supplier;
 import java.util.stream.Stream;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
@@ -98,6 +99,15 @@ public class EntityContext implements IEntityContext {
       return RayTraceUtils.rayTraceTowards(this.entity(), this.entityRotations(), this.playerController().getBlockReachDistance());
    }
 
+   /**
+    * The chunk holding {@code feet}, for the bottom-slab check. Only a loaded chunk is read, so a
+    * wrong chunk silently skips the check: the companion's feet then read one block low on every
+    * slab, and traverses stall on "Wrong Y coordinate" while it jumps in place.
+    */
+   static ChunkPos chunkOf(BetterBlockPos feet) {
+      return new ChunkPos(feet.x >> 4, feet.z >> 4);
+   }
+
    @Override
    public BetterBlockPos feetPos() {
       double x = this.entity().getX();
@@ -105,7 +115,8 @@ public class EntityContext implements IEntityContext {
       BetterBlockPos feet = new BetterBlockPos(x, this.entity().getY() + 0.1251, z);
       ServerLevel world = this.world();
       if (world != null) {
-         LevelChunk chunk = ((ServerChunkManagerAccessor)world.getChunkSource()).automatone$getChunkNow((int)x << 4, (int)z << 4);
+         ChunkPos chunkPos = chunkOf(feet);
+         LevelChunk chunk = ((ServerChunkManagerAccessor)world.getChunkSource()).automatone$getChunkNow(chunkPos.x, chunkPos.z);
          if (chunk != null && chunk.getBlockState(feet).getBlock() instanceof SlabBlock) {
             return feet.up();
          }

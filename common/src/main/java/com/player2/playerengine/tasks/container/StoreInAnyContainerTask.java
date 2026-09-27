@@ -36,10 +36,15 @@ import net.minecraft.world.phys.Vec3;
  * normally or escalate to {@code agentic} via the command Error path.
  */
 public class StoreInAnyContainerTask extends Task {
-   /** Overall wall-clock budget for the whole resolve+deposit flow before declaring a timeout. */
-   private static final double OVERALL_TIMEOUT_SECONDS = 90.0;
-   /** Per-chosen-container deposit budget handed to the shared bounded engine. */
+   /**
+    * Overall wall-clock budget for the whole resolve+deposit flow before declaring a timeout. It
+    * covers the largest per-container budget ({@link #depositBudgetSeconds} at the travel cap).
+    */
+   private static final double OVERALL_TIMEOUT_SECONDS = 150.0;
+   /** Per-chosen-container deposit budget, before the walk to the container is added. */
    private static final double DEPOSIT_TIMEOUT_SECONDS = 45.0;
+   /** Walking pace the budget allows for: well under a sprint, for detours, doors and climbs. */
+   private static final double TRAVEL_BLOCKS_PER_SECOND = 2.0;
    /**
     * FIXED travel cap (blocks) for the direct {@code deposit} container search. Derived from the DEFAULT
     * render distance: 3/5 * 12 chunks * 16 blocks/chunk = 115.2 -> 115. It is intentionally a constant,
@@ -158,7 +163,7 @@ public class StoreInAnyContainerTask extends Task {
          // Lock onto this container and deposit through the bounded engine so it can never hang.
          this.chosenContainer = closestContainer.get();
          this.everChoseContainer = true;
-         this.depositCore = new BoundedContainerDepositTask(chosenContainer, DEPOSIT_TIMEOUT_SECONDS, itemsToStore);
+         this.depositCore = new BoundedContainerDepositTask(chosenContainer, depositBudgetSeconds(distanceTo(chosenContainer)), itemsToStore);
          this.setDebugState("Found a container; storing items.");
          return depositCore;
       } else {
@@ -233,7 +238,7 @@ public class StoreInAnyContainerTask extends Task {
             if (next.isPresent()) {
                this.chosenContainer = next.get();
                this.everChoseContainer = true;
-               this.depositCore = new BoundedContainerDepositTask(chosenContainer, DEPOSIT_TIMEOUT_SECONDS, itemsToStore);
+               this.depositCore = new BoundedContainerDepositTask(chosenContainer, depositBudgetSeconds(distanceTo(chosenContainer)), itemsToStore);
                this.setDebugState("Container full; storing into another container " + chosenContainer.toShortString());
             } else {
                // No other reachable container holds the remaining items: fail now (escalates to agentic).
@@ -278,14 +283,33 @@ public class StoreInAnyContainerTask extends Task {
     * debugging so an ignored far container is visible in the log.
     */
    private boolean beyondTravelCap(BlockPos target) {
-      double capSq = DEPOSIT_TRAVEL_CAP_BLOCKS * DEPOSIT_TRAVEL_CAP_BLOCKS;
-      Vec3 origin = this.controller.getPlayer().position();
-      boolean beyond = origin.distanceToSqr(target.getX() + 0.5, target.getY() + 0.5, target.getZ() + 0.5) > capSq;
+      boolean beyond = distanceTo(target) > DEPOSIT_TRAVEL_CAP_BLOCKS;
       if (beyond) {
          this.controller.log("[deposit] ignoring container at " + target.toShortString()
             + " beyond travel cap " + (int) DEPOSIT_TRAVEL_CAP_BLOCKS + " blocks; using a local chest instead");
       }
       return beyond;
+   }
+
+   private double distanceTo(BlockPos target) {
+      Vec3 origin = this.controller.getPlayer().position();
+      return Math.sqrt(origin.distanceToSqr(target.getX() + 0.5, target.getY() + 0.5, target.getZ() + 0.5));
+   }
+
+   /**
+    * Deposit budget for a container {@code distance} blocks away. The walk counts: a flat 45 s ran
+    * out on containers across a base before the first item moved.
+    */
+   static double depositBudgetSeconds(double distance) {
+      return DEPOSIT_TIMEOUT_SECONDS + Math.max(0.0, distance) / TRAVEL_BLOCKS_PER_SECOND;
+   }
+
+   static double overallTimeoutSeconds() {
+      return OVERALL_TIMEOUT_SECONDS;
+   }
+
+   static double travelCapBlocks() {
+      return DEPOSIT_TRAVEL_CAP_BLOCKS;
    }
 
    private boolean isDungeonChest(PlayerEngineController controller, BlockPos pos) {

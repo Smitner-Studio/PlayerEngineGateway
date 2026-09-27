@@ -9,7 +9,6 @@ import com.player2.playerengine.containeraccess.ScanMode;
 import com.player2.playerengine.containeraccess.StorageAccessCode;
 import com.player2.playerengine.containeraccess.StorageItemArgs;
 import com.player2.playerengine.tasks.base.Task;
-import com.player2.playerengine.tasks.movement.GetToBlockTask;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -23,7 +22,7 @@ import net.minecraft.world.Container;
  * visibly, read a fresh {@link ContainerSnapshot} on the post-open tick, hold the lid for the
  * minimum visible time, then close and refresh the legacy cache.
  *
- * <p>Phases: NAVIGATE ({@link GetToBlockTask} until within {@value #PROXIMITY_BLOCKS} blocks;
+ * <p>Phases: NAVIGATE ({@link ContainerApproach} until within {@value #PROXIMITY_BLOCKS} blocks;
  * bounded by {@link ContainerResolver#NAVIGATE_TIMEOUT_MS}) -&gt; OPEN (resolve via
  * {@link ContainerResolver}, lid via {@link ContainerAnimationHelper}) -&gt; HOLD_AND_READ
  * (snapshot on the first held tick; wait out
@@ -151,7 +150,7 @@ public final class ScanContainerTask extends Task {
         }
         if (navChild == null) {
             // ONE navigation child, held across ticks (the agentic step-task template).
-            navChild = new GetToBlockTask(containerPos);
+            navChild = ContainerApproach.task(containerPos);
         }
         this.setDebugState("navigating to " + ContainerResolver.formatPos(containerPos));
         return navChild;

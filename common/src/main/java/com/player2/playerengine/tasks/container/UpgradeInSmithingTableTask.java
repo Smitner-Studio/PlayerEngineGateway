@@ -6,7 +6,6 @@ import com.player2.playerengine.agentic.MaterialReservationService;
 import com.player2.playerengine.tasks.ResourceTask;
 import com.player2.playerengine.tasks.construction.PlaceBlockNearbyTask;
 import com.player2.playerengine.tasks.misc.EquipArmorTask;
-import com.player2.playerengine.tasks.movement.GetToBlockTask;
 import com.player2.playerengine.tasks.squashed.CataloguedResourceTask;
 import com.player2.playerengine.tasks.base.Task;
 import com.player2.playerengine.util.ItemTarget;
@@ -208,7 +207,7 @@ public class UpgradeInSmithingTableTask extends ResourceTask {
                )) {
                this.setDebugState("Going to smithing table.");
                this.stepResult = SmithStepResult.IN_PROGRESS;
-               return new GetToBlockTask(this.tablePos);
+               return ContainerApproach.task(this.tablePos);
             } else {
                this.setDebugState("Upgrading item...");
                // Reserve the three roles' concretely-resolved species just before the physical

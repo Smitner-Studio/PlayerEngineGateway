@@ -32,8 +32,9 @@ import net.minecraft.world.item.Item;
  *
  * <p>Intentional non-responsibilities: it does NOT read {@code AgenticExecutionContext}, does NOT
  * resolve/scan/place a container, and does NOT pick items. The caller supplies the container
- * {@link BlockPos} and the {@link ItemTarget}[] selection. It never modifies {@link StoreInContainerTask}
- * (the version-divergent {@code isSameItemSameComponents}/{@code isSameItemSameTags} line stays inside it).
+ * {@link BlockPos} and the {@link ItemTarget}[] selection. The item move itself, including the
+ * version-divergent {@code isSameItemSameComponents}/{@code isSameItemSameTags} line, lives in
+ * {@link ContainerDeposit}.
  */
 public final class BoundedContainerDepositTask extends Task implements DescribesProgress {
 
@@ -141,10 +142,10 @@ public final class BoundedContainerDepositTask extends Task implements Describes
         }
         boolean childActive = child.isActive() && !child.stopped();
 
-        // Natural finish: all targets reached their count in the container, or nothing left to move.
+        // Natural finish: every target's count has left the inventory, or nothing left to move.
         // Guard on childActive: the child's `controller` is injected by the chain on its FIRST tick
         // (Task.tick -> this.controller = parentChain.controller), which only happens AFTER we return
-        // the child below. StoreInContainerTask.isFinished() dereferences this.controller.getWorld(),
+        // the child below. StoreInContainerTask.isFinished() dereferences this.controller,
         // so inspecting a freshly-created (not-yet-ticked) child here would NPE on the very first
         // DEPOSITING tick. On that first tick childActive is false, so we skip straight to returning
         // the child (the chain starts it); the next tick inspects it safely.

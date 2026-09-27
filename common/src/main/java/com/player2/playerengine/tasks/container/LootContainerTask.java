@@ -1,7 +1,6 @@
 package com.player2.playerengine.tasks.container;
 
 import com.player2.playerengine.util.Debug;
-import com.player2.playerengine.tasks.movement.GetToBlockTask;
 import com.player2.playerengine.tasks.slot.EnsureFreeInventorySlotTask;
 import com.player2.playerengine.tasks.base.Task;
 import com.player2.playerengine.automaton.api.entity.IInventoryProvider;
@@ -50,7 +49,7 @@ public class LootContainerTask extends Task {
             4.5
          )) {
          this.setDebugState("Going to container");
-         return new GetToBlockTask(this.containerPos);
+         return ContainerApproach.task(this.containerPos);
       } else if (this.controller.getWorld().getBlockEntity(this.containerPos) instanceof RandomizableContainerBlockEntity container) {
          RandomizableContainerBlockEntity containerInventory = container;
          LivingEntityInventory playerInventory = ((IInventoryProvider)this.controller.getEntity()).getLivingInventory();

@@ -53,7 +53,7 @@ Files changed from upstream:
 | `common/src/main/java/com/player2/playerengine/player2api/Player2PayerResolution.java` | server-wide work is billable with no player online when the gateway is enabled |
 | `common/src/main/java/com/player2/playerengine/player2api/utils/AudioUtils.java` | text-to-speech skipped when the gateway is enabled |
 | `common/build.gradle` | `gatewaySelfTest` task |
-| `gradle.properties` | version `1.21.1-1.4.0-gateway.2` |
+| `gradle.properties` | version `1.21.1-1.4.0-gateway.3` |
 | `neoforge/src/main/resources/META-INF/neoforge.mods.toml` | display name "PlayerEngine (OpenAI-gateway fork)" |
 | `README.md`, `NOTICE.md`, `Taskfile.yml`, `.gitignore` | fork documentation and build entries |
 
@@ -80,10 +80,27 @@ the default.
 - `progressChat=off` (default): no task progress in the owner's chat. `milestones` shows outcomes
   and failures, `all` also step chatter such as "breaking iron ore" (upstream). Conversational
   replies are unaffected.
+- `peerReplies=1` (default): a line another companion speaks wakes this companion's model only when
+  it names this companion, and at most this many times until a human speaks to it again. Other peer
+  lines are kept as context for its next turn. `0` means companions never answer each other.
+  Upstream woke every companion within 64 blocks on every line another companion spoke.
+
+Under `survivalParity`, a digging task's time budget (`mine`) is 2.5 times upstream's, the worst
+slowdown of an unenchanted pickaxe short of gold.
 
 Independently of these rules, taking items from a container no longer inserts one extra item per
 take (the room check used to insert a probe item), and a loot take that only partly fits leaves
 the rest in the container instead of deleting it.
+
+Deposits no longer create items either: the simulated insert grew the container's matching stack,
+so merging into a part stack added the items twice. A deposit counts what it has moved rather than
+what the container holds, so a container that already has some of the item takes everything asked
+for. Container tasks walk to any spot within 3 blocks of the container instead of into its block,
+which pathing never reaches (it does not break chests or player-placed blocks), and the direct
+`deposit` budget grows with the distance to the container. A body-language gesture no longer
+replaces a running task that cannot resume after it; the gesture is skipped. The bottom-slab
+correction of the companion's feet position reads the chunk it stands in (it read a chunk sixteen
+times further out, so the correction never ran and traverses off a slab stalled).
 
 | File | Change |
 |---|---|
@@ -103,3 +120,15 @@ the rest in the container instead of deleting it.
 | `common/src/main/java/com/player2/playerengine/tasks/container/PickupFromContainerTask.java` | room check without inserting |
 | `common/src/main/java/com/player2/playerengine/tasks/container/LootContainerTask.java` | room check without inserting; partial takes keep the rest |
 | `common/build.gradle`, `Taskfile.yml` | `companionSelfTest` task, run by `task test` |
+| `common/src/main/java/com/player2/playerengine/player2api/PeerTalkPolicy.java` | new: when another companion's line wakes this one |
+| `common/src/main/java/com/player2/playerengine/player2api/AgentConversationData.java` | peer lines gated by `PeerTalkPolicy`; the rest kept as context |
+| `common/src/main/java/com/player2/playerengine/tasks/container/ContainerDeposit.java` | new: item-conserving move into a container |
+| `common/src/main/java/com/player2/playerengine/tasks/container/ContainerApproach.java` | new: walk to within reach of a container |
+| `common/src/main/java/com/player2/playerengine/tasks/container/StoreInContainerTask.java` | moves the owed count through `ContainerDeposit` |
+| `common/src/main/java/com/player2/playerengine/tasks/container/StoreInAnyContainerTask.java` | deposit budget grows with the distance |
+| `common/src/main/java/com/player2/playerengine/tasks/container/BoundedContainerDepositTask.java` | comments only |
+| `common/src/main/java/com/player2/playerengine/tasks/container/{BoundedContainerTransfer,SlotPreciseTransaction,ScanContainer,LootContainer,PickupFromContainer,UpgradeInSmithingTable}Task.java`, `tasks/agentic/ResolveStorageChestTask.java` | approach through `ContainerApproach` |
+| `common/src/main/java/com/player2/playerengine/tasks/agentic/MineBlockTask.java` | time budget scaled by `digTimeScale` |
+| `common/src/main/java/com/player2/playerengine/chains/UserTaskChain.java` | skips a gesture that would drop a non-resumable task |
+| `common/src/main/java/com/player2/playerengine/automaton/utils/player/EntityContext.java` | slab check reads the feet's own chunk |
+| `common/src/main/java/com/player2/playerengine/{tasks/container/ContainerDeposit,player2api/PeerTalkPolicy,chains/GestureGuard,automaton/utils/player/FeetChunk}SelfTest.java` | new: self-tests run by `companionSelfTest` |

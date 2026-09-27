@@ -26,6 +26,10 @@ import java.util.Properties;
  *   <li>{@code progressChat} (default {@code off}): which task-progress lines reach the owner's
  *       chat. {@code all} also sends step chatter ("breaking iron ore"), {@code milestones} only
  *       outcomes and failures, {@code off} none. Conversational replies are never affected.</li>
+ *   <li>{@code peerReplies} (default {@code 1}): how many times a companion may answer another
+ *       companion before a human speaks to it again, and only when the other companion names it.
+ *       {@code 0} means companions never answer each other. Lines they do not answer are still
+ *       read as context on the next turn.</li>
  * </ul>
  */
 public final class CompanionRules {
@@ -42,16 +46,22 @@ public final class CompanionRules {
         }
     }
 
+    static final int DEFAULT_PEER_REPLIES = 1;
+    static final int MAX_PEER_REPLIES = 10;
+    static final double SURVIVAL_DIG_TIME_SCALE = 2.5;
+
     private static volatile CompanionRules instance;
 
     private final boolean survivalParity;
     private final ProgressChat progressChat;
     private final Boolean hungerOverride;
+    private final int peerReplies;
 
     CompanionRules(Properties p) {
         this.survivalParity = parseBoolean(p.getProperty("survivalParity"), true);
         this.progressChat = parseProgressChat(p.getProperty("progressChat"));
         this.hungerOverride = parseOptionalBoolean(p.getProperty("hunger"));
+        this.peerReplies = parsePeerReplies(p.getProperty("peerReplies"));
     }
 
     public static CompanionRules get() {
@@ -91,9 +101,9 @@ public final class CompanionRules {
             }
         }
         CompanionRules rules = new CompanionRules(p);
-        LOGGER.info("Companion rules: survivalParity={} progressChat={} hunger={}",
+        LOGGER.info("Companion rules: survivalParity={} progressChat={} hunger={} peerReplies={}",
                 rules.survivalParity, rules.progressChat.name().toLowerCase(Locale.ROOT),
-                rules.hungerOverride == null ? "settings file" : rules.hungerOverride);
+                rules.hungerOverride == null ? "settings file" : rules.hungerOverride, rules.peerReplies);
         return rules;
     }
 
@@ -137,7 +147,28 @@ public final class CompanionRules {
         }
     }
 
+    private static int parsePeerReplies(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return DEFAULT_PEER_REPLIES;
+        }
+        try {
+            return Math.max(0, Math.min(MAX_PEER_REPLIES, Integer.parseInt(raw.trim())));
+        } catch (NumberFormatException e) {
+            LOGGER.warn("Companion rules: peerReplies '{}' is not a number; using {}", raw.trim(), DEFAULT_PEER_REPLIES);
+            return DEFAULT_PEER_REPLIES;
+        }
+    }
+
     public boolean survivalParity() { return survivalParity; }
+    /** Replies a companion may make to other companions between two human messages to it. */
+    public int peerReplies() { return peerReplies; }
+
+    /**
+     * Factor on the time budget of a task that digs. Upstream budgets assume the upstream dig speed;
+     * under survival parity a block takes up to 2.5 times as long with an unenchanted pickaxe (the
+     * post-break delay dominates fast tools). companionSelfTest pins that bound.
+     */
+    public double digTimeScale() { return survivalParity ? SURVIVAL_DIG_TIME_SCALE : 1.0; }
     public ProgressChat progressChat() { return progressChat; }
     /** Operator override of the settings file's hungerEnabled; null leaves the file in charge. */
     public Boolean hungerOverride() { return hungerOverride; }
