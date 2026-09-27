@@ -30,7 +30,7 @@ public class DepositCommand extends Command {
    public DepositCommand() throws CommandException {
       super(
          "deposit",
-         "Deposit our items to a nearby chest, making a chest if one doesn't exist. Pass no arguments to deposit all non-tool/armor/weapon items (tools, armor, and weapons are kept). Examples: `deposit` deposits all non-gear items, `deposit diamond 2` deposits 2 diamonds.",
+         "Deposit (put, drop off, store, dump) our items into a nearby chest, making a chest if one doesn't exist. Pass no arguments to deposit all non-tool/armor/weapon items (tools, armor, and weapons are kept). Examples: `deposit` deposits all non-gear items, `deposit diamond 2` deposits 2 diamonds.",
          new Arg<>(ItemList.class, "items (empty for ALL non gear items)", null, 0, false)
       );
    }

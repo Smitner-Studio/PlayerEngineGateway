@@ -44,6 +44,7 @@ public final class CompanionRulesSelfTest {
         attackCooldownScalesDamageLikeAPlayer();
         peerRepliesParsing();
         digTimeScaleCoversTheParitySlowdown();
+        mineNamesTheBlockThatDropsCobblestone();
         checks += com.player2.playerengine.tasks.container.ContainerDepositSelfTest.runAll();
         checks += com.player2.playerengine.player2api.PeerTalkPolicySelfTest.runAll();
         checks += com.player2.playerengine.chains.GestureGuardSelfTest.runAll();
@@ -246,6 +247,18 @@ public final class CompanionRulesSelfTest {
 
     private static void requireTicks(int expected, int actual, String what) {
         require(expected == actual, what + ": expected " + expected + " ticks, got " + actual);
+    }
+
+    private static void mineNamesTheBlockThatDropsCobblestone() {
+        String hint = com.player2.playerengine.commands.MineCommand.dropSourceHint("minecraft:cobblestone",
+                "no_target_block_in_range");
+        require(hint.contains("mine stone"), "a failed cobblestone search must point the model at stone, got: " + hint);
+        require(com.player2.playerengine.commands.MineCommand.dropSourceHint("cobbled_deepslate",
+                "no_target_block_in_range").contains("mine deepslate"), "cobbled deepslate comes from deepslate");
+        require(com.player2.playerengine.commands.MineCommand.dropSourceHint("cobblestone", "mine_timeout").isEmpty(),
+                "the hint is only for an empty search");
+        require(com.player2.playerengine.commands.MineCommand.dropSourceHint("iron_ore", "no_target_block_in_range")
+                .isEmpty(), "a block that is its own source gets no hint");
     }
 
     private static void require(boolean condition, String message) {
