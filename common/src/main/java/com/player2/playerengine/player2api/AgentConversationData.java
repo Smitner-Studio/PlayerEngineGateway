@@ -10,6 +10,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 
 import org.apache.logging.log4j.LogManager;
@@ -18,6 +19,7 @@ import org.apache.logging.log4j.Logger;
 import com.google.gson.JsonObject;
 
 import com.player2.playerengine.PlayerEngineController;
+import com.player2.playerengine.companion.CompanionRules;
 import com.player2.playerengine.player2api.BotBlacklistPolicy;
 import com.player2.playerengine.player2api.UserBlacklistPolicy;
 import com.player2.playerengine.player2api.AgentSideEffects.CommandExecutionStopReason;
@@ -162,6 +164,13 @@ public class AgentConversationData {
      * (reset) when the bot chooses silence. See masterplan/peer-talk-restraint-plan.md.
      */
     private int consecutivePeerReplies = 0;
+
+    /**
+     * Transient: lines from other companions that woke this bot's model since a human last spoke to
+     * it. {@link PeerTalkPolicy} caps it at the operator's {@code peerReplies}; peer lines arrive on
+     * the LLM worker while human lines arrive on the server thread.
+     */
+    private final AtomicInteger peerLinesAnsweredSinceHuman = new AtomicInteger();
 
     /**
      * Per-bot TTS pacing: nanoTime() after which this specific bot is allowed to start a new
@@ -356,6 +365,7 @@ public class AgentConversationData {
         repeatedCommandFailureGuard.reset();
         consecutiveParseFailures = 0;
         consecutivePeerReplies = 0;
+        peerLinesAnsweredSinceHuman.set(0);
     }
 
     private void resetB5TurnState() {
@@ -1540,6 +1550,7 @@ public class AgentConversationData {
         if (event instanceof Event.UserMessage) {
             commandAwaitingFinishAck = null;
             repeatedCommandFailureGuard.reset();
+            peerLinesAnsweredSinceHuman.set(0);
         }
         addEventToQueue(event);
     }
@@ -1551,7 +1562,31 @@ public class AgentConversationData {
         if (comingFromThisCharacter) {
             return;
         }
-        eventQueue.add(msg);
+        Character self = getCharacter();
+        int answered = peerLinesAnsweredSinceHuman.get();
+        if (self != null && PeerTalkPolicy.wakes(msg.message(), self.name(), self.shortName(), answered,
+                CompanionRules.get().peerReplies())) {
+            peerLinesAnsweredSinceHuman.incrementAndGet();
+            eventQueue.add(msg);
+            return;
+        }
+        // Not addressed, or already answered enough peers since a human spoke: keep it as context
+        // for the next turn without waking the model.
+        LOGGER.info("peer line kept as context bot={} from={} answeredSinceHuman={}",
+                getName(), msg.sendingCharacterData().getName(), answered);
+        deferInfo(new Event.InfoMessage(peerContextLine(msg)));
+    }
+
+    static String peerContextLine(Event.CharacterMessage msg) {
+        String line = msg.message() == null ? "" : msg.message().strip();
+        if (line.isEmpty()) {
+            return "";
+        }
+        int room = MAX_DEFERRED_INFO_MESSAGE_LENGTH - 64;
+        if (line.length() > room) {
+            line = line.substring(0, room) + "...";
+        }
+        return msg.sendingCharacterData().getName() + " said (no reply needed): " + line;
     }
 
     public void onGreeting() {

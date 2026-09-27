@@ -42,8 +42,10 @@ public final class CompanionRulesSelfTest {
         hungerOffRegeneratesLikeAFullFoodBar();
         zombieBaseAttributesBecomeAPlayers();
         attackCooldownScalesDamageLikeAPlayer();
+        peerRepliesParsing();
         digTimeScaleCoversTheParitySlowdown();
         checks += com.player2.playerengine.tasks.container.ContainerDepositSelfTest.runAll();
+        checks += com.player2.playerengine.player2api.PeerTalkPolicySelfTest.runAll();
         checks += com.player2.playerengine.chains.GestureGuardSelfTest.runAll();
         checks += com.player2.playerengine.automaton.utils.player.FeetChunkSelfTest.runAll();
         System.out.println("companion self-test: " + checks + " checks passed");
@@ -132,6 +134,15 @@ public final class CompanionRulesSelfTest {
         require(rules("progressChat", "ALL").progressChat() == CompanionRules.ProgressChat.ALL, "progressChat=ALL");
         require(rules("progressChat", "chatty").progressChat() == CompanionRules.ProgressChat.OFF,
                 "an unknown progressChat keeps the default");
+    }
+
+    private static void peerRepliesParsing() {
+        require(new CompanionRules(new Properties()).peerReplies() == 1, "peerReplies defaults to 1");
+        require(rules("peerReplies", "0").peerReplies() == 0, "peerReplies=0 is honoured");
+        require(rules("peerReplies", " 3 ").peerReplies() == 3, "peerReplies trims");
+        require(rules("peerReplies", "-4").peerReplies() == 0, "a negative peerReplies clamps to 0");
+        require(rules("peerReplies", "999").peerReplies() == CompanionRules.MAX_PEER_REPLIES, "peerReplies clamps high");
+        require(rules("peerReplies", "lots").peerReplies() == 1, "an unreadable peerReplies keeps the default");
     }
 
     /**
