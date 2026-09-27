@@ -6,7 +6,7 @@ license = "GNU LGPL 3.0"
 [[mods]]
 modId = "playerengine"
 version = "${version}"
-displayName = "PlayerEngine"
+displayName = "PlayerEngine (OpenAI-gateway fork)"
 authors = "Goodbird, Itsuka, Loris, Altoclef creators, Automatone creators, Baritone creators"
 description = '''
 This is an example description! Tell everyone what your mod is about!
