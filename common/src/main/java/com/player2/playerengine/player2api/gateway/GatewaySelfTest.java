@@ -31,7 +31,7 @@ public final class GatewaySelfTest {
 
     public static void main(String[] args) throws Exception {
         runAll();
-        System.out.println("gateway self-test: 7 checks passed");
+        System.out.println("gateway self-test: 8 checks passed");
     }
 
     public static void runAll() throws Exception {
@@ -44,6 +44,7 @@ public final class GatewaySelfTest {
             charactersDefaultAndFile(dir);
             prepareBodyDoesNotMutateCaller(dir);
             disabledConfigLeavesUpstreamBehaviour(dir);
+            keyFileUsedOnlyWithoutDirectKey(dir);
         } finally {
             GatewayConfig.install(null);
         }
@@ -171,6 +172,15 @@ public final class GatewaySelfTest {
     private static void disabledConfigLeavesUpstreamBehaviour(Path dir) throws IOException {
         config(dir, "enabled", "false");
         require(!GatewayConfig.isEnabled(), "enabled=false must disable the gateway");
+    }
+
+    private static void keyFileUsedOnlyWithoutDirectKey(Path dir) throws IOException {
+        Files.writeString(dir.resolve("playerengine-gateway.key"), "\n  file-key  \n");
+        require("file-key".equals(config(dir, "apiKey", "").apiKey()),
+                "without apiKey the first non-blank line of the key file must be used");
+        require("selftest-key".equals(config(dir).apiKey()), "a direct apiKey must win over the key file");
+        Files.delete(dir.resolve("playerengine-gateway.key"));
+        require(config(dir, "apiKey", "").apiKey().isEmpty(), "no key anywhere must yield an empty key");
     }
 
     private static void require(boolean condition, String message) {

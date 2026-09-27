@@ -15,8 +15,11 @@ import java.util.Properties;
  * Operator-supplied OpenAI-compatible gateway that replaces the Player2 cloud and desktop app.
  *
  * <p>Read once from {@code config/playerengine-gateway.properties}; each key can be overridden by an
- * environment variable so the API key never has to live in a file inside the instance. When
- * {@link #enabled()} is false every Player2 code path behaves exactly as upstream.
+ * environment variable. The API key is resolved from {@code PLAYERENGINE_GATEWAY_KEY}, then the
+ * {@code apiKey} property, then the first line of {@code apiKeyFile} (default
+ * {@code playerengine-gateway.key} beside the properties file). The key file lets a modpack ship the
+ * properties file while each install keeps its own unshipped key. When {@link #enabled()} is false
+ * every Player2 code path behaves exactly as upstream.
  *
  * <p>The API key is only ever attached to requests addressed to {@link #baseUrl()}; it is never
  * persisted to the Player2 token store and never sent to a Player2 host.
@@ -50,7 +53,7 @@ public final class GatewayConfig {
         this.configDir = configDir;
         this.enabled = Boolean.parseBoolean(value(p, "enabled", "PLAYERENGINE_GATEWAY_ENABLED", "false"));
         this.baseUrl = stripTrailingSlashAndV1(value(p, "baseUrl", "PLAYERENGINE_GATEWAY_URL", ""));
-        this.apiKey = value(p, "apiKey", "PLAYERENGINE_GATEWAY_KEY", "");
+        this.apiKey = resolveApiKey(p, configDir);
         this.model = value(p, "model", "PLAYERENGINE_GATEWAY_MODEL", "");
         this.embeddingModel = value(p, "embeddingModel", "PLAYERENGINE_GATEWAY_EMBEDDING_MODEL", "");
         this.patronTier = value(p, "patronTier", "PLAYERENGINE_GATEWAY_PATRON_TIER", "");
@@ -99,6 +102,24 @@ public final class GatewayConfig {
     static void install(GatewayConfig cfg) {
         synchronized (GatewayConfig.class) {
             instance = cfg;
+        }
+    }
+
+    private static String resolveApiKey(Properties p, Path configDir) {
+        String direct = value(p, "apiKey", "PLAYERENGINE_GATEWAY_KEY", "");
+        if (!direct.isEmpty() || configDir == null) {
+            return direct;
+        }
+        Path keyFile = configDir.resolve(value(p, "apiKeyFile", "PLAYERENGINE_GATEWAY_KEY_FILE", "playerengine-gateway.key"));
+        if (!Files.isRegularFile(keyFile)) {
+            return "";
+        }
+        try {
+            return Files.readAllLines(keyFile, StandardCharsets.UTF_8).stream()
+                    .map(String::trim).filter(line -> !line.isEmpty()).findFirst().orElse("");
+        } catch (IOException e) {
+            LOGGER.error("Gateway key file {} unreadable: {}", keyFile, e.getMessage());
+            return "";
         }
     }
 

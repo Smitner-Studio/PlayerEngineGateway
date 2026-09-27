@@ -12,7 +12,8 @@
 > |---|---|---|
 > | `enabled` | `PLAYERENGINE_GATEWAY_ENABLED` | `true` routes everything to the gateway |
 > | `baseUrl` | `PLAYERENGINE_GATEWAY_URL` | gateway root, e.g. `http://host:4001/v1` |
-> | `apiKey` | `PLAYERENGINE_GATEWAY_KEY` | sent as `Authorization: Bearer`; prefer the variable |
+> | `apiKey` | `PLAYERENGINE_GATEWAY_KEY` | sent as `Authorization: Bearer`; prefer the variable or the key file |
+> | `apiKeyFile` | `PLAYERENGINE_GATEWAY_KEY_FILE` | used when no key is set: first line of this file in `config/` (default `playerengine-gateway.key`) |
 > | `model` | `PLAYERENGINE_GATEWAY_MODEL` | model for chat completions |
 > | `embeddingModel` | `PLAYERENGINE_GATEWAY_EMBEDDING_MODEL` | empty disables embeddings (memory falls back to lexical) |
 > | `patronTier` | `PLAYERENGINE_GATEWAY_PATRON_TIER` | non-empty unlocks patron-only features (more LLM calls) |
