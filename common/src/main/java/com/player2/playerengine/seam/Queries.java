@@ -8,22 +8,170 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Predicate;
+import java.util.function.Supplier;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.Vec3;
 
 /**
- * The block queries bound at the seam: {@code block_at} and {@code find_blocks}. Both read under the
- * {@link ReadBudget}, skip chunks that are not loaded rather than load them, and report only exposed
- * blocks (§5.6).
+ * The queries bound at the seam (§5.3). The block queries ({@code block_at}, {@code find_blocks}) and
+ * {@code containers} read under the {@link ReadBudget}, skip chunks that are not loaded rather than
+ * load them, and report only what a player standing there could perceive (§5.6). The rest read the
+ * companion, its owner or a known container, which costs no block reads, but still wait their turn
+ * in the queue so a program yields on every query (§6.2).
  */
 public final class Queries {
     /** The most one cell can cost: its own read plus an exposure check. */
     static final int WORST_CELL = 1 + SeamPerception.EXPOSURE_READS;
 
     private Queries() {
+    }
+
+    /**
+     * The query for a bound query signature over coerced arguments.
+     *
+     * @param world what the query reads besides block states: the companion, its owner, containers
+     */
+    public static QueryQueue.Query build(Signature sig, Map<String, Object> args, Primitive.World world) {
+        return switch (sig.name()) {
+            case "inventory" -> now(() -> Outcome.ok(world.inventory(), null));
+            case "count" -> now(() -> Outcome.ok(world.inventory().getOrDefault((String) args.get("item"), 0), null));
+            case "position" -> now(() -> Outcome.ok(floor(world.position()), null));
+            case "owner_pos" -> now(() -> {
+                Vec3 o = world.ownerPosition();
+                return o == null ? ownerAway() : Outcome.ok(floor(o), null);
+            });
+            case "owner_facing" -> now(() -> {
+                AreaSpec.Facing f = world.ownerFacing();
+                return f == null ? ownerAway() : Outcome.ok(f, null);
+            });
+            case "last_area" -> now(() -> Outcome.ok(world.lastArea(), null));
+            case "light_at" -> lightAt((AreaSpec.Pos) args.get("p"), world);
+            case "block_at" -> blockAt((AreaSpec.Pos) args.get("p"));
+            case "find_blocks" -> findBlocks(floor(world.position()), (String) args.get("block"),
+                    (Integer) args.get("radius"), (Integer) args.get("max"));
+            case "containers" -> new Containers(world, floor(world.position()), (Integer) args.get("radius"));
+            case "contents" -> contents((ContainerHandle) args.get("c"), world);
+            default -> throw new IllegalArgumentException(sig.name() + " is not a bound query");
+        };
+    }
+
+    /** A query that needs no block reads: it answers the first time it is served. */
+    private static QueryQueue.Query now(Supplier<Outcome> answer) {
+        return (w, b, t) -> answer.get();
+    }
+
+    private static Outcome ownerAway() {
+        return Outcome.failed(ActionError.of(FailureCode.NOT_FOUND, "my owner is not here"), null);
+    }
+
+    static AreaSpec.Pos floor(Vec3 v) {
+        return new AreaSpec.Pos((int) Math.floor(v.x), (int) Math.floor(v.y), (int) Math.floor(v.z));
+    }
+
+    /** {@code light_at(p)}: one read, and {@code not_loaded} rather than a load. */
+    static QueryQueue.Query lightAt(AreaSpec.Pos p, Primitive.World world) {
+        return (w, budget, tick) -> {
+            if (!w.isLoaded(p.x() >> 4, p.z() >> 4)) {
+                return Outcome.failed(new ActionError(FailureCode.NOT_LOADED,
+                        "that block is in ground no one has loaded; go closer first", Map.of("pos", list(p))), null);
+            }
+            if (budget.available(tick) < 1) {
+                return null;
+            }
+            budget.charge(tick, 1);
+            return Outcome.ok(world.light(p.x(), p.y(), p.z()), null);
+        };
+    }
+
+    /**
+     * {@code contents(c)}: what a known container holds (§5.6). A container the companion has not
+     * opened is {@code denied}; {@code store} and {@code withdraw} open it.
+     */
+    static QueryQueue.Query contents(ContainerHandle c, Primitive.World world) {
+        return (w, budget, tick) -> {
+            if (budget.available(tick) < 1) {
+                return null;
+            }
+            budget.charge(tick, 1);
+            ContainerHandle.Contents seen;
+            try {
+                seen = world.container(c.pos());
+            } catch (Coercion.Failure f) {
+                return Outcome.failed(f.error, null);
+            }
+            if (!world.known(seen.handle())) {
+                return Outcome.failed(new ActionError(FailureCode.DENIED, "I have not opened that container, so I "
+                        + "don't know what is in it; storing or taking something opens it",
+                        Map.of("container", seen.handle().id())), null);
+            }
+            return Outcome.ok(seen.items(), null);
+        };
+    }
+
+    /**
+     * {@code containers(radius)}: one handle per whole container, nearest first, for the containers the
+     * companion knows or can see: exposed, and in line of sight within {@link SeamPerception#MAX_RAYCASTS}
+     * raycasts. Each candidate costs the exposure reads of both halves plus one, and the scan resumes
+     * next tick where the budget stopped it.
+     */
+    static final class Containers implements QueryQueue.Query {
+        static final int COST = 1 + 2 * SeamPerception.EXPOSURE_READS;
+
+        private final Primitive.World world;
+        private final AreaSpec.Pos origin;
+        private final int radius;
+        private final SeamPerception.Raycasts raycasts = new SeamPerception.Raycasts();
+        private final Map<String, ContainerHandle> seen = new LinkedHashMap<>();
+        private final List<ContainerHandle> visible = new ArrayList<>();
+        private List<AreaSpec.Pos> candidates;
+        private int next;
+
+        Containers(Primitive.World world, AreaSpec.Pos origin, int radius) {
+            this.world = world;
+            this.origin = origin;
+            this.radius = radius;
+        }
+
+        @Override
+        public Outcome step(WorldReader reader, ReadBudget budget, long tick) {
+            if (candidates == null) {
+                candidates = world.containerBlocks(origin, radius);
+            }
+            while (next < candidates.size()) {
+                if (budget.available(tick) < COST) {
+                    return null;
+                }
+                budget.charge(tick, COST);
+                AreaSpec.Pos p = candidates.get(next++);
+                ContainerHandle h;
+                try {
+                    h = world.container(p).handle();
+                } catch (Coercion.Failure f) {
+                    continue;
+                }
+                if (seen.putIfAbsent(h.id(), h) != null) {
+                    continue;
+                }
+                boolean exposed = false;
+                for (AreaSpec.Pos half : h.halves()) {
+                    exposed |= world.exposed(half.x(), half.y(), half.z());
+                }
+                if (SeamPerception.containerVisible(world.known(h), exposed, () -> world.lineOfSight(h), raycasts)) {
+                    visible.add(h);
+                }
+            }
+            visible.sort(Comparator.comparingLong(h -> {
+                long dx = h.pos().x() - origin.x();
+                long dy = h.pos().y() - origin.y();
+                long dz = h.pos().z() - origin.z();
+                return dx * dx + dy * dy + dz * dz;
+            }));
+            return Outcome.ok(List.copyOf(visible), null);
+        }
     }
 
     /** A registered block by its canonical id ({@link Coercion#id}), or null. */

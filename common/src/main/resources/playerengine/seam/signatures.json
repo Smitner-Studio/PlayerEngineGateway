@@ -27,7 +27,7 @@
       "returns": "{[item: ItemId]: int}",
       "idempotent": true,
       "postcondition": "none",
-      "bound": false,
+      "bound": true,
       "doc": "what the companion carries",
       "reference": "api.inventory(): {[item: ItemId]: int}"
     },
@@ -45,7 +45,7 @@
       "returns": "int",
       "idempotent": true,
       "postcondition": "none",
-      "bound": false,
+      "bound": true,
       "doc": "how many of item it carries",
       "reference": "api.count(item: ItemId): int"
     },
@@ -57,7 +57,7 @@
       "returns": "Pos",
       "idempotent": true,
       "postcondition": "none",
-      "bound": false,
+      "bound": true,
       "doc": "where the companion stands",
       "reference": "api.position(): Pos"
     },
@@ -69,7 +69,7 @@
       "returns": "Pos",
       "idempotent": true,
       "postcondition": "none",
-      "bound": false,
+      "bound": true,
       "doc": "where the owner stands",
       "reference": "api.owner_pos(): Pos"
     },
@@ -81,7 +81,7 @@
       "returns": "Facing",
       "idempotent": true,
       "postcondition": "none",
-      "bound": false,
+      "bound": true,
       "doc": "the way the owner faces",
       "reference": "api.owner_facing(): Facing"
     },
@@ -133,7 +133,7 @@
       "returns": "Container[]",
       "idempotent": true,
       "postcondition": "none",
-      "bound": false,
+      "bound": true,
       "doc": "containers in sight or already known; a double chest is one handle",
       "reference": "api.containers(radius: int /* 1..16 */): Container[]"
     },
@@ -151,7 +151,7 @@
       "returns": "{[item: ItemId]: int}",
       "idempotent": true,
       "postcondition": "none",
-      "bound": false,
+      "bound": true,
       "doc": "a known container's contents; an unknown one is denied until opened",
       "reference": "api.contents(c: Container): {[item: ItemId]: int}"
     },
@@ -163,7 +163,7 @@
       "returns": "Box | null",
       "idempotent": true,
       "postcondition": "none",
-      "bound": false,
+      "bound": true,
       "doc": "the last box an area primitive finished",
       "reference": "api.last_area(): Box | null"
     },
@@ -181,7 +181,7 @@
       "returns": "int",
       "idempotent": true,
       "postcondition": "none",
-      "bound": false,
+      "bound": true,
       "doc": "the light level at p",
       "reference": "api.light_at(p: Pos): int"
     },

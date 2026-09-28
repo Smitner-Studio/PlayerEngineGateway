@@ -69,21 +69,21 @@ public final class SignatureTable {
     private static List<Signature> build() {
         List<Signature> t = new ArrayList<>();
         // Queries (§5.3): yield, budgeted, never load a chunk.
-        t.add(query("inventory", List.of(), "{[item: ItemId]: int}", false, "what the companion carries"));
-        t.add(query("count", List.of(Arg.of("item", Type.ITEM)), "int", false, "how many of item it carries"));
-        t.add(query("position", List.of(), "Pos", false, "where the companion stands"));
-        t.add(query("owner_pos", List.of(), "Pos", false, "where the owner stands"));
-        t.add(query("owner_facing", List.of(), "Facing", false, "the way the owner faces"));
+        t.add(query("inventory", List.of(), "{[item: ItemId]: int}", true, "what the companion carries"));
+        t.add(query("count", List.of(Arg.of("item", Type.ITEM)), "int", true, "how many of item it carries"));
+        t.add(query("position", List.of(), "Pos", true, "where the companion stands"));
+        t.add(query("owner_pos", List.of(), "Pos", true, "where the owner stands"));
+        t.add(query("owner_facing", List.of(), "Facing", true, "the way the owner faces"));
         t.add(query("find_blocks", List.of(Arg.of("block", Type.BLOCK),
                         Arg.bounded("radius", Type.INT, 1, MAX_FIND_RADIUS),
                         Arg.bounded("max", Type.INT, 1, MAX_FIND_RESULTS)),
                 "Pos[]", true, "exposed blocks of that kind, nearest first"));
         t.add(query("containers", List.of(Arg.bounded("radius", Type.INT, 1, MAX_CONTAINER_RADIUS)),
-                "Container[]", false, "containers in sight or already known; a double chest is one handle"));
-        t.add(query("contents", List.of(Arg.of("c", Type.CONTAINER)), "{[item: ItemId]: int}", false,
+                "Container[]", true, "containers in sight or already known; a double chest is one handle"));
+        t.add(query("contents", List.of(Arg.of("c", Type.CONTAINER)), "{[item: ItemId]: int}", true,
                 "a known container's contents; an unknown one is denied until opened"));
-        t.add(query("last_area", List.of(), "Box | null", false, "the last box an area primitive finished"));
-        t.add(query("light_at", List.of(Arg.of("p", Type.POS)), "int", false, "the light level at p"));
+        t.add(query("last_area", List.of(), "Box | null", true, "the last box an area primitive finished"));
+        t.add(query("light_at", List.of(Arg.of("p", Type.POS)), "int", true, "the light level at p"));
         t.add(query("block_at", List.of(Arg.of("p", Type.POS)), "BlockId | \"hidden\"", true,
                 "the block at p, or hidden when no face of it is exposed"));
 

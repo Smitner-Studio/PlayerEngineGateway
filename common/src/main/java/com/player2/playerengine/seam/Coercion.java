@@ -61,12 +61,12 @@ public final class Coercion {
     public static final class Failure extends Exception {
         public final ActionError error;
 
-        Failure(ActionError error) {
+        public Failure(ActionError error) {
             super(error.toLine(), null, false, false);
             this.error = error;
         }
 
-        static Failure of(FailureCode code, String message) {
+        public static Failure of(FailureCode code, String message) {
             return new Failure(ActionError.of(code, message));
         }
     }

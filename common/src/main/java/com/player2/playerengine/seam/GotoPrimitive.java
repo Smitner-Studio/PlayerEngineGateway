@@ -39,13 +39,14 @@ public final class GotoPrimitive implements Primitive {
     }
 
     @Override
-    public void start(Map<String, Object> args, Map<String, Object> options, Context ctx, Consumer<TaskEnd> ended) {
+    public void start(Map<String, Object> args, Map<String, Object> options, Map<String, Object> pre, Context ctx,
+            Consumer<TaskEnd> ended) {
         AreaSpec.Pos p = (AreaSpec.Pos) args.get("p");
         ctx.mod().runUserTask(new GetToBlockTask(new BlockPos(p.x(), p.y(), p.z())), () -> ended.accept(TaskEnd.finished(null)));
     }
 
     @Override
-    public ActionError postcondition(Map<String, Object> args, World world) {
+    public ActionError postcondition(Map<String, Object> args, Map<String, Object> pre, World world) {
         AreaSpec.Pos p = (AreaSpec.Pos) args.get("p");
         Vec3 at = world.position();
         double d = at.distanceTo(new Vec3(p.x() + 0.5, p.y() + 0.5, p.z() + 0.5));

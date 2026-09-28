@@ -2,6 +2,9 @@ package com.player2.playerengine.seam;
 
 import com.player2.playerengine.containeraccess.ContainerResolver;
 import com.player2.playerengine.tasks.construction.area.AreaSpec;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import net.minecraft.core.BlockPos;
@@ -34,6 +37,42 @@ public record ContainerHandle(AreaSpec.Pos pos, AreaSpec.Pos secondary, boolean 
         return p.equals(pos) || p.equals(secondary);
     }
 
+    /** The halves, canonical first. */
+    public List<AreaSpec.Pos> halves() {
+        return secondary == null ? List.of(pos) : List.of(pos, secondary);
+    }
+
+    /** The plain form a snapshot or the calls log keeps: {@code {pos: [x,y,z], secondary?: [x,y,z]}}. */
+    public Map<String, Object> toState() {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("pos", List.of(pos.x(), pos.y(), pos.z()));
+        if (secondary != null) {
+            m.put("secondary", List.of(secondary.x(), secondary.y(), secondary.z()));
+        }
+        return m;
+    }
+
+    /** The handle {@link #toState()} wrote. */
+    public static ContainerHandle fromState(Object state) throws Coercion.Failure {
+        if (!(state instanceof Map<?, ?> m) || m.get("pos") == null) {
+            throw Coercion.Failure.of(FailureCode.NO_CONTAINER, "no container was recorded");
+        }
+        AreaSpec.Pos second = m.get("secondary") == null ? null : Coercion.pos(m.get("secondary"));
+        return new ContainerHandle(Coercion.pos(m.get("pos")), second, true);
+    }
+
+    /**
+     * A whole container and what it holds at one moment.
+     *
+     * @param items     by canonical item id
+     * @param freeSlots empty slots across every half
+     */
+    public record Contents(ContainerHandle handle, Map<String, Integer> items, int freeSlots) {
+        public Contents {
+            items = Map.copyOf(items);
+        }
+    }
+
     /**
      * The whole container at {@code p}, or {@code no_container}.
      *
@@ -47,7 +86,7 @@ public record ContainerHandle(AreaSpec.Pos pos, AreaSpec.Pos secondary, boolean 
         if (!isContainer.test(at)) {
             throw new Coercion.Failure(new ActionError(FailureCode.NO_CONTAINER,
                     "there is no container at " + p.x() + " " + p.y() + " " + p.z(),
-                    java.util.Map.of("pos", java.util.List.of(p.x(), p.y(), p.z()))));
+                    Map.of("pos", List.of(p.x(), p.y(), p.z()))));
         }
         if (state.getBlock() instanceof ChestBlock && state.getValue(ChestBlock.TYPE) != ChestType.SINGLE) {
             BlockPos[] halves = ContainerResolver.canonicalHalves(at, state);
