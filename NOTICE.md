@@ -75,7 +75,7 @@ Files changed from upstream:
 | `common/src/main/java/com/player2/playerengine/player2api/Player2PayerResolution.java` | server-wide work is billable with no player online when the gateway is enabled |
 | `common/src/main/java/com/player2/playerengine/player2api/utils/AudioUtils.java` | text-to-speech skipped when the gateway is enabled |
 | `common/build.gradle` | `gatewaySelfTest` task |
-| `gradle.properties` | version `1.21.1-1.4.0-gateway.8.1` |
+| `gradle.properties` | version `1.21.1-1.4.0-gateway.9` |
 | `neoforge/src/main/resources/META-INF/neoforge.mods.toml` | display name "PlayerEngine (OpenAI-gateway fork)" |
 | `README.md`, `NOTICE.md`, `Taskfile.yml`, `.gitignore` | fork documentation and build entries |
 
@@ -523,7 +523,7 @@ keeps its large but finite cost for player-placed blocks in the way.
 |---|---|
 | `gradle.properties` | version `1.21.1-1.4.0-gateway.8.1` |
 
-## Programs replace commands (companion stage 4)
+## Programs replace commands (gateway.9, companion stage 4)
 
 **The reply is `{say, program?, save?, mood?}` (R4, R10, R15).** A companion acts by writing a
 short program in a JavaScript subset against the typed `api.*` of the seam, and the interpreter
@@ -626,3 +626,9 @@ fails if their readers come back.
 | `common/src/main/resources/tool_overrides.README.md` | the deep-check section removed |
 | `common/build.gradle` | `checkCutover` names the removed keys' readers |
 | `common/src/main/java/com/player2/playerengine/smoke/SmokeHarness.java` | `mine-grief` sends a program and waits on the job line |
+
+**Version.**
+
+| File | Change |
+|---|---|
+| `gradle.properties` | version `1.21.1-1.4.0-gateway.9` |
