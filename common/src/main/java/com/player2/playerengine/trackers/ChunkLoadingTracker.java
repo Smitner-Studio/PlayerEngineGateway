@@ -1,7 +1,7 @@
 package com.player2.playerengine.trackers;
 
 import com.player2.playerengine.PlayerEngineController;
-import com.player2.playerengine.util.ChunkController;
+import com.player2.playerengine.util.ChunkHolds;
 import net.minecraft.core.SectionPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.Mth;
@@ -12,14 +12,19 @@ import net.minecraft.world.level.ChunkPos;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * Keeps the companion's 3x3 chunk hold on it, once a second, through {@link ChunkHolds}. The hold
+ * follows the companion across dimensions and is released only by {@link #reset()} (despawn and
+ * dismissal) or the platform's stale sweep; it persists across restarts where the platform has
+ * tickets (R9).
+ */
 public class ChunkLoadingTracker {
-    private List<ChunkPos> chunks = new ArrayList<ChunkPos>();
     private int ticks = 20;
-    private long playerLastSeen = -1;
-    private LivingEntity entity;
-    private ServerLevel heldIn;
+    private final PlayerEngineController controller;
+    private final LivingEntity entity;
 
     public ChunkLoadingTracker(PlayerEngineController controller) {
+        this.controller = controller;
         this.entity = controller.getEntity();
     }
 
@@ -28,42 +33,9 @@ public class ChunkLoadingTracker {
         if(ticks > 0)
             return false;
         ticks = 20;
-
-        List players = entity.level().getEntitiesOfClass(Player.class, entity.getBoundingBox().inflate(48, 48, 48));
-        if(!players.isEmpty())
-            playerLastSeen = System.currentTimeMillis();
-
-//        if(playerLastSeen < 0){
-//            return false;
-//        }
-//        //unload after 10 min
-//        if(System.currentTimeMillis() > playerLastSeen + 600000){
-//            ChunkController.instance.unload((ServerLevel) entity.level(), entity.getUUID(), entity.chunkPosition().x, entity.chunkPosition().z);
-//            chunks.clear();
-//            playerLastSeen = -1;
-//            return false;
-//        }
-        ServerLevel level = (ServerLevel) entity.level();
-        if (level != heldIn) {
-            // A dimension change: the old holds belong to the old level.
-            ChunkController.instance.releaseAll(entity.getUUID());
-            chunks.clear();
-            heldIn = level;
-        }
-        List<ChunkPos> list = chunksToHold(entity.getX(), entity.getZ());
-
-        // Every tick, not only on entry: a chunk that was someone else's when the companion arrived
-        // is claimed once they let it go. load() is idempotent.
-        for(ChunkPos chunk : list){
-            ChunkController.instance.load(level, entity.getUUID(), chunk.x, chunk.z);
-            chunks.remove(chunk);
-        }
-
-        for(ChunkPos chunk : chunks){
-            ChunkController.instance.unload(level, entity.getUUID(), chunk.x, chunk.z);
-        }
-
-        this.chunks = list;
+        Player owner = controller.getOwner();
+        ChunkHolds.get().holdExactly((ServerLevel) entity.level(), entity.getUUID(),
+                owner == null ? null : owner.getUUID(), chunksToHold(entity.getX(), entity.getZ()));
         return false;
     }
 
@@ -86,9 +58,7 @@ public class ChunkLoadingTracker {
 
     /** Releases the whole hold, in whatever level it was taken. */
     public void reset() {
-        ChunkController.instance.releaseAll(entity.getUUID());
-        chunks.clear();
-        heldIn = null;
-        playerLastSeen = 0;
+        ChunkHolds.get().releaseAll(entity.getUUID());
+        ticks = 20;
     }
 }

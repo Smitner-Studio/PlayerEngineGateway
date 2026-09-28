@@ -52,6 +52,12 @@ public final class CompanionRulesSelfTest {
         checks += com.player2.playerengine.automaton.utils.player.FeetChunkSelfTest.runAll();
         checks += com.player2.playerengine.trackers.ChunkHoldSelfTest.runAll();
         checks += com.player2.playerengine.util.ChunkControllerSelfTest.runAll();
+        checks += com.player2.playerengine.util.PerceptionSelfTest.runAll();
+        checks += com.player2.playerengine.util.TicketBookSelfTest.runAll();
+        checks += com.player2.playerengine.util.ForcedChunkClearSelfTest.runAll();
+        checks += com.player2.playerengine.player2api.DecisionCaptureSelfTest.runAll();
+        checks += com.player2.playerengine.player2api.CompanionAddressSelfTest.runAll();
+        checks += com.player2.playerengine.player2api.TurnCapsSelfTest.runAll();
         System.out.println("companion self-test: " + checks + " checks passed");
     }
 
@@ -127,6 +133,8 @@ public final class CompanionRulesSelfTest {
         require(empty.survivalParity(), "survivalParity defaults on");
         require(empty.progressChat() == CompanionRules.ProgressChat.OFF, "progressChat defaults to off");
         require(empty.hungerOverride() == null, "hunger unset leaves the settings file in charge");
+        require(!empty.captureDecisions(), "captureDecisions defaults off");
+        require(rules("captureDecisions", "true").captureDecisions(), "captureDecisions=true turns capture on");
         require(rules("hunger", "false").hungerOverride() == Boolean.FALSE, "hunger=false overrides the settings file");
         require(rules("hunger", "true").hungerOverride() == Boolean.TRUE, "hunger=true overrides the settings file");
         require(rules("hunger", "maybe").hungerOverride() == null, "an unreadable hunger value is ignored");

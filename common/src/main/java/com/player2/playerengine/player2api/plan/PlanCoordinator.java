@@ -53,8 +53,11 @@ public final class PlanCoordinator {
         long now();
     }
 
-    /** Who a decision turn belongs to. {@code ownerTurn} is decided by authenticated UUID only. */
-    public record Turn(boolean userTurn, boolean ownerTurn, UUID initiator) {
+    /**
+     * Who a decision turn belongs to: the authenticated player who sent it, or whose chat started the
+     * chain a feedback turn continues; null when no player did. Any such player may plan (R1).
+     */
+    public record Turn(boolean userTurn, UUID initiator) {
     }
 
     private final Host host;
@@ -96,9 +99,9 @@ public final class PlanCoordinator {
         resumeRequested = false;
     }
 
-    /** Called for each owner or non-owner chat line before the model turn it starts. */
-    public synchronized void onUserMessage(String text, boolean fromOwner) {
-        if (fromOwner && plan != null && plan.status != CompanionPlan.Status.RUNNING
+    /** Called for each chat line before the model turn it starts; any player's "continue" resumes (R1). */
+    public synchronized void onUserMessage(String text, boolean fromPlayer) {
+        if (fromPlayer && plan != null && plan.status != CompanionPlan.Status.RUNNING
                 && PlanParser.isResumePhrase(text)) {
             resumeRequested = true;
         }
@@ -114,7 +117,7 @@ public final class PlanCoordinator {
         boolean wantsResume = resumeRequested;
         resumeRequested = false;
         boolean chargedThisTurn = false;
-        if (plan != null && turn.userTurn() && turn.ownerTurn()) {
+        if (plan != null && turn.userTurn() && turn.initiator() != null) {
             plan.lastActivityMillis = now;
             if (!charge(now)) {
                 failForBudget();
@@ -135,12 +138,12 @@ public final class PlanCoordinator {
             }
             return false;
         }
-        // A repair prompt is the plan's own feedback turn; the owner authorised the plan it repairs.
-        boolean authorised = turn.ownerTurn()
+        // A repair prompt is the plan's own feedback turn; a player authorised the plan it repairs.
+        boolean authorised = turn.initiator() != null
                 || (!turn.userTurn() && plan != null && plan.status == CompanionPlan.Status.AWAITING_REPAIR);
         if (!authorised) {
-            host.enqueueModelTurn("Only your owner can hand you a long job or change one, so nothing was "
-                    + "started. Decline politely in one short line.");
+            host.enqueueModelTurn("That long job did not come from a player, so nothing was started. "
+                    + "Decline politely in one short line.");
             return false;
         }
         if (result instanceof PlanParser.Invalid invalid) {
@@ -180,7 +183,7 @@ public final class PlanCoordinator {
             fresh.callsCharged = 1;
         } else {
             if (!budget.tryCharge(initiator, now)) {
-                host.enqueueModelTurn("That job was not started: your owner has used this hour's allowance "
+                host.enqueueModelTurn("That job was not started: whoever asked has used this hour's allowance "
                         + "for long jobs. Say so in one short line and offer a single task instead.");
                 return false;
             }

@@ -228,8 +228,11 @@ public class AgentConversationData {
     private final java.util.concurrent.ConcurrentLinkedQueue<Runnable> pendingPlanDispatch =
             new java.util.concurrent.ConcurrentLinkedQueue<>();
     private volatile boolean planLoaded;
-    /** Whether the chain in progress was started by the authenticated owner (UUID, never name). */
-    private volatile boolean chainInitiatorIsOwner;
+    /** Said instead of calling the model when a turn cap is reached ({@link TurnCaps}). */
+    static final String TIRED_LINE = "I'm worn out. Give me a little while before the next thing.";
+    private final java.util.concurrent.atomic.AtomicLong modelRequests = new java.util.concurrent.atomic.AtomicLong();
+    /** The authenticated player (UUID, never name) whose chat started the chain in progress, or null. */
+    private volatile UUID chainInitiator;
 
     public AgentConversationData(PlayerEngineController mod) {
         this.mod = mod;
@@ -386,7 +389,7 @@ public class AgentConversationData {
             deferredInfoQueue.clear();
         }
         chainInitiatorUsername = null;
-        chainInitiatorIsOwner = false;
+        chainInitiator = null;
         synchronized (this) {
             // The greeting event went with the queue; the flag must not force a later turn.
             greetingQueued = false;
@@ -490,19 +493,18 @@ public class AgentConversationData {
         resetB5TurnState();
 
         String lastUserInBatch = null;
-        Boolean lastUserIsOwner = null;
+        UUID lastUserUuid = null;
         boolean ownerInBatch = false;
         planCoordinator.beginTurn();
         for (Event e : eventQueue) {
             if (e instanceof Event.UserMessage um) {
                 lastUserInBatch = um.userName();
-                boolean owner = isAuthenticatedOwner(um);
-                lastUserIsOwner = owner;
-                if (owner) {
+                lastUserUuid = um.authenticatedUserUuid();
+                if (isAuthenticatedOwner(um)) {
                     ownerInBatch = true;
                     mod.markOwnerMessage(System.currentTimeMillis());
                 }
-                planCoordinator.onUserMessage(um.message(), owner);
+                planCoordinator.onUserMessage(um.message(), lastUserUuid != null);
             }
         }
         synchronized (this) {
@@ -515,7 +517,7 @@ public class AgentConversationData {
         }
         if (lastUserInBatch != null) {
             chainInitiatorUsername = lastUserInBatch;
-            chainInitiatorIsOwner = Boolean.TRUE.equals(lastUserIsOwner);
+            chainInitiator = lastUserUuid;
         }
 
         final String relayInitiator = lastUserInBatch != null ? lastUserInBatch : chainInitiatorUsername;
@@ -533,6 +535,16 @@ public class AgentConversationData {
                 releaseProcessing(turnTicket);
                 return;
             }
+        }
+
+        // A batch with a player's line is that player's turn; a feedback turn is the chain's.
+        UUID turnPlayer = lastUserInBatch != null ? lastUserUuid : chainInitiator;
+        if (!TurnCaps.SHARED.tryCharge(turnPlayer, mod.getPlayer().getUUID())) {
+            LOGGER.info("Turn cap reached for player={} or bot={}; no model call", turnPlayer, getName());
+            eventQueue.clear();
+            releaseProcessing(turnTicket);
+            onCharacterEvent.accept(new Event.CharacterMessage(TIRED_LINE, null, this, relayInitiator));
+            return;
         }
 
         Player2PayerResolution.ApiBillingContext billing = Player2PayerResolution.resolve(mod, chainInitiatorUsername,
@@ -915,7 +927,13 @@ public class AgentConversationData {
         }
         activeLlmCompleter = completer;
         activeLlmSubmission = submission;
+        modelRequests.incrementAndGet();
         return true;
+    }
+
+    /** Decision requests this companion has sent to the model since it was created. */
+    public long getModelRequestCount() {
+        return modelRequests.get();
     }
 
     /**
@@ -1250,10 +1268,11 @@ public class AgentConversationData {
         if (!greetingResponse && !isPeerTurn && conversationTurnGate.accepts(turnTicket)) {
             command = applyPlanAndOwnership(jsonResp, lastEvent, command, cmdId);
             cmdId = resolveCommandId(command);
-        } else if (isPeerTurn && ownerOnlyCommandIn(command) != null) {
+        } else if (isPeerTurn && peerRefusedCommandIn(command) != null) {
             command = null;
             cmdId = null;
         }
+        DecisionCapture.record(this, lastEvent, historyWithWrappedStatus, jsonResp, command);
         boolean substantiveReply = !strippedMessage.isEmpty()
                 || (cmdId != null && !"idle".equals(cmdId))   // a real, non-idle command counts
                 || !validBoundaries.isEmpty();                 // a valid gesture counts
@@ -1314,19 +1333,11 @@ public class AgentConversationData {
     }
 
     /**
-     * Applies the reply's {@code plan} field and the owner-only rules, and returns the command the
-     * reply may still dispatch (null when the plan took over or the command was refused).
+     * Applies the reply's {@code plan} field and returns the command the reply may still dispatch
+     * (null when the plan took over). Any player may command any companion (R1).
      */
     private String applyPlanAndOwnership(JsonObject jsonResp, Event lastEvent, String command, String cmdId) {
-        PlanCoordinator.Turn turn = OwnerGate.turn(lastEvent, ownerUuid(), chainInitiatorIsOwner);
-        String ownerOnly = ownerOnlyCommandIn(command);
-        if (ownerOnly != null && !turn.ownerTurn()) {
-            LOGGER.info("[Plan] refused owner-only command {} on a non-owner turn for bot={}", ownerOnly, getName());
-            addEventToQueue(new InfoMessage("Only your owner can ask you to dig out or fill an area, so you did "
-                    + "not start it. Decline politely in one short line."));
-            command = null;
-            cmdId = null;
-        }
+        PlanCoordinator.Turn turn = OwnerGate.turn(lastEvent, chainInitiator);
         if ("stop".equals(cmdId)) {
             planCoordinator.cancel("stop command");
         }
@@ -1335,8 +1346,8 @@ public class AgentConversationData {
         return planTook ? null : command;
     }
 
-    private String ownerOnlyCommandIn(String command) {
-        return OwnerGate.ownerOnlyCommandIn(command, mod.getCommandExecutor().getCommandPrefix(),
+    private String peerRefusedCommandIn(String command) {
+        return OwnerGate.peerRefusedCommandIn(command, mod.getCommandExecutor().getCommandPrefix(),
                 this::registeredCommandId);
     }
 

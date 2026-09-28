@@ -7,6 +7,7 @@ import com.player2.playerengine.eventbus.events.BlockPlaceEvent;
 import com.player2.playerengine.multiversion.blockpos.BlockPosVer;
 import com.player2.playerengine.trackers.blacklisting.WorldLocateBlacklist;
 import com.player2.playerengine.util.Dimension;
+import com.player2.playerengine.util.Perception;
 import com.player2.playerengine.util.helpers.BaritoneHelper;
 import com.player2.playerengine.util.helpers.WorldHelper;
 import com.player2.playerengine.util.time.TimerGame;
@@ -288,7 +289,8 @@ public class BlockScanner {
       for (Block block : blocks) {
          if (this.trackedBlocks.containsKey(block)) {
             for (BlockPos pos : this.trackedBlocks.get(block)) {
-               if (isValidTest.test(pos) && this.mod.getWorld().getBlockState(pos).getBlock().equals(block) && !this.isUnreachable(pos)) {
+               if (isValidTest.test(pos) && this.mod.getWorld().getBlockState(pos).getBlock().equals(block) && !this.isUnreachable(pos)
+                  && Perception.isExposed(Perception.of(this.mod.getWorld()), pos)) {
                   return true;
                }
             }
@@ -332,24 +334,16 @@ public class BlockScanner {
       return this.getNearestBlock(block, pos -> true, fromPos);
    }
 
+   /** Only exposed blocks are candidates: a companion never targets ore it could not see (F1). */
    public Optional<BlockPos> getNearestBlock(Block block, Predicate<BlockPos> isValidTest, Vec3 fromPos) {
-      BlockPos pos = null;
-      double nearest = Double.POSITIVE_INFINITY;
       if (!this.trackedBlocks.containsKey(block)) {
          return Optional.empty();
-      } else {
-         for (BlockPos p : this.trackedBlocks.get(block)) {
-            if (this.mod.getWorld().getBlockState(p).getBlock().equals(block) && isValidTest.test(p) && !this.isUnreachable(p)) {
-               double dist = BaritoneHelper.calculateGenericHeuristic(fromPos, WorldHelper.toVec3d(p));
-               if (dist < nearest) {
-                  nearest = dist;
-                  pos = p;
-               }
-            }
-         }
-
-         return pos != null ? Optional.of(pos) : Optional.empty();
       }
+      Level world = this.mod.getWorld();
+      BlockPos pos = Perception.nearestExposed(this.trackedBlocks.get(block), Perception.of(world),
+         p -> world.getBlockState(p).getBlock().equals(block) && isValidTest.test(p) && !this.isUnreachable(p),
+         p -> BaritoneHelper.calculateGenericHeuristic(fromPos, WorldHelper.toVec3d(p)));
+      return Optional.ofNullable(pos);
    }
 
    public boolean anyFoundWithinDistance(double distance, Block... blocks) {

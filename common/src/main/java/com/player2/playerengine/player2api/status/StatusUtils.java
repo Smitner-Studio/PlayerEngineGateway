@@ -106,32 +106,8 @@ public class StatusUtils {
    }
 
    public static String getNearbyBlocksString(PlayerEngineController mod) {
-      int radius = 12;
-      BlockPos center = mod.getPlayer().blockPosition();
-      Map<String, Integer> blockCounts = new HashMap<>();
-
-      for (int dx = -radius; dx <= radius; dx++) {
-         for (int dy = -radius; dy <= radius; dy++) {
-            for (int dz = -radius; dz <= radius; dz++) {
-               BlockPos pos = center.offset(dx, dy, dz);
-               // Render modded blocks as their registry id (iceandfire:silver_ore), vanilla as the
-               // bare path. The old getDescriptionId() leaked the lang key (block.iceandfire.silver_ore)
-               // into worldStatus, which the model then echoed back as a (rejected) @get token — the
-               // same lang-key contamination that defeated the modded-craft flow.
-               net.minecraft.world.level.block.Block block =
-                     mod.getWorld().getBlockState(pos).getBlock();
-               net.minecraft.resources.ResourceLocation blockKey =
-                     net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(block);
-               String blockName = blockKey != null
-                     ? ("minecraft".equals(blockKey.getNamespace()) ? blockKey.getPath() : blockKey.toString())
-                     : block.getDescriptionId().replace("block.minecraft.", "");
-               if (!blockName.equals("air")) {
-                  blockCounts.put(blockName, blockCounts.getOrDefault(blockName, 0) + 1);
-               }
-            }
-         }
-      }
-
+      Map<String, Integer> blockCounts = countExposedBlocks(
+            com.player2.playerengine.util.Perception.of(mod.getWorld()), mod.getPlayer().blockPosition(), 12);
       ObjectStatus status = new ObjectStatus();
 
       for (Entry<String, Integer> entry : blockCounts.entrySet()) {
@@ -141,25 +117,58 @@ public class StatusUtils {
       return status.toString();
    }
 
+   /**
+    * Blocks within {@code radius} that a player there could see: an enclosed block, ore included,
+    * is not counted (F1).
+    */
+   public static Map<String, Integer> countExposedBlocks(
+         com.player2.playerengine.util.Perception.BlockLookup world, BlockPos center, int radius) {
+      Map<String, Integer> blockCounts = new HashMap<>();
+      for (int dx = -radius; dx <= radius; dx++) {
+         for (int dy = -radius; dy <= radius; dy++) {
+            for (int dz = -radius; dz <= radius; dz++) {
+               BlockPos pos = center.offset(dx, dy, dz);
+               net.minecraft.world.level.block.state.BlockState state = world.at(pos);
+               if (state.isAir() || !com.player2.playerengine.util.Perception.isExposed(world, pos)) {
+                  continue;
+               }
+               // Render modded blocks as their registry id (iceandfire:silver_ore), vanilla as the
+               // bare path. The old getDescriptionId() leaked the lang key (block.iceandfire.silver_ore)
+               // into worldStatus, which the model then echoed back as a (rejected) @get token — the
+               // same lang-key contamination that defeated the modded-craft flow.
+               net.minecraft.world.level.block.Block block = state.getBlock();
+               net.minecraft.resources.ResourceLocation blockKey =
+                     net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(block);
+               String blockName = blockKey != null
+                     ? ("minecraft".equals(blockKey.getNamespace()) ? blockKey.getPath() : blockKey.toString())
+                     : block.getDescriptionId().replace("block.minecraft.", "");
+               blockCounts.merge(blockName, 1, Integer::sum);
+            }
+         }
+      }
+      return blockCounts;
+   }
+
    public static String getOxygenString(PlayerEngineController mod) {
       return String.format("%s/300", mod.getPlayer().getAirSupply());
    }
 
+   /** Hostiles the companion can see from its eyes: kind, rough distance and direction, no coordinates (F1). */
    public static String getNearbyHostileMobs(PlayerEngineController mod) {
-      int radius = 32;
-      List<String> descriptions = new ArrayList<>();
-
+      int radius = com.player2.playerengine.util.Perception.HOSTILE_RADIUS;
+      LivingEntity self = mod.getPlayer();
+      List<Entity> monsters = new ArrayList<>();
       for (Entity entity : mod.getWorld().getAllEntities()) {
-         if (entity instanceof Monster && entity.distanceTo(mod.getPlayer()) < radius) {
-            String type = entity.getType().getDescriptionId();
-            String niceName = type.replace("entity.minecraft.", "");
-            String position = entity.position().align(EnumSet.allOf(Axis.class)).toString();
-            descriptions.add(niceName + " at " + position);
+         if (entity instanceof Monster && entity.distanceTo(self) < radius) {
+            monsters.add(entity);
          }
       }
+      List<String> descriptions = com.player2.playerengine.util.Perception.describeHostiles(
+            self.position(), monsters, e -> e.getType().getDescriptionId().replace("entity.minecraft.", ""),
+            Entity::position, self::hasLineOfSight);
 
       return descriptions.isEmpty()
-            ? String.format("no nearby hostile mobs within %d", radius)
+            ? String.format("no hostile mobs in sight within %d", radius)
             : "[" + String.join(",", descriptions.stream().map(s -> "\"" + s + "\"").toArray(String[]::new)) + "]";
    }
 

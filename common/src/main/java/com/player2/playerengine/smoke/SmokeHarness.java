@@ -13,6 +13,8 @@ import com.player2.playerengine.player2api.Event;
 import com.player2.playerengine.player2api.manager.ConversationManager;
 import com.player2.playerengine.player2api.utils.CharacterUtils;
 import com.player2.playerengine.structureprotection.PlayerPlacedBlockStore;
+import com.player2.playerengine.util.ChunkHolds;
+import com.player2.playerengine.util.TicketChunkHolds;
 import dev.architectury.event.events.common.LifecycleEvent;
 import dev.architectury.event.events.common.TickEvent;
 import java.nio.charset.StandardCharsets;
@@ -29,6 +31,8 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.storage.LevelResource;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.level.block.Blocks;
@@ -58,6 +62,10 @@ public final class SmokeHarness {
     private static final UUID STRANGER_ID = UUID.nameUUIDFromBytes("smoke-stranger".getBytes(StandardCharsets.UTF_8));
     private static final String OWNER_NAME = "SmokeOwner";
     private static final String STRANGER_NAME = "SmokeStranger";
+    private static final UUID NETHER_PLAYER_ID = UUID.nameUUIDFromBytes("smoke-nether".getBytes(StandardCharsets.UTF_8));
+    private static final String NETHER_PLAYER_NAME = "SmokeNether";
+    private static final UUID THIRD_ID = UUID.nameUUIDFromBytes("smoke-third".getBytes(StandardCharsets.UTF_8));
+    private static final String THIRD_NAME = "SmokeThird";
     /** Player2NPC's game id; its join handler asks the gateway for this game's characters. */
     private static final String GAME_ID = "player2-ai-npc-minecraft";
     private static final int FLOOR_Y = 120;
@@ -65,8 +73,8 @@ public final class SmokeHarness {
     /** A refusal is decided on the first model turn; the loopback mock answers in milliseconds. */
     private static final int REFUSAL_WINDOW_SEC = 20;
     private static final int DIG_TIMEOUT_SEC = 240;
-    /** The highest arena slot a scenario uses. */
-    private static final int MAX_SLOT = 10;
+    /** What {@code chunk-hold} leaves for {@code chunk-hold-restart} to check, in the world folder. */
+    private static final String CHUNK_HOLD_MARKER = "playerengine-smoke-chunk-hold.txt";
 
     private static boolean tickRegistered;
     private static Run active;
@@ -102,7 +110,8 @@ public final class SmokeHarness {
         if (!tickRegistered) {
             tickRegistered = true;
             TickEvent.SERVER_POST.register(SmokeHarness::tick);
-            LifecycleEvent.SERVER_STOPPING.register(server -> FakePlayers.quitAll(server, List.of(OWNER_ID, STRANGER_ID)));
+            LifecycleEvent.SERVER_STOPPING.register(server -> FakePlayers.quitAll(server,
+                    List.of(OWNER_ID, STRANGER_ID, NETHER_PLAYER_ID, THIRD_ID)));
         }
         HelpRegistry.register(new HelpEntry("playerengine", "smoke", "smoke <scenario>",
                 "help.playerengine.smoke.short", "help.playerengine.smoke.long",
@@ -147,6 +156,13 @@ public final class SmokeHarness {
             case "chunks" -> chunksSurvive(level);
             case "resume" -> planWithInterruption(level, 8, Resume.REATTACH);
             case "despawn" -> despawnReleases(level);
+            case "chunk-hold" -> chunkHold(level);
+            case "attack" -> attackAPlayer(level);
+            case "far-owner" -> farOwner(level);
+            case "xray" -> xray(level);
+            case "caps" -> turnCaps(level);
+            case "two-ada" -> twoAdas(level);
+            case "chunk-hold-restart" -> chunkHoldAfterRestart(level);
             case "goto" -> planWithInterruption(level, 6, Resume.NONE);
             case "restart" -> restart(level);
             default -> {
@@ -168,7 +184,9 @@ public final class SmokeHarness {
         }
         return List.of(waitFor(() -> companion() == null ? null
                 : "companion " + companion().getName() + " (" + character.id() + ") at " + bot().blockPosition()
-                        + " owner=" + mod().getOwner().getUUID(),
+                        + " owner=" + mod().getOwner().getUUID() + "; one-time forced-chunk clear this start: "
+                        + (com.player2.playerengine.util.ForcedChunkClear.lastRunCleared() < 0 ? "skipped"
+                                : com.player2.playerengine.util.ForcedChunkClear.lastRunCleared() + " cleared"),
                 60, "no companion registered for the fake owner"));
     }
 
@@ -369,46 +387,27 @@ public final class SmokeHarness {
     }
 
     /**
-     * The companion forces the chunks of its 3x3 hold that no arena forces; when Player2NPC dismisses
-     * it, all of them are released and the arena's own chunks are not. It is then summoned again for
-     * the scenarios that follow.
+     * The companion holds its whole 3x3 in the platform's store; when Player2NPC dismisses it, all 9
+     * are released and the arena's own forced chunks are not. It is then summoned again for the
+     * scenarios that follow.
      */
     private static List<Stage> despawnReleases(ServerLevel level) {
         requireCompanion();
         BlockPos site = arena(level, 9);
         ServerPlayer owner = (ServerPlayer) mod().getOwner();
         List<ChunkPos> arenaChunks = arenaChunks(site);
-        List<ChunkPos> own = new ArrayList<>();
+        UUID id = bot().getUUID();
         return List.of(
                 act(() -> place(site, 0, -6, 0.5, 0.5)),
-                waitFor(() -> {
-                    own.clear();
-                    ChunkPos at = bot().chunkPosition();
-                    for (int dx = -1; dx <= 1; dx++) {
-                        for (int dz = -1; dz <= 1; dz++) {
-                            ChunkPos c = new ChunkPos(at.x + dx, at.z + dz);
-                            if (!harnessForced(level, c)) {
-                                own.add(c);
-                            }
-                        }
-                    }
-                    if (own.isEmpty()) {
-                        return "!every chunk of the hold is an arena's; the check would be vacuous";
-                    }
-                    for (ChunkPos c : own) {
-                        if (!level.getForcedChunks().contains(c.toLong())) {
-                            return null;
-                        }
-                    }
-                    return "companion forced its own " + own.size() + " chunk(s)";
-                }, 20, () -> "the companion never forced its own chunks around " + bot().chunkPosition()),
+                waitFor(() -> holdsAround(level, id, bot().chunkPosition()) ? "companion holds its 9 chunks" : null,
+                        20, () -> "the companion never held its 3x3 around " + bot().chunkPosition() + ": held "
+                                + ChunkHolds.get().held(level, id).size()),
                 act(() -> invoke(companionManager(owner), "dismissCompanion", Character.class, character)),
                 waitFor(() -> companion() == null ? "dismissed" : null, 20, "companion still registered after dismiss"),
                 window(() -> {
-                    for (ChunkPos c : own) {
-                        if (level.getForcedChunks().contains(c.toLong())) {
-                            return "!chunk " + c.x + "," + c.z + " still forced after the companion was dismissed";
-                        }
+                    int left = ChunkHolds.get().held(level, id).size();
+                    if (left > 0) {
+                        return "!" + left + " chunk(s) still held after the companion was dismissed";
                     }
                     for (ChunkPos c : arenaChunks) {
                         if (!level.getForcedChunks().contains(c.toLong())) {
@@ -416,9 +415,408 @@ public final class SmokeHarness {
                         }
                     }
                     return null;
-                }, 3, () -> "all " + own.size() + " released, arena kept"),
+                }, 3, () -> "all 9 released, arena kept"),
                 act(() -> invoke(companionManager(owner), "spawnCompanion", Character.class, character)),
                 waitFor(() -> companion() == null ? null : "summoned again", 60, "no companion after summoning it again"));
+    }
+
+    /**
+     * R9, first boot. The hold is the platform's owner-tagged tickets: 9 around the companion; a
+     * {@code /forceload}ed chunk (the arena's) survives the companion leaving it; the same chunk
+     * coordinates held in the nether are a separate hold; and a hold with no recorded owner (a
+     * deleted companion's) is left for {@code chunk-hold-restart} to see swept at the next start.
+     */
+    private static List<Stage> chunkHold(ServerLevel level) {
+        requireCompanion();
+        if (!(ChunkHolds.get() instanceof TicketChunkHolds)) {
+            throw new IllegalStateException("chunk holds are not tickets on this platform: " + ChunkHolds.get());
+        }
+        BlockPos site = arena(level, 11);
+        BlockPos away = arena(level, 12);
+        List<ChunkPos> arenaChunks = arenaChunks(site);
+        UUID id = bot().getUUID();
+        ChunkPos[] first = new ChunkPos[1];
+        ServerLevel nether = level.getServer().getLevel(Level.NETHER);
+        UUID netherGhost = UUID.nameUUIDFromBytes("smoke-nether-ghost".getBytes(StandardCharsets.UTF_8));
+        UUID staleGhost = UUID.nameUUIDFromBytes("smoke-stale-ghost".getBytes(StandardCharsets.UTF_8));
+        ChunkPos staleAt = new ChunkPos(site(level, 13));
+        return List.of(
+                act(() -> place(site, 0, -6, 0.5, 0.5)),
+                waitFor(() -> {
+                    first[0] = bot().chunkPosition();
+                    return holdsAround(level, id, first[0]) ? "9 tickets around " + first[0] : null;
+                }, 20, () -> "no 9-ticket hold around " + bot().chunkPosition() + ": held "
+                        + ChunkHolds.get().held(level, id).size()),
+                act(() -> place(away, 0, -6, 0.5, 0.5)),
+                waitFor(() -> {
+                    if (!holdsAround(level, id, bot().chunkPosition())) {
+                        return null;
+                    }
+                    for (ChunkPos c : arenaChunks) {
+                        if (!level.getForcedChunks().contains(c.toLong())) {
+                            return "!forceloaded chunk " + c.x + "," + c.z + " un-forced when the companion left";
+                        }
+                    }
+                    return "moved from " + first[0] + " to " + bot().chunkPosition() + ": hold is the new 3x3 only, "
+                            + arenaChunks.size() + " forceloaded chunks kept";
+                }, 20, () -> "hold did not follow the companion: held " + ChunkHolds.get().held(level, id).size()),
+                act(() -> {
+                    if (nether == null) {
+                        throw new IllegalStateException("no nether level");
+                    }
+                    ChunkHolds.get().holdExactly(nether, netherGhost, OWNER_ID, around(bot().chunkPosition()));
+                }),
+                waitFor(() -> {
+                    ChunkPos here = bot().chunkPosition();
+                    if (!holdsAround(nether, netherGhost, here)) {
+                        return "!the nether hold at " + here + " is " + ChunkHolds.get().held(nether, netherGhost).size()
+                                + " tickets";
+                    }
+                    ChunkHolds.get().releaseAll(netherGhost);
+                    int netherLeft = ChunkHolds.get().held(nether, netherGhost).size();
+                    return netherLeft == 0 && holdsAround(level, id, here)
+                            ? "nether hold at the same x,z released, overworld hold kept"
+                            : "!after the nether release: nether " + netherLeft + ", overworld "
+                                    + ChunkHolds.get().held(level, id).size();
+                }, 5, "nether hold never checked"),
+                act(() -> {
+                    ChunkHolds.get().holdExactly(level, staleGhost, null, around(staleAt));
+                    writeMarker(level, staleGhost + " " + staleAt.x + " " + staleAt.z);
+                }),
+                waitFor(() -> ChunkHolds.get().held(level, staleGhost).size() == 9
+                                ? "ownerless hold " + staleGhost + " left for the restart" : null,
+                        5, "the ownerless hold was never taken"));
+    }
+
+    /**
+     * R9, second boot, before the owner logs in: the companion's hold from the first boot is back,
+     * and the ownerless one {@code chunk-hold} left was released by the start sweep.
+     */
+    private static List<Stage> chunkHoldAfterRestart(ServerLevel level) {
+        if (!(ChunkHolds.get() instanceof TicketChunkHolds tickets)) {
+            throw new IllegalStateException("chunk holds are not tickets on this platform: " + ChunkHolds.get());
+        }
+        String[] marker = readMarker(level).trim().split(" ");
+        UUID staleGhost = UUID.fromString(marker[0]);
+        UUID[] mine = new UUID[1];
+        List<ChunkPos> forcedOnBoot1 = arenaChunks(site(level, 11));
+        return List.of(
+                waitFor(() -> {
+                    if (com.player2.playerengine.util.ForcedChunkClear.lastRunCleared() != -1) {
+                        return "!the one-time forced-chunk clear ran again on the second start ("
+                                + com.player2.playerengine.util.ForcedChunkClear.lastRunCleared() + " cleared)";
+                    }
+                    for (ChunkPos c : forcedOnBoot1) {
+                        if (!level.getForcedChunks().contains(c.toLong())) {
+                            return "!chunk " + c.x + "," + c.z + " forceloaded on the first boot was un-forced";
+                        }
+                    }
+                    return "one-time clear skipped; " + forcedOnBoot1.size() + " chunks forceloaded on the first boot kept";
+                }, 5, "forced chunks never checked"),
+                waitFor(() -> {
+                    List<UUID> owned = new ArrayList<>();
+                    tickets.holders().forEach((c, o) -> {
+                        if (OWNER_ID.equals(o)) {
+                            owned.add(c);
+                        }
+                    });
+                    if (owned.size() != 1) {
+                        return "!" + owned.size() + " companion hold(s) recorded for the owner after the restart";
+                    }
+                    mine[0] = owned.get(0);
+                    int n = ChunkHolds.get().held(level, mine[0]).size();
+                    if (n != 9) {
+                        return "!the companion's hold is " + n + " tickets after the restart";
+                    }
+                    for (long c : ChunkHolds.get().held(level, mine[0])) {
+                        if (!level.isPositionEntityTicking(new ChunkPos(c).getMiddleBlockPosition(FLOOR_Y))) {
+                            return null;
+                        }
+                    }
+                    return "companion " + mine[0] + " holds its 9 chunks again, entity-ticking, owner offline";
+                }, 30, "the held chunks never became entity-ticking"),
+                waitFor(() -> {
+                    int n = ChunkHolds.get().held(level, staleGhost).size();
+                    return n == 0 ? "ownerless hold released at start" : null;
+                }, 15, () -> "ownerless hold " + staleGhost + " still " + ChunkHolds.get().held(level, staleGhost).size()
+                        + " tickets after the start sweep"));
+    }
+
+    private static List<ChunkPos> around(ChunkPos c) {
+        List<ChunkPos> list = new ArrayList<>(9);
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dz = -1; dz <= 1; dz++) {
+                list.add(new ChunkPos(c.x + dx, c.z + dz));
+            }
+        }
+        return list;
+    }
+
+    /** Whether the platform's store holds exactly the 3x3 around {@code at} for {@code id}. */
+    private static boolean holdsAround(ServerLevel level, UUID id, ChunkPos at) {
+        java.util.Set<Long> want = new java.util.HashSet<>();
+        for (ChunkPos c : around(at)) {
+            want.add(c.toLong());
+        }
+        return ChunkHolds.get().held(level, id).equals(want);
+    }
+
+    private static void writeMarker(ServerLevel level, String text) {
+        try {
+            java.nio.file.Files.writeString(level.getServer().getWorldPath(LevelResource.ROOT).resolve(CHUNK_HOLD_MARKER), text);
+        } catch (java.io.IOException e) {
+            throw new IllegalStateException("cannot write " + CHUNK_HOLD_MARKER + ": " + e, e);
+        }
+    }
+
+    private static String readMarker(ServerLevel level) {
+        try {
+            return java.nio.file.Files.readString(level.getServer().getWorldPath(LevelResource.ROOT).resolve(CHUNK_HOLD_MARKER));
+        } catch (java.io.IOException e) {
+            throw new IllegalStateException("no " + CHUNK_HOLD_MARKER + "; run chunk-hold on the first boot", e);
+        }
+    }
+
+    /**
+     * R2: the owner, then a second player, each order the companion to attack the other player; no
+     * attack task starts. Then the companion's own hit path is driven directly at a player beside it,
+     * and it does not swing. Fake players are invulnerable (NeoForge {@code FakePlayer}), so damage
+     * cannot be the witness; the attack task and the swing are.
+     */
+    private static List<Stage> attackAPlayer(ServerLevel level) {
+        requireCompanion();
+        BlockPos site = arena(level, 14);
+        place(site, 0, -3, 0.5, 0.5);
+        ServerPlayer stranger = FakePlayers.online(level, STRANGER_ID, STRANGER_NAME, site.offset(2, 1, 0));
+        long[] seq = new long[1];
+        Supplier<String> attacking = () -> {
+            com.player2.playerengine.tasks.base.Task t = mod().getUserTaskChain().getCurrentTask();
+            return t != null && t.getClass().getSimpleName().equals("AttackAndGetDropsTask") && !t.isFinished()
+                    ? "!an attack task is running: " + t : null;
+        };
+        return List.of(
+                act(() -> {
+                    seq[0] = mod().getCommandDispatchSeq();
+                    say(OWNER_ID, OWNER_NAME, "SMOKE-CMD: attack " + STRANGER_NAME);
+                }),
+                window(attacking, REFUSAL_WINDOW_SEC, () -> mod().getCommandDispatchSeq() > seq[0]
+                        ? "owner's attack on " + STRANGER_NAME + " refused (seq " + seq[0] + "->" + mod().getCommandDispatchSeq() + ")"
+                        : "!the owner's attack command never dispatched"),
+                act(() -> {
+                    seq[0] = mod().getCommandDispatchSeq();
+                    say(STRANGER_ID, STRANGER_NAME, "SMOKE-CMD: attack " + OWNER_NAME);
+                }),
+                window(attacking, REFUSAL_WINDOW_SEC, () -> mod().getCommandDispatchSeq() > seq[0]
+                        ? "stranger's attack on " + OWNER_NAME + " refused" : "!the stranger's attack command never dispatched"),
+                waitFor(() -> {
+                    bot().teleportTo(stranger.getX() - 1.0, stranger.getY(), stranger.getZ());
+                    bot().swinging = false;
+                    float before = stranger.getHealth();
+                    mod().getControllerExtras().attack(stranger);
+                    if (bot().swinging) {
+                        return "!the companion swung at a player";
+                    }
+                    return stranger.getHealth() == before ? "the hit path did not swing at the player beside it" : "!damage dealt";
+                }, 5, "the hit path was never driven"));
+    }
+
+    /**
+     * F1: a sponge (breaks by hand, never natural here) sealed in dirt three blocks from the companion
+     * is not a target: {@code mine sponge} leaves it alone. With the dirt above it gone, the same
+     * command mines it, so the filter hides only what a player could not see.
+     */
+    private static List<Stage> xray(ServerLevel level) {
+        requireCompanion();
+        BlockPos site = arena(level, 16);
+        BlockPos hidden = site.offset(3, 2, 0);
+        fillBox(level, hidden.offset(-1, -1, -1), hidden.offset(1, 1, 1));
+        level.setBlockAndUpdate(hidden, Blocks.SPONGE.defaultBlockState());
+        place(site, 0, -4, 0.5, 0.5);
+        long[] seq = new long[1];
+        Supplier<String> taken = () -> level.getBlockState(hidden).is(Blocks.SPONGE) ? null
+                : "!the sealed sponge at " + hidden.toShortString() + " was mined";
+        return List.of(
+                act(() -> {
+                    seq[0] = mod().getCommandDispatchSeq();
+                    say(OWNER_ID, OWNER_NAME, "SMOKE-CMD: mine sponge 1");
+                }),
+                window(taken, 25, () -> mod().getCommandDispatchSeq() > seq[0]
+                        ? "sealed sponge not targeted" : "!mine was never dispatched"),
+                act(() -> {
+                    mod().stop();
+                    level.setBlockAndUpdate(hidden.above(), Blocks.AIR.defaultBlockState());
+                }),
+                act(() -> say(OWNER_ID, OWNER_NAME, "SMOKE-CMD: mine sponge 1")),
+                waitFor(() -> level.getBlockState(hidden).is(Blocks.SPONGE) ? null : "exposed sponge mined",
+                        90, () -> "the exposed sponge was not mined: " + botState()));
+    }
+
+    /**
+     * R8 with unique names. The companion is 100 blocks from everyone. The owner's line naming it is
+     * acted on; the owner's unnamed line is not; a stranger's bare name is not (no Ada within 64
+     * blocks) and the stranger is told the unique name; a player in the nether naming it uniquely is
+     * told it is too far; the stranger's line with the unique name is acted on.
+     */
+    private static List<Stage> farOwner(ServerLevel level) {
+        requireCompanion();
+        BlockPos site = arena(level, 15);
+        place(site, 0, -3, 0.5, 0.5);
+        ServerPlayer owner = (ServerPlayer) mod().getOwner();
+        FakePlayers.teleport(owner, site.offset(100, 1, 0));
+        FakePlayers.online(level, STRANGER_ID, STRANGER_NAME, site.offset(-100, 1, 0));
+        ServerLevel nether = level.getServer().getLevel(Level.NETHER);
+        if (nether == null) {
+            throw new IllegalStateException("no nether level");
+        }
+        FakePlayers.online(nether, NETHER_PLAYER_ID, NETHER_PLAYER_NAME, new BlockPos(site.getX() >> 3, 70, 0));
+        String unique = OWNER_NAME + "'s " + character.shortName();
+        List<String> notices = new java.util.concurrent.CopyOnWriteArrayList<>();
+        ConversationManager.noticeTap = (who, text) -> notices.add(who + ": "
+                + (text.getContents() instanceof net.minecraft.network.chat.contents.TranslatableContents t
+                        ? t.getKey() : text.getString()));
+        long[] seq = new long[1];
+        String gotoA = "SMOKE-CMD: goto " + site.getX() + " " + (site.getY() + 1) + " " + (site.getZ() + 3);
+        String gotoB = "SMOKE-CMD: goto " + site.getX() + " " + (site.getY() + 1) + " " + (site.getZ() - 3);
+        Supplier<String> moved = () -> mod().getCommandDispatchSeq() != seq[0]
+                ? "!a command was dispatched (seq " + seq[0] + "->" + mod().getCommandDispatchSeq() + ")" : null;
+        return List.of(
+                act(() -> {
+                    seq[0] = mod().getCommandDispatchSeq();
+                    say(OWNER_ID, OWNER_NAME, gotoA);
+                }),
+                waitFor(() -> mod().getCommandDispatchSeq() > seq[0] ? "owner naming it from 100 blocks: acted on" : null,
+                        REFUSAL_WINDOW_SEC, "the owner's named ask from 100 blocks was dropped"),
+                act(() -> {
+                    seq[0] = mod().getCommandDispatchSeq();
+                    sayRaw(OWNER_ID, OWNER_NAME, gotoB);
+                }),
+                window(moved, 8, () -> "owner's unnamed line from 100 blocks: ignored"),
+                act(() -> {
+                    seq[0] = mod().getCommandDispatchSeq();
+                    notices.clear();
+                    sayRaw(STRANGER_ID, STRANGER_NAME, character.shortName() + ", " + gotoB);
+                }),
+                window(moved, 8, () -> notices.contains(STRANGER_NAME + ": message.playerengine.call.which")
+                        ? "stranger's bare name from 100 blocks: not reached, told the unique name"
+                        : "!the stranger was not told which: " + notices),
+                act(() -> {
+                    seq[0] = mod().getCommandDispatchSeq();
+                    notices.clear();
+                    sayRaw(NETHER_PLAYER_ID, NETHER_PLAYER_NAME, unique + ", " + gotoB);
+                }),
+                window(moved, 8, () -> notices.contains(NETHER_PLAYER_NAME + ": message.playerengine.call.too_far")
+                        ? "unique name from the nether: told too far"
+                        : "!the nether player was not told too far: " + notices),
+                act(() -> {
+                    seq[0] = mod().getCommandDispatchSeq();
+                    sayRaw(STRANGER_ID, STRANGER_NAME, unique + ", " + gotoB);
+                    LOGGER.info("[smoke] marker {}", gotoB);
+                }),
+                waitFor(() -> mod().getCommandDispatchSeq() > seq[0]
+                                ? "stranger naming " + unique + " from 100 blocks: acted on" : null,
+                        REFUSAL_WINDOW_SEC, "the stranger's unique-name ask was dropped"),
+                act(() -> {
+                    ConversationManager.noticeTap = null;
+                    FakePlayers.teleport(owner, site.offset(0, 1, -3));
+                }));
+    }
+
+    /**
+     * Turn caps, with the player cap lowered to 3 for the run: a second player's first three lines
+     * each reach the model, the fourth makes no model call. The companion's request count is taken
+     * where the request is submitted.
+     */
+    private static List<Stage> turnCaps(ServerLevel level) {
+        requireCompanion();
+        BlockPos site = arena(level, 17);
+        place(site, 0, -3, 0.5, 0.5);
+        FakePlayers.online(level, STRANGER_ID, STRANGER_NAME, site.offset(-2, 1, -2));
+        com.player2.playerengine.player2api.TurnCaps.SHARED.resetForSmoke(3,
+                com.player2.playerengine.player2api.TurnCaps.PER_COMPANION_PER_HOUR);
+        long[] base = new long[1];
+        List<Stage> stages = new ArrayList<>();
+        stages.add(act(() -> base[0] = companion().getModelRequestCount()));
+        for (int i = 1; i <= 3; i++) {
+            int turn = i;
+            stages.add(act(() -> say(STRANGER_ID, STRANGER_NAME, "how are you, turn " + turn)));
+            stages.add(waitFor(() -> companion().getModelRequestCount() >= base[0] + turn
+                            ? (turn == 3 ? "turns 1-3 each called the model" : "") : null,
+                    REFUSAL_WINDOW_SEC, () -> "turn " + turn + " never reached the model ("
+                            + (companion().getModelRequestCount() - base[0]) + " calls)"));
+        }
+        stages.add(act(() -> say(STRANGER_ID, STRANGER_NAME, "how are you, turn 4")));
+        stages.add(window(() -> companion().getModelRequestCount() > base[0] + 3
+                        ? "!turn 4 over the cap called the model" : null,
+                8, () -> "turn 4 over the cap made no model call"));
+        stages.add(act(() -> com.player2.playerengine.player2api.TurnCaps.SHARED.resetForSmoke(
+                com.player2.playerengine.player2api.TurnCaps.PER_PLAYER_PER_HOUR,
+                com.player2.playerengine.player2api.TurnCaps.PER_COMPANION_PER_HOUR)));
+        return stages;
+    }
+
+    /**
+     * Two players' Adas side by side. A third player's bare "stop Ada" stops neither and is told
+     * which to name; the stranger's bare "stop Ada" stops the stranger's own, and only that one.
+     * The stop acknowledgements the speaker receives are the witness: one per companion stopped.
+     */
+    private static List<Stage> twoAdas(ServerLevel level) {
+        requireCompanion();
+        BlockPos site = arena(level, 18);
+        place(site, 0, -4, 0.5, 0.5);
+        ServerPlayer stranger = FakePlayers.online(level, STRANGER_ID, STRANGER_NAME, site.offset(3, 1, -4));
+        FakePlayers.online(level, THIRD_ID, THIRD_NAME, site.offset(-3, 1, -4));
+        List<String> notices = new java.util.concurrent.CopyOnWriteArrayList<>();
+        AgentConversationData[] second = new AgentConversationData[1];
+        Supplier<String> acks = () -> {
+            long n = notices.stream().filter(s -> s.contains("owner_stop_ack")).count();
+            return n > 1 ? "!one stop line stopped " + n + " companions: " + notices : null;
+        };
+        return List.of(
+                act(() -> invoke(companionManager(stranger), "spawnCompanion", Character.class, character)),
+                waitFor(() -> {
+                    for (AgentConversationData d : ConversationManager.getDataByOwner(STRANGER_ID)) {
+                        if (character.id().equals(d.getCharacter().id())) {
+                            second[0] = d;
+                            d.getMod().getPlayer().teleportTo(site.getX() + 2.5, site.getY() + 1, site.getZ() + 0.5);
+                            return "the stranger's Ada is summoned beside the owner's";
+                        }
+                    }
+                    return null;
+                }, 60, "no Ada for the stranger"),
+                act(() -> {
+                    ConversationManager.noticeTap = (who, text) -> notices.add(who + ": " + describe(text));
+                    sayRaw(THIRD_ID, THIRD_NAME, "stop " + character.shortName());
+                }),
+                window(acks, 4, () -> notices.stream().anyMatch(s -> s.startsWith(THIRD_NAME + ": message.playerengine.call.which"))
+                        && notices.stream().noneMatch(s -> s.contains("owner_stop_ack"))
+                        ? "a third player's bare stop with two Adas stopped none and asked which"
+                        : "!the third player's bare stop: " + notices),
+                act(() -> {
+                    notices.clear();
+                    sayRaw(STRANGER_ID, STRANGER_NAME, "stop " + character.shortName());
+                }),
+                window(acks, 4, () -> notices.size() == 1 && notices.get(0).contains("owner_stop_ack")
+                        && notices.get(0).contains(STRANGER_NAME + "'s")
+                        ? "the stranger's bare stop stopped the stranger's Ada only"
+                        : "!the stranger's bare stop: " + notices),
+                act(() -> {
+                    ConversationManager.noticeTap = null;
+                    invoke(companionManager(stranger), "dismissCompanion", Character.class, character);
+                }),
+                waitFor(() -> ConversationManager.getDataByOwner(STRANGER_ID).isEmpty() ? "the stranger's Ada dismissed" : null,
+                        20, "the stranger's Ada is still registered"));
+    }
+
+    /** A translatable notice as its key and arguments, for the harness's checks. */
+    private static String describe(net.minecraft.network.chat.Component text) {
+        if (text.getContents() instanceof net.minecraft.network.chat.contents.TranslatableContents t) {
+            StringBuilder b = new StringBuilder(t.getKey());
+            for (Object arg : t.getArgs()) {
+                b.append(" | ").append(arg instanceof net.minecraft.network.chat.Component c ? c.getString() : arg);
+            }
+            return b.toString();
+        }
+        return text.getString();
     }
 
     /** Checklist 5: a waterlogged block in the shell makes the excavate refuse. */
@@ -442,24 +840,34 @@ public final class SmokeHarness {
                                 : "!command never dispatched (seq " + mod().getCommandDispatchSeq() + ")"));
     }
 
-    /** Checklist 8: a second player's dig plan is declined by the owner gate. */
+    /**
+     * Checklist 8 under R1 (no difference between owners and strangers): a second player's excavate
+     * command, then their excavate plan, each clear a box. The command path and the plan path were
+     * the two owner gates.
+     */
     private static List<Stage> stranger(ServerLevel level) {
         requireCompanion();
         BlockPos site = arena(level, 2);
-        BlockPos a = site.offset(2, 1, -1);
-        BlockPos b = site.offset(4, 2, 1);
-        fillBox(level, a, b);
-        place(site, 0, -6, 0.5, -2.5);
-        FakePlayers.online(level, STRANGER_ID, STRANGER_NAME, site.offset(-1, 1, -4));
-        int total = solid(level, a, b);
-        long seqBefore = mod().getCommandDispatchSeq();
+        BlockPos a1 = site.offset(2, 1, -4);
+        BlockPos b1 = site.offset(4, 2, -2);
+        BlockPos a2 = site.offset(2, 1, 2);
+        BlockPos b2 = site.offset(4, 2, 4);
+        fillBox(level, a1, b1);
+        fillBox(level, a2, b2);
+        place(site, 0, -7, -2.5, 0.5);
+        FakePlayers.online(level, STRANGER_ID, STRANGER_NAME, site.offset(-1, 1, -5));
+        int total1 = solid(level, a1, b1);
+        int total2 = solid(level, a2, b2);
         return List.of(
-                act(() -> say(STRANGER_ID, STRANGER_NAME, "SMOKE-PLAN: excavate " + corners(a, b))),
-                window(() -> mod().getCommandDispatchSeq() != seqBefore ? "!stranger's plan dispatched a command" : null,
-                        REFUSAL_WINDOW_SEC,
-                        () -> solid(level, a, b) == total && mod().getPlanStatusLine().isEmpty()
-                                ? "declined: no dispatch (seq " + seqBefore + "), no plan, box intact " + total
-                                : "!box " + solid(level, a, b) + "/" + total + " plan='" + mod().getPlanStatusLine() + "'"));
+                act(() -> say(STRANGER_ID, STRANGER_NAME, "SMOKE-CMD: excavate " + corners(a1, b1))),
+                waitFor(() -> solid(level, a1, b1) == 0 ? "stranger's excavate command cleared " + total1 + " cells" : null,
+                        DIG_TIMEOUT_SEC, () -> "stranger's command: box " + solid(level, a1, b1) + "/" + total1 + ", "
+                                + botState()),
+                act(() -> say(STRANGER_ID, STRANGER_NAME, "SMOKE-PLAN: excavate " + corners(a2, b2))),
+                waitFor(() -> solid(level, a2, b2) == 0 && mod().getPlanStatusLine().isEmpty()
+                                ? "stranger's excavate plan cleared " + total2 + " cells" : null,
+                        DIG_TIMEOUT_SEC, () -> "stranger's plan: box " + solid(level, a2, b2) + "/" + total2 + " plan='"
+                                + mod().getPlanStatusLine() + "', " + botState()));
     }
 
     /**
@@ -635,6 +1043,11 @@ public final class SmokeHarness {
                 + (((ServerLevel) bot().level()).isPositionEntityTicking(bot().blockPosition()) ? "" : " (chunk not ticking)");
     }
 
+    /** A line as typed, with no name in front; a marker in it is not expected to reach the model. */
+    private static void sayRaw(UUID id, String name, String text) {
+        ConversationManager.onUserChatMessage(new Event.UserMessage(text, name, false, id));
+    }
+
     private static void say(UUID id, String name, String text) {
         if (text.contains("SMOKE-")) {
             LOGGER.info("[smoke] marker {}", text);
@@ -688,16 +1101,6 @@ public final class SmokeHarness {
             }
         }
         return list;
-    }
-
-    /** Whether any arena slot's forcing covers {@code c}, used in this run or not. */
-    private static boolean harnessForced(ServerLevel level, ChunkPos c) {
-        for (int slot = 0; slot <= MAX_SLOT; slot++) {
-            if (arenaChunks(site(level, slot)).contains(c)) {
-                return true;
-            }
-        }
-        return false;
     }
 
     private static void forceChunks(ServerLevel level, BlockPos c) {

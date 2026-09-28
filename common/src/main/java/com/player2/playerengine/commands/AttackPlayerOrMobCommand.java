@@ -17,14 +17,13 @@ import java.util.HashSet;
 import java.util.Set;
 import java.util.function.Predicate;
 import net.minecraft.world.entity.Entity;
-import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.entity.vehicle.Boat;
 
 public class AttackPlayerOrMobCommand extends Command {
    public AttackPlayerOrMobCommand() throws CommandException {
       super(
          "attack",
-         "Attacks a specified player or mob. Example usages: @attack zombie 5 to attack and kill 5 zombies, @attack Player to attack a player with username=Player",
+         "Attacks a specified mob, never a player. Example usage: @attack zombie 5 to attack and kill 5 zombies",
          new Arg<>(String.class, "name"),
          new Arg<>(Integer.class, "count", 1, 1)
       );
@@ -37,6 +36,9 @@ public class AttackPlayerOrMobCommand extends Command {
       }
       String nameToAttack = parser.get(String.class);
       int countToAttack = parser.get(Integer.class);
+      if (com.player2.playerengine.companion.NoPvp.namesAPlayer(nameToAttack, mod.getWorld().getServer())) {
+         throw new CommandException(com.player2.playerengine.companion.NoPvp.REFUSAL);
+      }
       mod.runUserTask(new AttackPlayerOrMobCommand.AttackAndGetDropsTask(nameToAttack, countToAttack), () -> this.finish());
    }
 
@@ -79,11 +81,8 @@ public class AttackPlayerOrMobCommand extends Command {
             if (this.mobsKilledCount >= this.mobKillTargetCount) {
                return false;
             } else {
-               if (entity instanceof Player) {
-                  String playerName = entity.getName().getString();
-                  if (playerName != null && playerName.equalsIgnoreCase(toKill)) {
-                     return true;
-                  }
+               if (com.player2.playerengine.companion.NoPvp.isProtected(entity)) {
+                  return false;
                }
 
                String name = entity.getType().toShortString();

@@ -30,6 +30,9 @@ import java.util.Properties;
  *       companion before a human speaks to it again, and only when the other companion names it.
  *       {@code 0} means companions never answer each other. Lines they do not answer are still
  *       read as context on the next turn.</li>
+ *   <li>{@code captureDecisions} (default {@code false}): append every decision turn (the
+ *       messages, the reply and the dispatched command) to {@code playerengine/data/decisions.jsonl}
+ *       for the tier A replay. The lines carry players' chat.</li>
  * </ul>
  */
 public final class CompanionRules {
@@ -56,12 +59,14 @@ public final class CompanionRules {
     private final ProgressChat progressChat;
     private final Boolean hungerOverride;
     private final int peerReplies;
+    private final boolean captureDecisions;
 
     CompanionRules(Properties p) {
         this.survivalParity = parseBoolean(p.getProperty("survivalParity"), true);
         this.progressChat = parseProgressChat(p.getProperty("progressChat"));
         this.hungerOverride = parseOptionalBoolean(p.getProperty("hunger"));
         this.peerReplies = parsePeerReplies(p.getProperty("peerReplies"));
+        this.captureDecisions = parseBoolean(p.getProperty("captureDecisions"), false);
     }
 
     public static CompanionRules get() {
@@ -101,9 +106,10 @@ public final class CompanionRules {
             }
         }
         CompanionRules rules = new CompanionRules(p);
-        LOGGER.info("Companion rules: survivalParity={} progressChat={} hunger={} peerReplies={}",
+        LOGGER.info("Companion rules: survivalParity={} progressChat={} hunger={} peerReplies={} captureDecisions={}",
                 rules.survivalParity, rules.progressChat.name().toLowerCase(Locale.ROOT),
-                rules.hungerOverride == null ? "settings file" : rules.hungerOverride, rules.peerReplies);
+                rules.hungerOverride == null ? "settings file" : rules.hungerOverride, rules.peerReplies,
+                rules.captureDecisions);
         return rules;
     }
 
@@ -162,6 +168,8 @@ public final class CompanionRules {
     public boolean survivalParity() { return survivalParity; }
     /** Replies a companion may make to other companions between two human messages to it. */
     public int peerReplies() { return peerReplies; }
+    /** Whether decision turns are appended to the tier A capture file. */
+    public boolean captureDecisions() { return captureDecisions; }
 
     /**
      * Factor on the time budget of a task that digs. Upstream budgets assume the upstream dig speed;

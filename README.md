@@ -85,9 +85,19 @@ Companion rules (`config/playerengine-companion.properties`, see [NOTICE.md](NOT
 | `hunger` | unset | `true`/`false` overrides `hungerEnabled` in `playerengine/playerengine_settings.json` |
 | `progressChat` | `off` | task progress in chat: `all`, `milestones` (outcomes and failures) or `off` |
 | `peerReplies` | `1` | answers a companion may give other companions, only when named, before a human speaks again; `0` = never |
+| `captureDecisions` | `false` | append each decision turn (messages, reply, dispatched command) to `playerengine/data/decisions.jsonl` for replay; the lines carry players' chat |
+
+**Who hears, who commands.** Any player may give any companion any command or plan. Every companion
+has a unique name, its owner's name and its own (`Arran's Ada`). Say the unique name to reach it
+from anywhere in your dimension; its owner reaches it with the bare name (`Ada`) the same way.
+Anyone else's bare name reaches a companion only when it is the only one of that name within 64
+blocks; otherwise you are told the unique names to use. Unnamed chat reaches companions within 64
+blocks. **stop Ada** (or `Arran's Ada, stop`) stops that one companion at once, from anyone, by the
+same naming rules. Each player gets 60 model turns an hour across all companions and each companion
+120; past that the companion says it is worn out. Companions never attack players, whoever asks.
 
 **Long jobs (plans and area commands).** Ask your companion in chat; it turns the request into
-commands itself. Only its owner can give it a plan or an area job; anyone else is declined.
+commands itself. Any player may give it a plan or an area job.
 
 | You say | What the companion runs |
 |---|---|

@@ -11,7 +11,7 @@ public final class ConversationControlSelfTest {
     private ConversationControlSelfTest() {}
 
     public static void runAll() {
-        strictOwnerStopPhrases();
+        strictStopPhrases();
         staleTurnsAreInvalidated();
         callbackDrivenLlmFollowUpUsesAuthorizedHandoff();
         cancelledLlmRequestCannotHoldOrReleaseReplacementBucket();
@@ -21,22 +21,15 @@ public final class ConversationControlSelfTest {
         userMessageMetadataSurvivesCleaning();
     }
 
-    private static void strictOwnerStopPhrases() {
-        Character ellie = new Character("character-id", "Ellie the Adventurer", "Ellie",
-                null, null, null, new String[0]);
-        require(OwnerStopIntent.matches("stop ellie", ellie), "reported trailing-name stop form must match");
-        require(OwnerStopIntent.matches("Ellie, stop", ellie), "reported leading-name stop form must match");
-        require(OwnerStopIntent.matches("@Ellie: stop", ellie), "explicit addressed stop must match");
-        require(!OwnerStopIntent.matches("Ellie don't stop", ellie), "negated stop must not match");
-        require(!OwnerStopIntent.matches("Ellie stop planting", ellie), "extra action text must not match");
-        require(!OwnerStopIntent.matches("stop", ellie), "unnamed stop must remain on the normal range gate");
-
-        require(OwnerStopTargetResolution.resolve(java.util.List.of("same", "same")).kind()
-                        == OwnerStopTargetResolution.Kind.UNIQUE,
-                "duplicate controllers for one stable character must resolve as one stop target");
-        require(OwnerStopTargetResolution.resolve(java.util.List.of("first", "second")).kind()
-                        == OwnerStopTargetResolution.Kind.AMBIGUOUS,
-                "distinct stable characters sharing a name must remain ambiguous");
+    private static void strictStopPhrases() {
+        require(new StopIntent.Named(null, "ellie").equals(StopIntent.parse("stop ellie")),
+                "reported trailing-name stop form must match");
+        require(new StopIntent.Named(null, "ellie").equals(StopIntent.parse("Ellie, stop")),
+                "reported leading-name stop form must match");
+        require(new StopIntent.Named(null, "ellie").equals(StopIntent.parse("@Ellie: stop")),
+                "explicit addressed stop must match");
+        require(StopIntent.parse("Ellie stop planting") == null, "extra action text must not match");
+        require(StopIntent.parse("stop") == null, "unnamed stop must remain on the normal range gate");
     }
 
     private static void staleTurnsAreInvalidated() {

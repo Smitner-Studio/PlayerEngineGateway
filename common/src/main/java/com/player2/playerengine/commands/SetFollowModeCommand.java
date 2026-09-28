@@ -23,7 +23,7 @@ public class SetFollowModeCommand extends Command {
             new Arg<>(FollowMode.class, "mode")
         );
         // NOTE: COWARD suppresses automatic HOSTILE/MOB combat only (the shouldDefendFromHostiles flag gates
-        // MobDefenseChain). It does NOT disable PlayerDefenseChain (retaliation against attacking players).
+        // MobDefenseChain). A companion never fights players in any mode (NoPvp, ruling R2).
         // Keep the wording "won't fight monsters/hostiles", never a blanket "no fighting".
     }
 

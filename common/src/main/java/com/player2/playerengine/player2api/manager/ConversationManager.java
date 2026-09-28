@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Collection;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -21,8 +22,8 @@ import com.player2.playerengine.player2api.AgentSideEffects;
 import com.player2.playerengine.player2api.Character;
 import com.player2.playerengine.player2api.Event;
 import com.player2.playerengine.player2api.LLMCompleter;
-import com.player2.playerengine.player2api.OwnerStopIntent;
-import com.player2.playerengine.player2api.OwnerStopTargetResolution;
+import com.player2.playerengine.player2api.CompanionAddress;
+import com.player2.playerengine.player2api.StopIntent;
 import com.player2.playerengine.player2api.Player2PayerResolution;
 import com.player2.playerengine.player2api.AgentConversationData;
 
@@ -157,25 +158,34 @@ public class ConversationManager {
         }
     }
 
+    /**
+     * Test hook for the smoke harness: sees every notice a speaker is sent (too far, which one,
+     * stop acknowledgements), since a fake player has no client to show them.
+     */
+    public static volatile BiConsumer<String, Component> noticeTap;
+
     // register when a user sends a chat message
     public static void onUserChatMessage(UserMessage msg) {
         LOGGER.info("User message event={}", msg);
-        if (handleAuthenticatedOwnerStop(msg)) {
-            return;
-        }
-        boolean callByName = Player2ServerConfigHolder.get().isCallByNameChat();
-        List<AgentConversationData> nearby = filterQueueData(d -> isCloseToPlayer(d, msg.userName()))
-                .collect(Collectors.toList());
-        if (nearby.isEmpty()) {
-            logMessageNotDelivered(msg, callByName, "no_nearby_companion", nearby, null);
-            return;
-        }
-        MinecraftServer server = nearby.stream()
-                .map(d -> d.getMod().getPlayer().getServer())
+        List<CompanionAddress.Candidate<AgentConversationData>> companions = candidatesFor(msg.userName());
+        MinecraftServer server = companions.stream()
+                .map(c -> c.ref().getMod().getPlayer().getServer())
                 .filter(Objects::nonNull)
                 .findFirst()
                 .orElse(null);
+        if (handleStop(msg, companions, server)) {
+            return;
+        }
+        boolean callByName = Player2ServerConfigHolder.get().isCallByNameChat();
+        List<AgentConversationData> nearby = companions.stream()
+                .filter(c -> c.sameDimension() && c.distance() < CompanionAddress.NEAR)
+                .map(CompanionAddress.Candidate::ref)
+                .collect(Collectors.toList());
         if (!callByName) {
+            if (nearby.isEmpty()) {
+                logMessageNotDelivered(msg, false, "no_nearby_companion", nearby, Set.of());
+                return;
+            }
             int queued = 0;
             for (AgentConversationData data : nearby) {
                 if (server != null && BotBlacklistPolicy.isBlocked(server, msg.userName(), data)) {
@@ -190,21 +200,26 @@ public class ConversationManager {
                 queued++;
             }
             if (queued == 0) {
-                logMessageNotDelivered(msg, false, "all_nearby_blocked", nearby, null);
+                logMessageNotDelivered(msg, false, "all_nearby_blocked", nearby, Set.of());
             }
             return;
         }
 
-        CallByNameMentionRouter.ResolvedTargets resolved = CallByNameMentionRouter.resolveTargets(msg, msg.userName(),
-                nearby);
-        if (resolved == null || resolved.targets() == null || resolved.targets().isEmpty()) {
-            logMessageNotDelivered(msg, true, "call_by_name_no_mention", nearby, resolved);
+        CallByNameMentionRouter.Resolved<AgentConversationData> resolved = CallByNameMentionRouter.resolveTargets(
+                msg.message(), msg.authenticatedUserUuid(), companions);
+        for (CompanionAddress.Outcome<AgentConversationData> notice : resolved.notices()) {
+            notifyPlayer(msg.userName(), server, noticeText(notice));
+        }
+        if (resolved.targets().isEmpty()) {
+            logMessageNotDelivered(msg, true, resolved.notices().isEmpty() ? "call_by_name_no_mention"
+                    : "call_by_name_not_reached", nearby, resolved.targets());
             return;
         }
-        if (resolved.cleanedMessage() == null) {
-            logMessageNotDelivered(msg, true, "call_by_name_cleaned_message_null", nearby, resolved);
+        if (resolved.cleaned() == null) {
+            logMessageNotDelivered(msg, true, "call_by_name_cleaned_message_null", nearby, resolved.targets());
             return;
         }
+        UserMessage cleanedMessage = resolved.cleaned().equals(msg.message()) ? msg : msg.withMessage(resolved.cleaned());
         HashSet<UUID> userBlacklistNotifiedOwners = new HashSet<>();
         int queued = 0;
         for (AgentConversationData data : resolved.targets()) {
@@ -217,125 +232,118 @@ public class ConversationManager {
                 logMessageBlocked(msg, data.getName(), "user_blacklist");
                 continue;
             }
-            data.onEvent(resolved.cleanedMessage());
+            data.onEvent(cleanedMessage);
             queued++;
         }
         if (queued == 0) {
-            logMessageNotDelivered(msg, true, "call_by_name_all_targets_blocked", nearby, resolved);
+            logMessageNotDelivered(msg, true, "call_by_name_all_targets_blocked", nearby, resolved.targets());
         }
-    }
-
-    private record StableCompanionKey(UUID ownerUuid, String characterId) {
     }
 
     /**
-     * Emergency owner control is intentionally narrower than conversation routing: exact named stop
-     * phrases may reach the owner's companion at any distance, while ordinary remote chat remains
-     * range-gated. The authenticated UUID comes from the server chat/STT ingress, never from message text.
+     * Every companion as {@code speakerName} sees it: owner, names, and whether and how far it is in
+     * the speaker's dimension. A companion's world has the speaker among its players exactly when
+     * both are in the same dimension.
      */
-    private static boolean handleAuthenticatedOwnerStop(UserMessage msg) {
-        UUID ownerUuid = msg == null ? null : msg.authenticatedUserUuid();
-        if (ownerUuid == null || msg.message() == null) {
-            return false;
-        }
-
-        HashSet<StableCompanionKey> matchingKeys = new HashSet<>();
+    private static List<CompanionAddress.Candidate<AgentConversationData>> candidatesFor(String speakerName) {
+        List<CompanionAddress.Candidate<AgentConversationData>> out = new ArrayList<>();
         for (AgentConversationData data : queueData.values()) {
-            Character character = characterForOwner(data, ownerUuid);
-            StableCompanionKey key = stableKey(ownerUuid, character);
-            if (key != null && OwnerStopIntent.matches(msg.message(), character)) {
-                matchingKeys.add(key);
-            }
-        }
-        OwnerStopTargetResolution.Resolution resolution = OwnerStopTargetResolution.resolve(
-                matchingKeys.stream().map(StableCompanionKey::characterId).toList());
-        if (resolution.kind() == OwnerStopTargetResolution.Kind.NONE) {
-            return false;
-        }
-
-        // Consume an ambiguous emergency phrase so it cannot fall through to proximity routing/the model.
-        if (resolution.kind() == OwnerStopTargetResolution.Kind.AMBIGUOUS) {
-            MinecraftServer server = null;
-            for (AgentConversationData data : queueData.values()) {
-                StableCompanionKey key = stableKeyForOwner(data, ownerUuid);
-                if (key == null || !matchingKeys.contains(key)) {
+            try {
+                Character ch = data.getCharacter();
+                if (ch == null || data.getMod() == null || data.getMod().getPlayer() == null) {
                     continue;
                 }
-                data.deferInfo(new Event.InfoMessage(
-                        "The owner's immediate stop request matched multiple companions with the same name, "
-                                + "so no companion was stopped. Ask for an unambiguous companion name."));
-                if (server == null && data.getMod().getPlayer() != null) {
-                    server = data.getMod().getPlayer().getServer();
+                Set<String> names = new HashSet<>();
+                for (String n : new String[] {ch.name(), ch.shortName()}) {
+                    String k = CompanionAddress.key(n);
+                    if (!k.isEmpty()) {
+                        names.add(k);
+                    }
                 }
+                Player owner = data.getMod().getOwner();
+                float distance = StatusUtils.getDistanceToUsername(data.getMod(), speakerName);
+                boolean sameDimension = distance < Float.MAX_VALUE;
+                out.add(new CompanionAddress.Candidate<>(data, owner == null ? null : owner.getUUID(),
+                        data.getMod().getOwnerUsername(), displayName(ch), names, sameDimension, distance));
+            } catch (RuntimeException stale) {
+                LOGGER.warn("Skipping stale companion while routing chat: type={}", stale.getClass().getSimpleName());
             }
-            notifyAuthenticatedOwner(ownerUuid, server,
-                    Component.translatable("message.playerengine.agent.owner_stop_ambiguous"));
-            LOGGER.warn("Authenticated owner stop was ambiguous across {} stable character ids; cancelled none",
-                    matchingKeys.size());
-            return true;
         }
+        return out;
+    }
 
-        StableCompanionKey targetKey = new StableCompanionKey(ownerUuid, resolution.characterId());
-        List<AgentConversationData> targets = new ArrayList<>();
-        for (AgentConversationData data : queueData.values()) {
-            if (targetKey.equals(stableKeyForOwner(data, ownerUuid))) {
-                targets.add(data);
-            }
+    private static String displayName(Character ch) {
+        return ch.shortName() != null && !ch.shortName().isBlank() ? ch.shortName() : ch.name();
+    }
+
+    /** The unique name players use to reach this companion, as {@code Arran's Ada}. */
+    public static String uniqueName(AgentConversationData data) {
+        return CompanionAddress.uniqueName(data.getMod().getOwnerUsername(), displayName(data.getCharacter()));
+    }
+
+    private static Component noticeText(CompanionAddress.Outcome<AgentConversationData> notice) {
+        if (notice instanceof CompanionAddress.Outcome.TooFar<AgentConversationData> far) {
+            return Component.translatable("message.playerengine.call.too_far", far.target().uniqueName());
         }
-        if (targets.isEmpty()) {
+        if (notice instanceof CompanionAddress.Outcome.Choose<AgentConversationData> choose) {
+            return Component.translatable("message.playerengine.call.which", String.join(", ", choose.uniqueNames()));
+        }
+        return Component.empty();
+    }
+
+    /**
+     * The stop lane: anyone may stop a companion, with no proximity check, and the model is bypassed.
+     * A unique name stops that companion; a bare name follows the mention rules, so it stops the
+     * speaker's own companion or the only one of that name within 64 blocks, and otherwise stops
+     * none and asks which. It never stops two. The sender must be authenticated: the UUID comes from
+     * the server's chat or speech ingress, never from message text.
+     */
+    private static boolean handleStop(UserMessage msg, List<CompanionAddress.Candidate<AgentConversationData>> companions,
+            MinecraftServer server) {
+        UUID speaker = msg == null ? null : msg.authenticatedUserUuid();
+        if (speaker == null || msg.message() == null) {
             return false;
         }
-
-        MinecraftServer server = null;
-        String displayName = targets.get(0).getName();
-        boolean requestStillDraining = false;
-        for (AgentConversationData data : targets) {
-            requestStillDraining |= data.cancelPendingModelActionsForOperatorStop();
-            data.getMod().isStopping = true;
-            data.getMod().stop();
-            if (server == null && data.getMod().getPlayer() != null) {
-                server = data.getMod().getPlayer().getServer();
-            }
+        StopIntent.Named named = StopIntent.parse(msg.message());
+        if (named == null) {
+            return false;
         }
-
-        notifyAuthenticatedOwner(ownerUuid, server, requestStillDraining
-                ? Component.translatable("message.playerengine.agent.owner_stop_ack_delayed", displayName)
-                : Component.translatable("message.playerengine.agent.owner_stop_ack", displayName));
-        LOGGER.info("Handled authenticated owner stop for stable character id={} controllers={}",
-                targetKey.characterId(), targets.size());
+        CompanionAddress.Outcome<AgentConversationData> outcome = named.owner() != null
+                ? CompanionAddress.unique(named.owner(), named.bot(), companions)
+                : CompanionAddress.bare(named.bot(), speaker, companions);
+        AgentConversationData target;
+        if (outcome instanceof CompanionAddress.Outcome.Reach<AgentConversationData> r) {
+            target = r.target().ref();
+        } else if (outcome instanceof CompanionAddress.Outcome.TooFar<AgentConversationData> far) {
+            target = far.target().ref();
+        } else if (outcome instanceof CompanionAddress.Outcome.Choose<AgentConversationData> choose) {
+            notifyPlayer(msg.userName(), server, noticeText(choose));
+            LOGGER.warn("Stop from {} named {} companions; stopped none", msg.userName(), choose.uniqueNames().size());
+            return true;
+        } else {
+            return false;
+        }
+        boolean requestStillDraining = target.cancelPendingModelActionsForOperatorStop();
+        target.getMod().isStopping = true;
+        target.getMod().stop();
+        String name = uniqueName(target);
+        notifyPlayer(msg.userName(), server, requestStillDraining
+                ? Component.translatable("message.playerengine.agent.owner_stop_ack_delayed", name)
+                : Component.translatable("message.playerengine.agent.owner_stop_ack", name));
+        LOGGER.info("Stop from {} applied to {}", msg.userName(), name);
         return true;
     }
 
-    private static StableCompanionKey stableKeyForOwner(AgentConversationData data, UUID ownerUuid) {
-        return stableKey(ownerUuid, characterForOwner(data, ownerUuid));
-    }
-
-    private static Character characterForOwner(AgentConversationData data, UUID ownerUuid) {
-        if (data == null || ownerUuid == null) {
-            return null;
+    private static void notifyPlayer(String userName, MinecraftServer server, Component message) {
+        BiConsumer<String, Component> tap = noticeTap;
+        if (tap != null) {
+            tap.accept(userName, message);
         }
-        try {
-            return data.isOwner(ownerUuid) ? data.getCharacter() : null;
-        } catch (RuntimeException staleData) {
-            LOGGER.warn("Skipping stale companion while resolving authenticated owner stop: type={}",
-                    staleData.getClass().getSimpleName());
-            return null;
-        }
-    }
-
-    private static StableCompanionKey stableKey(UUID ownerUuid, Character character) {
-        if (character == null || character.id() == null || character.id().isBlank()) {
-            return null;
-        }
-        return new StableCompanionKey(ownerUuid, character.id());
-    }
-
-    private static void notifyAuthenticatedOwner(UUID ownerUuid, MinecraftServer server, Component message) {
-        if (ownerUuid == null || server == null || message == null) {
+        if (userName == null || server == null || message == null) {
             return;
         }
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
-            if (ownerUuid.equals(player.getUUID())) {
+            if (userName.equals(player.getGameProfile().getName())) {
                 AgentSideEffects.broadcastChatToPlayer(server, message, player);
                 return;
             }
@@ -343,10 +351,10 @@ public class ConversationManager {
     }
 
     private static void logMessageNotDelivered(UserMessage msg, boolean callByName, String reason,
-            List<AgentConversationData> nearby, CallByNameMentionRouter.ResolvedTargets resolved) {
+            List<AgentConversationData> nearby, Set<AgentConversationData> targets) {
         String nearbyNames = nearby.stream().map(AgentConversationData::getName).collect(Collectors.joining(", "));
-        String targetNames = resolved == null || resolved.targets() == null ? ""
-                : resolved.targets().stream().map(AgentConversationData::getName).collect(Collectors.joining(", "));
+        String targetNames = targets == null ? ""
+                : targets.stream().map(AgentConversationData::getName).collect(Collectors.joining(", "));
         if (msg.fromVoice()) {
             LOGGER.warn(
                     "STT/voice: message not delivered to companion (reason={}, callByName={}, user={}, nearby=[{}], targets=[{}], preview=\"{}\"). "
@@ -470,11 +478,6 @@ public class ConversationManager {
 
     public static void resetMemory(PlayerEngineController mod) {
         mod.getAIPersistantData().clearHistory();
-    }
-
-    private static boolean isCloseToPlayer(AgentConversationData data, String userName) {
-        LOGGER.info("Passing msg btw {} <-> {}", data.getName(), userName);
-        return StatusUtils.getDistanceToUsername(data.getMod(), userName) < messagePassingMaxDistance;
     }
 
 
