@@ -34,3 +34,12 @@ tasks:
       JAVA_HOME: '{{.JDK}}'
     cmds:
       - cmd /d /c "{{.GRADLEW}}" :common:gatewaySelfTest :common:companionSelfTest :common:planSelfTest :common:smokeGateSelfTest --no-daemon -q
+
+  seam-signatures:
+    desc: 'Regenerate the seam signature table, common/src/main/resources/playerengine/seam/signatures.json, after editing SignatureTable [JDK]'
+    preconditions:
+      - *need-jdk
+    env:
+      JAVA_HOME: '{{.JDK}}'
+    cmds:
+      - cmd /d /c "{{.GRADLEW}}" :common:seamSignatures --no-daemon -q

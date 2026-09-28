@@ -2,6 +2,7 @@ package com.player2.playerengine.commands.base;
 
 import com.player2.playerengine.PlayerEngineController;
 import com.player2.playerengine.companion.NoPvp;
+import com.player2.playerengine.seam.Seam;
 import com.player2.playerengine.util.Debug;
 import com.player2.playerengine.util.helpers.FuzzySearchHelper;
 import java.util.ArrayList;
@@ -35,9 +36,16 @@ public class CommandExecutor {
    private final HashMap<String, Command> commandSheet = new HashMap<>();
    private final HashMap<String, PermissionClass> permissionClasses = new HashMap<>();
    private final PlayerEngineController mod;
+   private final Seam seam;
 
    public CommandExecutor(PlayerEngineController mod) {
       this.mod = mod;
+      this.seam = new Seam(mod);
+   }
+
+   /** The action seam every part of a command line runs through. */
+   public Seam seam() {
+      return this.seam;
    }
 
    /** The registered command a name or alias resolves to, or null. */
@@ -144,8 +152,8 @@ public class CommandExecutor {
                // contrast, both a clean finish() and a success-with-note advance to the next part; the
                // note (if any) is joined into accumulatedNote and delivered once the chain completes,
                // so a degraded-but-successful part never silently drops a later command.
-               command.run(
-                  this.mod,
+               this.seam.run(
+                  command,
                   part,
                   () -> this.executeRecursive(commands, parts, index + 1, accumulatedNote, onFinish, onFinishWithNote, getException),
                   getException,

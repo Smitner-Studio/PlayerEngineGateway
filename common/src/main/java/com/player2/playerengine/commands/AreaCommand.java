@@ -6,6 +6,7 @@ import com.player2.playerengine.commands.base.Command;
 import com.player2.playerengine.commands.base.CommandException;
 import com.player2.playerengine.commands.base.GoalText;
 import com.player2.playerengine.commands.base.RestOfLineArg;
+import com.player2.playerengine.seam.FailureCode;
 import com.player2.playerengine.structureprotection.PlayerPlacedBlockStore;
 import com.player2.playerengine.tasks.construction.area.AreaBuildTask;
 import com.player2.playerengine.tasks.construction.area.AreaScan;
@@ -75,46 +76,22 @@ public abstract class AreaCommand extends Command {
             }
             fillBlock = b.get();
         }
-        ServerLevel level = mod.getWorld();
         AreaSpec.Resolved resolved = AreaSpec.resolve(req, anchors(mod));
         if (resolved.error() != null) {
             finishWithError(resolved.error());
             return;
         }
-        AreaSpec.Box box = resolved.box();
-        BlockPos me = mod.getPlayer().blockPosition();
-        String bounds = AreaSpec.checkBounds(box,
-                mode == AreaScan.Mode.EXCAVATE ? AreaSpec.MAX_EXCAVATE_CELLS : AreaSpec.MAX_FILL_CELLS,
-                new AreaSpec.Pos(me.getX(), me.getY(), me.getZ()),
-                level.getMinBuildHeight(), level.getMaxBuildHeight());
-        if (bounds == null) {
-            bounds = placeRefusal(level, box);
-        }
-        if (bounds != null) {
-            finishWithError(bounds);
+        Prepared prepared = prepare(mod, mode, resolved.box(), fillBlock, req.confirm());
+        if (prepared.refused()) {
+            finishWithError(prepared.refusal());
             return;
         }
-        UUID bot = mod.getPlayer().getUUID();
-        Refusal prior = CONFIRM_REFUSALS.get(bot);
-        boolean confirmed = req.confirm() && prior != null && prior.corners().equals(box.corners())
-                && mod.getLastOwnerMessageMillis() > prior.atMillis();
-
-        AreaScan.Result scan = AreaScan.scan(mode, box, lookup(mod, level, fillBlock), freeSlots(mod),
-                fillBlock == null ? 0 : countOf(mod, fillBlock), fillBlock == null ? "" : name(fillBlock), confirmed);
-        if (scan.refused()) {
-            if (scan.needsConfirm()) {
-                CONFIRM_REFUSALS.put(bot, new Refusal(box.corners(), System.currentTimeMillis()));
-            }
-            finishWithError(scan.refusal());
+        if (prepared.task() == null) {
+            finishWithNote(prepared.doneNote());
             return;
         }
-        CONFIRM_REFUSALS.remove(bot);
-        if (scan.targets().isEmpty()) {
-            mod.setLastArea(box);
-            finishWithNote(mode == AreaScan.Mode.EXCAVATE ? "that space is already clear" : "that is already filled");
-            return;
-        }
-        AreaBuildTask task = new AreaBuildTask(mode, box, fillBlock, scan);
+        AreaSpec.Box box = prepared.box();
+        AreaBuildTask task = prepared.task();
         long run = ++runCounter;
         mod.runUserTask(task, () -> {
             if (run != runCounter) {
@@ -133,7 +110,69 @@ public abstract class AreaCommand extends Command {
         });
     }
 
-    private static AreaSpec.Anchors anchors(PlayerEngineController mod) {
+    /**
+     * A resolved box made ready to run: the task to run, or a box that needs nothing (with the note
+     * to say so), or why not. The command and the seam's {@code excavate} both come through here, so
+     * both refuse the same boxes for the same reasons.
+     *
+     * @param code why it refused, as the seam reports it; null when it did not
+     */
+    public record Prepared(AreaSpec.Box box, AreaBuildTask task, String doneNote, FailureCode code, String refusal) {
+        public boolean refused() {
+            return refusal != null;
+        }
+
+        static Prepared refuse(FailureCode code, String why) {
+            return new Prepared(null, null, null, code, why);
+        }
+    }
+
+    /**
+     * Bounds, place and pre-scan checks for {@code box}; a box that needs nothing becomes the last
+     * area at once.
+     *
+     * @param confirm the line said {@code confirm=yes}; it counts only after the owner spoke since
+     *                the refusal that asked for it
+     */
+    public static Prepared prepare(PlayerEngineController mod, AreaScan.Mode mode, AreaSpec.Box box, Block fillBlock,
+            boolean confirm) {
+        ServerLevel level = mod.getWorld();
+        BlockPos me = mod.getPlayer().blockPosition();
+        int maxCells = mode == AreaScan.Mode.EXCAVATE ? AreaSpec.MAX_EXCAVATE_CELLS : AreaSpec.MAX_FILL_CELLS;
+        String bounds = AreaSpec.checkBounds(box, maxCells, new AreaSpec.Pos(me.getX(), me.getY(), me.getZ()),
+                level.getMinBuildHeight(), level.getMaxBuildHeight());
+        if (bounds != null) {
+            boolean tooBig = box.sizeX() > AreaSpec.MAX_AXIS || box.sizeZ() > AreaSpec.MAX_AXIS
+                    || box.sizeY() > AreaSpec.MAX_HEIGHT || box.cells() > maxCells;
+            return Prepared.refuse(tooBig ? FailureCode.BAD_ARGS : FailureCode.OUT_OF_REGION, bounds);
+        }
+        Prepared place = placeRefusal(level, box);
+        if (place != null) {
+            return place;
+        }
+        UUID bot = mod.getPlayer().getUUID();
+        Refusal prior = CONFIRM_REFUSALS.get(bot);
+        boolean confirmed = confirm && prior != null && prior.corners().equals(box.corners())
+                && mod.getLastOwnerMessageMillis() > prior.atMillis();
+
+        AreaScan.Result scan = AreaScan.scan(mode, box, lookup(mod, level, fillBlock), freeSlots(mod),
+                fillBlock == null ? 0 : countOf(mod, fillBlock), fillBlock == null ? "" : name(fillBlock), confirmed);
+        if (scan.refused()) {
+            if (scan.needsConfirm()) {
+                CONFIRM_REFUSALS.put(bot, new Refusal(box.corners(), System.currentTimeMillis()));
+            }
+            return Prepared.refuse(scan.code(), scan.refusal());
+        }
+        CONFIRM_REFUSALS.remove(bot);
+        if (scan.targets().isEmpty()) {
+            mod.setLastArea(box);
+            return new Prepared(box, null,
+                    mode == AreaScan.Mode.EXCAVATE ? "that space is already clear" : "that is already filled", null, null);
+        }
+        return new Prepared(box, new AreaBuildTask(mode, box, fillBlock, scan), null, null, null);
+    }
+
+    public static AreaSpec.Anchors anchors(PlayerEngineController mod) {
         var me = mod.getPlayer();
         BlockPos here = me.blockPosition();
         AreaSpec.Pos owner = null;
@@ -149,14 +188,14 @@ public abstract class AreaCommand extends Command {
     }
 
     /** World border, spawn protection, dimension and registered vetoes; null when the place is allowed. */
-    private static String placeRefusal(ServerLevel level, AreaSpec.Box box) {
+    private static Prepared placeRefusal(ServerLevel level, AreaSpec.Box box) {
         if (level.dimension() != Level.OVERWORLD && level.dimension() != Level.NETHER && level.dimension() != Level.END) {
-            return "I only do earthworks in the overworld, the nether and the end";
+            return Prepared.refuse(FailureCode.DENIED, "I only do earthworks in the overworld, the nether and the end");
         }
         var border = level.getWorldBorder();
         if (!border.isWithinBounds(new BlockPos(box.minX() - 2, box.minY(), box.minZ() - 2))
                 || !border.isWithinBounds(new BlockPos(box.maxX() + 2, box.maxY(), box.maxZ() + 2))) {
-            return "that is at the edge of the world border";
+            return Prepared.refuse(FailureCode.OUT_OF_REGION, "that is at the edge of the world border");
         }
         MinecraftServer server = level.getServer();
         int spawnRadius = server.getSpawnProtectionRadius();
@@ -165,13 +204,14 @@ public abstract class AreaCommand extends Command {
             boolean clear = box.maxX() < spawn.getX() - spawnRadius || box.minX() > spawn.getX() + spawnRadius
                     || box.maxZ() < spawn.getZ() - spawnRadius || box.minZ() > spawn.getZ() + spawnRadius;
             if (!clear) {
-                return "that is inside the protected spawn area";
+                return Prepared.refuse(FailureCode.PROTECTED, "that is inside the protected spawn area");
             }
         }
-        return AreaVetoes.check(level, box).orElse(null);
+        return AreaVetoes.check(level, box).map(why -> Prepared.refuse(FailureCode.PROTECTED, why)).orElse(null);
     }
 
-    private static AreaScan.BlockLookup lookup(PlayerEngineController mod, ServerLevel level, Block fillBlock) {
+    /** The cells an area scan reads, as the companion's own tools and protections see them. */
+    public static AreaScan.BlockLookup lookup(PlayerEngineController mod, ServerLevel level, Block fillBlock) {
         PlayerPlacedBlockStore store = mod.getBaritoneSettings().respectStructuresEnabled.get()
                 ? PlayerPlacedBlockStore.get() : null;
         String dim = level.dimension().location().toString();

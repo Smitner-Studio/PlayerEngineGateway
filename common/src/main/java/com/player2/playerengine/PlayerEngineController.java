@@ -211,6 +211,7 @@ public class PlayerEngineController {
       this.miscBlockTracker.tick();
       this.trackerManager.tick();
       this.blockScanner.tick();
+      this.commandExecutor.seam().tick();
       this.taskRunner.tick();
       this.cacheTracker.tick();
       this.inputControls.onTickPost();

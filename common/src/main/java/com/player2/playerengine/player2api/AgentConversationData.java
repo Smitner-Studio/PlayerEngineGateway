@@ -1190,6 +1190,13 @@ public class AgentConversationData {
         String llmMessage = Utils.getStringJsonSafely(jsonResp, "message");
         String command = greetingResponse ? "bodylang greeting"
                 : Utils.getStringJsonSafely(jsonResp, "command");
+        com.google.gson.JsonElement liftedPlan = greetingResponse ? null
+                : com.player2.playerengine.seam.CommandLines.liftPlan(command, mod.getCommandExecutor().getCommandPrefix());
+        if (liftedPlan != null) {
+            // E5: a plan sent as a command is read as the plan field; it is no command to run.
+            LOGGER.info("[Plan] bot={} sent a plan as its command; read as the plan field", getName());
+            command = null;
+        }
 
         // --- Companion mood: declare-parse + deterministic update (WS2) + mood→memory trigger (WS4) ---
         // Gated on enableCompanionMood (WS5): flag-off → no parse, no mood write, no extra request bytes.
@@ -1267,7 +1274,7 @@ public class AgentConversationData {
         // (getReminderStringFromLastEvent) BEFORE this point, so mutating the counter now is correct.
         boolean isPeerTurn = lastEvent instanceof Event.CharacterMessage;
         if (!greetingResponse && !isPeerTurn && conversationTurnGate.accepts(turnTicket)) {
-            command = applyPlanAndOwnership(jsonResp, lastEvent, command, cmdId);
+            command = applyPlanAndOwnership(jsonResp, lastEvent, command, cmdId, liftedPlan);
             cmdId = resolveCommandId(command);
         } else if (isPeerTurn && peerRefusedCommandIn(command) != null) {
             command = null;
@@ -1336,13 +1343,20 @@ public class AgentConversationData {
     /**
      * Applies the reply's {@code plan} field and returns the command the reply may still dispatch
      * (null when the plan took over). Any player may command any companion (R1).
+     *
+     * @param liftedPlan a plan the reply sent as its command (E5), used when the plan field is empty
      */
-    private String applyPlanAndOwnership(JsonObject jsonResp, Event lastEvent, String command, String cmdId) {
+    private String applyPlanAndOwnership(JsonObject jsonResp, Event lastEvent, String command, String cmdId,
+            com.google.gson.JsonElement liftedPlan) {
         PlanCoordinator.Turn turn = OwnerGate.turn(lastEvent, chainInitiator);
         if ("stop".equals(cmdId)) {
             planCoordinator.cancel("stop command");
         }
-        PlanParser.Result plan = PlanParser.parse(jsonResp.get("plan"), this::registeredCommandId);
+        com.google.gson.JsonElement planField = jsonResp.get("plan");
+        if (liftedPlan != null && (planField == null || planField.isJsonNull())) {
+            planField = liftedPlan;
+        }
+        PlanParser.Result plan = PlanParser.parse(planField, this::registeredCommandId);
         boolean planTook = planCoordinator.onModelDecision(plan, command, turn);
         return planTook ? null : command;
     }

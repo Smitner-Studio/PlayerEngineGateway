@@ -1,0 +1,622 @@
+{
+  "version": 1,
+  "source": "com.player2.playerengine.seam.SignatureTable; regenerate with task seam-signatures",
+  "failureCodes": [
+    "missing_item",
+    "unreachable",
+    "no_container",
+    "container_full",
+    "liquid",
+    "protected",
+    "out_of_region",
+    "not_loaded",
+    "budget",
+    "superseded",
+    "timeout",
+    "denied",
+    "ambiguous",
+    "bad_args",
+    "not_found"
+  ],
+  "signatures": [
+    {
+      "name": "inventory",
+      "kind": "query",
+      "class": "QUERY",
+      "args": [],
+      "returns": "{[item: ItemId]: int}",
+      "idempotent": true,
+      "postcondition": "none",
+      "bound": false,
+      "doc": "what the companion carries",
+      "reference": "api.inventory(): {[item: ItemId]: int}"
+    },
+    {
+      "name": "count",
+      "kind": "query",
+      "class": "QUERY",
+      "args": [
+        {
+          "name": "item",
+          "type": "ItemId",
+          "required": true
+        }
+      ],
+      "returns": "int",
+      "idempotent": true,
+      "postcondition": "none",
+      "bound": false,
+      "doc": "how many of item it carries",
+      "reference": "api.count(item: ItemId): int"
+    },
+    {
+      "name": "position",
+      "kind": "query",
+      "class": "QUERY",
+      "args": [],
+      "returns": "Pos",
+      "idempotent": true,
+      "postcondition": "none",
+      "bound": false,
+      "doc": "where the companion stands",
+      "reference": "api.position(): Pos"
+    },
+    {
+      "name": "owner_pos",
+      "kind": "query",
+      "class": "QUERY",
+      "args": [],
+      "returns": "Pos",
+      "idempotent": true,
+      "postcondition": "none",
+      "bound": false,
+      "doc": "where the owner stands",
+      "reference": "api.owner_pos(): Pos"
+    },
+    {
+      "name": "owner_facing",
+      "kind": "query",
+      "class": "QUERY",
+      "args": [],
+      "returns": "Facing",
+      "idempotent": true,
+      "postcondition": "none",
+      "bound": false,
+      "doc": "the way the owner faces",
+      "reference": "api.owner_facing(): Facing"
+    },
+    {
+      "name": "find_blocks",
+      "kind": "query",
+      "class": "QUERY",
+      "args": [
+        {
+          "name": "block",
+          "type": "BlockId",
+          "required": true
+        },
+        {
+          "name": "radius",
+          "type": "int",
+          "required": true,
+          "min": 1,
+          "max": 32
+        },
+        {
+          "name": "max",
+          "type": "int",
+          "required": true,
+          "min": 1,
+          "max": 64
+        }
+      ],
+      "returns": "Pos[]",
+      "idempotent": true,
+      "postcondition": "none",
+      "bound": true,
+      "doc": "exposed blocks of that kind, nearest first",
+      "reference": "api.find_blocks(block: BlockId, radius: int /* 1..32 */, max: int /* 1..64 */): Pos[]"
+    },
+    {
+      "name": "containers",
+      "kind": "query",
+      "class": "QUERY",
+      "args": [
+        {
+          "name": "radius",
+          "type": "int",
+          "required": true,
+          "min": 1,
+          "max": 16
+        }
+      ],
+      "returns": "Container[]",
+      "idempotent": true,
+      "postcondition": "none",
+      "bound": false,
+      "doc": "containers in sight or already known; a double chest is one handle",
+      "reference": "api.containers(radius: int /* 1..16 */): Container[]"
+    },
+    {
+      "name": "contents",
+      "kind": "query",
+      "class": "QUERY",
+      "args": [
+        {
+          "name": "c",
+          "type": "Container",
+          "required": true
+        }
+      ],
+      "returns": "{[item: ItemId]: int}",
+      "idempotent": true,
+      "postcondition": "none",
+      "bound": false,
+      "doc": "a known container's contents; an unknown one is denied until opened",
+      "reference": "api.contents(c: Container): {[item: ItemId]: int}"
+    },
+    {
+      "name": "last_area",
+      "kind": "query",
+      "class": "QUERY",
+      "args": [],
+      "returns": "Box | null",
+      "idempotent": true,
+      "postcondition": "none",
+      "bound": false,
+      "doc": "the last box an area primitive finished",
+      "reference": "api.last_area(): Box | null"
+    },
+    {
+      "name": "light_at",
+      "kind": "query",
+      "class": "QUERY",
+      "args": [
+        {
+          "name": "p",
+          "type": "Pos",
+          "required": true
+        }
+      ],
+      "returns": "int",
+      "idempotent": true,
+      "postcondition": "none",
+      "bound": false,
+      "doc": "the light level at p",
+      "reference": "api.light_at(p: Pos): int"
+    },
+    {
+      "name": "block_at",
+      "kind": "query",
+      "class": "QUERY",
+      "args": [
+        {
+          "name": "p",
+          "type": "Pos",
+          "required": true
+        }
+      ],
+      "returns": "BlockId | \"hidden\"",
+      "idempotent": true,
+      "postcondition": "none",
+      "bound": true,
+      "doc": "the block at p, or hidden when no face of it is exposed",
+      "reference": "api.block_at(p: Pos): BlockId | \"hidden\""
+    },
+    {
+      "name": "goto",
+      "kind": "primitive",
+      "class": "MOVE",
+      "command": "goto",
+      "args": [
+        {
+          "name": "p",
+          "type": "Pos",
+          "required": true
+        }
+      ],
+      "returns": "void",
+      "idempotent": true,
+      "postcondition": "within 2 blocks of p",
+      "bound": true,
+      "doc": "walk to p",
+      "reference": "api.goto(p: Pos): void"
+    },
+    {
+      "name": "follow_owner",
+      "kind": "primitive",
+      "class": "MOVE",
+      "command": "follow",
+      "args": [
+        {
+          "name": "until_near_blocks",
+          "type": "int",
+          "required": true,
+          "min": 1,
+          "max": 64
+        },
+        {
+          "name": "timeout_s",
+          "type": "int",
+          "required": true,
+          "min": 1,
+          "max": 600
+        }
+      ],
+      "returns": "void",
+      "idempotent": true,
+      "postcondition": "within the range, or timeout",
+      "bound": false,
+      "doc": "follow the owner until near",
+      "reference": "api.follow_owner(until_near_blocks: int /* 1..64 */, timeout_s: int /* 1..600 */): void"
+    },
+    {
+      "name": "wait",
+      "kind": "primitive",
+      "class": "MOVE",
+      "args": [
+        {
+          "name": "ticks",
+          "type": "int",
+          "required": true,
+          "min": 1,
+          "max": 1200
+        }
+      ],
+      "returns": "void",
+      "idempotent": true,
+      "postcondition": "none",
+      "bound": false,
+      "doc": "stand still for ticks",
+      "reference": "api.wait(ticks: int /* 1..1200 */): void"
+    },
+    {
+      "name": "wait_until",
+      "kind": "primitive",
+      "class": "MOVE",
+      "args": [
+        {
+          "name": "query_name",
+          "type": "QueryName",
+          "required": true
+        },
+        {
+          "name": "args",
+          "type": "any",
+          "required": true
+        },
+        {
+          "name": "predicate",
+          "type": "Predicate",
+          "required": true
+        },
+        {
+          "name": "timeout_s",
+          "type": "int",
+          "required": true,
+          "min": 1,
+          "max": 600
+        }
+      ],
+      "returns": "void",
+      "idempotent": true,
+      "postcondition": "the predicate holds; re-queries at most every 20 ticks",
+      "bound": false,
+      "doc": "wait for a query to satisfy predicate",
+      "reference": "api.wait_until(query_name: QueryName, args: any, predicate: Predicate, timeout_s: int /* 1..600 */): void"
+    },
+    {
+      "name": "excavate",
+      "kind": "primitive",
+      "class": "WORLD",
+      "command": "excavate",
+      "args": [
+        {
+          "name": "box",
+          "type": "Box",
+          "required": true
+        }
+      ],
+      "returns": "void",
+      "idempotent": true,
+      "postcondition": "every non-excluded cell is air",
+      "bound": true,
+      "doc": "dig out a box; leaves players' blocks and containers",
+      "reference": "api.excavate(box: Box): void"
+    },
+    {
+      "name": "fill",
+      "kind": "primitive",
+      "class": "WORLD",
+      "command": "fill",
+      "args": [
+        {
+          "name": "block",
+          "type": "BlockId",
+          "required": true
+        },
+        {
+          "name": "box",
+          "type": "Box",
+          "required": true
+        }
+      ],
+      "returns": "void",
+      "idempotent": true,
+      "postcondition": "every target cell is block",
+      "bound": false,
+      "doc": "fill a box with block",
+      "reference": "api.fill(block: BlockId, box: Box): void"
+    },
+    {
+      "name": "place",
+      "kind": "primitive",
+      "class": "WORLD",
+      "args": [
+        {
+          "name": "block",
+          "type": "BlockId",
+          "required": true
+        },
+        {
+          "name": "p",
+          "type": "Pos",
+          "required": true
+        }
+      ],
+      "returns": "void",
+      "idempotent": true,
+      "postcondition": "block_at(p) == block",
+      "bound": false,
+      "doc": "place one block",
+      "reference": "api.place(block: BlockId, p: Pos): void"
+    },
+    {
+      "name": "mine",
+      "kind": "primitive",
+      "class": "WORLD",
+      "command": "mine",
+      "args": [
+        {
+          "name": "block",
+          "type": "BlockId",
+          "required": true
+        },
+        {
+          "name": "n",
+          "type": "Count",
+          "required": true
+        }
+      ],
+      "returns": "void",
+      "idempotent": false,
+      "postcondition": "the drop item's inventory delta >= the expected drops for n",
+      "bound": false,
+      "doc": "mine n exposed blocks",
+      "reference": "api.mine(block: BlockId, n: Count): void"
+    },
+    {
+      "name": "pickup_drops",
+      "kind": "primitive",
+      "class": "ITEMS",
+      "command": "pickup_drops",
+      "args": [
+        {
+          "name": "radius",
+          "type": "int",
+          "required": true,
+          "min": 1,
+          "max": 16
+        }
+      ],
+      "returns": "void",
+      "idempotent": true,
+      "postcondition": "no item entities left in the radius",
+      "bound": false,
+      "doc": "pick up dropped items nearby",
+      "reference": "api.pickup_drops(radius: int /* 1..16 */): void"
+    },
+    {
+      "name": "get",
+      "kind": "primitive",
+      "class": "WORLD",
+      "command": "get",
+      "args": [
+        {
+          "name": "item",
+          "type": "ItemId",
+          "required": true
+        },
+        {
+          "name": "n",
+          "type": "Count",
+          "required": true
+        }
+      ],
+      "returns": "void",
+      "idempotent": true,
+      "postcondition": "count(item) >= n",
+      "bound": false,
+      "doc": "gather or craft until it carries n",
+      "reference": "api.get(item: ItemId, n: Count): void"
+    },
+    {
+      "name": "craft",
+      "kind": "primitive",
+      "class": "ITEMS",
+      "args": [
+        {
+          "name": "item",
+          "type": "ItemId",
+          "required": true
+        },
+        {
+          "name": "n",
+          "type": "Count",
+          "required": true
+        }
+      ],
+      "returns": "void",
+      "idempotent": false,
+      "postcondition": "output delta >= n",
+      "bound": false,
+      "doc": "craft n",
+      "reference": "api.craft(item: ItemId, n: Count): void"
+    },
+    {
+      "name": "smelt",
+      "kind": "primitive",
+      "class": "ITEMS",
+      "command": "smelt",
+      "args": [
+        {
+          "name": "output",
+          "type": "ItemId",
+          "required": true
+        },
+        {
+          "name": "n",
+          "type": "Count",
+          "required": true
+        }
+      ],
+      "returns": "void",
+      "idempotent": false,
+      "postcondition": "output delta >= n",
+      "bound": false,
+      "doc": "smelt to n of output; the input comes from the inventory",
+      "reference": "api.smelt(output: ItemId, n: Count): void"
+    },
+    {
+      "name": "store",
+      "kind": "primitive",
+      "class": "ITEMS",
+      "command": "deposit_to_storage",
+      "args": [
+        {
+          "name": "c",
+          "type": "Container",
+          "required": false
+        },
+        {
+          "name": "items",
+          "type": "ItemSet",
+          "required": true
+        }
+      ],
+      "returns": "void",
+      "idempotent": false,
+      "postcondition": "container delta = inventory delta",
+      "bound": false,
+      "doc": "store items, or \"all_except_tools\"",
+      "reference": "api.store(c?: Container, items: ItemSet): void"
+    },
+    {
+      "name": "withdraw",
+      "kind": "primitive",
+      "class": "ITEMS",
+      "command": "withdraw_from_storage",
+      "args": [
+        {
+          "name": "c",
+          "type": "Container",
+          "required": true
+        },
+        {
+          "name": "items",
+          "type": "ItemSet",
+          "required": true
+        }
+      ],
+      "returns": "void",
+      "idempotent": false,
+      "postcondition": "inventory delta = container delta",
+      "bound": false,
+      "doc": "take items out of a container",
+      "reference": "api.withdraw(c: Container, items: ItemSet): void"
+    },
+    {
+      "name": "give_owner",
+      "kind": "primitive",
+      "class": "ITEMS",
+      "command": "give",
+      "args": [
+        {
+          "name": "item",
+          "type": "ItemId",
+          "required": true
+        },
+        {
+          "name": "n",
+          "type": "Count",
+          "required": true
+        }
+      ],
+      "returns": "void",
+      "idempotent": false,
+      "postcondition": "the owner's inventory delta, or an item entity at the owner",
+      "bound": false,
+      "doc": "hand items to the owner",
+      "reference": "api.give_owner(item: ItemId, n: Count): void"
+    },
+    {
+      "name": "equip",
+      "kind": "primitive",
+      "class": "SELF",
+      "command": "equip",
+      "args": [
+        {
+          "name": "item",
+          "type": "ItemId",
+          "required": true
+        }
+      ],
+      "returns": "void",
+      "idempotent": true,
+      "postcondition": "the item is held or worn",
+      "bound": false,
+      "doc": "hold or wear item",
+      "reference": "api.equip(item: ItemId): void"
+    },
+    {
+      "name": "say",
+      "kind": "primitive",
+      "class": "SELF",
+      "args": [
+        {
+          "name": "text",
+          "type": "string",
+          "required": true,
+          "min": 1,
+          "max": 200
+        }
+      ],
+      "returns": "void",
+      "idempotent": true,
+      "postcondition": "none; at most 1 per 10 s per job",
+      "bound": false,
+      "doc": "say a line",
+      "reference": "api.say(text: string /* <=200 chars */): void"
+    },
+    {
+      "name": "confirm",
+      "kind": "primitive",
+      "class": "SELF",
+      "args": [
+        {
+          "name": "question",
+          "type": "string",
+          "required": true,
+          "min": 1,
+          "max": 200
+        }
+      ],
+      "returns": "void",
+      "idempotent": true,
+      "postcondition": "the owner answered yes or no",
+      "bound": false,
+      "doc": "ask the owner and wait for yes or no",
+      "reference": "api.confirm(question: string /* <=200 chars */): void"
+    }
+  ]
+}

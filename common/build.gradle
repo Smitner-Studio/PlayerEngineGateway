@@ -50,6 +50,15 @@ tasks.register('companionSelfTest', JavaExec) {
     enableAssertions = true
 }
 
+tasks.register('seamSignatures', JavaExec) {
+    group = 'build'
+    description = 'Writes the seam signature table that the API reference and the program linter read.'
+    dependsOn tasks.named('classes')
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass.set('com.player2.playerengine.seam.SignatureTable')
+    args file('src/main/resources/playerengine/seam/signatures.json').absolutePath
+}
+
 tasks.register('planSelfTest', JavaExec) {
     group = 'verification'
     description = 'Checks the companion planner and the area-command bounds with a mock model and host.'
