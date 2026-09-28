@@ -66,7 +66,8 @@ public final class SeamSelfTest {
             require(p != null && p.signature().bound() && p.signature().command().equals(bound),
                     bound + " lines dispatch through the seam as the " + bound + " primitive");
         }
-        require(Seam.primitiveFor("mine") == null, "mine is signature only until stage 2B");
+        require(Seam.primitiveFor("mine") != null && Seam.primitiveFor("scan_storage") == null,
+                "mine lines run as the mine primitive; a command no primitive wraps runs as itself");
         String published = SignatureTable.published();
         require(published != null, SignatureTable.RESOURCE + " is published");
         require(SignatureTable.json().equals(published),
@@ -411,17 +412,17 @@ public final class SeamSelfTest {
     private static void gotoPostcondition() {
         Primitive go = Seam.primitiveFor("goto");
         Map<String, Object> args = Map.of("p", new AreaSpec.Pos(10, 64, 10));
-        Outcome real = Seam.verify(go, args, Primitive.TaskEnd.finished(null),
+        Outcome real = Seam.verify(go, args, Map.of(), Primitive.TaskEnd.finished(null),
                 standingAt(new Vec3(10.5, 64, 10.5), (x, y, z) -> null), List.of());
         require(real.ok(), "goto passes when the companion stands at the target: " + real);
-        Outcome faked = Seam.verify(go, args, Primitive.TaskEnd.finished(null),
+        Outcome faked = Seam.verify(go, args, Map.of(), Primitive.TaskEnd.finished(null),
                 standingAt(new Vec3(0.5, 64, 0.5), (x, y, z) -> null), List.of());
         require(!faked.ok() && faked.error().code() == FailureCode.UNREACHABLE,
                 "a Finished goto that left the companion 14 blocks short fails: " + faked);
-        Outcome failed = Seam.verify(go, args, Primitive.TaskEnd.failed(ActionError.of(FailureCode.TIMEOUT, "slow")),
+        Outcome failed = Seam.verify(go, args, Map.of(), Primitive.TaskEnd.failed(ActionError.of(FailureCode.TIMEOUT, "slow")),
                 standingAt(new Vec3(10.5, 64, 10.5), (x, y, z) -> null), List.of());
         require(!failed.ok() && failed.error().code() == FailureCode.TIMEOUT, "the Task's own failure stands");
-        require(go.reconcile(args, standingAt(new Vec3(0.5, 64, 0.5), (x, y, z) -> null)) == Primitive.Reconcile.RERUN,
+        require(go.reconcile(args, Map.of(), standingAt(new Vec3(0.5, 64, 0.5), (x, y, z) -> null)) == Primitive.Reconcile.RERUN,
                 "an interrupted goto short of its target re-runs");
     }
 
@@ -439,24 +440,24 @@ public final class SeamSelfTest {
         Vec3 here = new Vec3(0, 60, 0);
         AreaScan.BlockLookup cleared = (x, y, z) -> new BlockPos(x, y, z).equals(kept) ? cell(false, true, null)
                 : cell(true, false, null);
-        Outcome real = Seam.verify(dig, args, Primitive.TaskEnd.finished("dug"), standingAt(here, cleared), List.of());
+        Outcome real = Seam.verify(dig, args, Map.of(), Primitive.TaskEnd.finished("dug"), standingAt(here, cleared), List.of());
         require(real.ok() && "dug".equals(real.value()),
                 "excavate passes when every cell but a player's block is air: " + real);
         AreaScan.BlockLookup notDug = (x, y, z) -> stoneLeft.contains(new BlockPos(x, y, z)) ? cell(false, false, null)
                 : cell(true, false, null);
-        Outcome faked = Seam.verify(dig, args, Primitive.TaskEnd.finished("dug"), standingAt(here, notDug), List.of());
+        Outcome faked = Seam.verify(dig, args, Map.of(), Primitive.TaskEnd.finished("dug"), standingAt(here, notDug), List.of());
         require(!faked.ok() && faked.error().code() == FailureCode.UNREACHABLE
                         && Integer.valueOf(1).equals(faked.error().state().get("left")),
                 "a Finished excavate with a cell still standing fails: " + faked);
         AreaScan.BlockLookup flooded = (x, y, z) -> y == 60 ? cell(false, false, "water") : cell(true, false, null);
-        Outcome wet = Seam.verify(dig, args, Primitive.TaskEnd.finished(null), standingAt(here, flooded), List.of());
+        Outcome wet = Seam.verify(dig, args, Map.of(), Primitive.TaskEnd.finished(null), standingAt(here, flooded), List.of());
         require(!wet.ok() && wet.error().code() == FailureCode.LIQUID, "water in the box is liquid: " + wet);
         AreaScan.BlockLookup unloaded = (x, y, z) -> new AreaScan.Cell(false, false, null, false, false, false, false,
                 false, false, 0, false, false, "");
-        Outcome gone = Seam.verify(dig, args, Primitive.TaskEnd.finished(null), standingAt(here, unloaded), List.of());
+        Outcome gone = Seam.verify(dig, args, Map.of(), Primitive.TaskEnd.finished(null), standingAt(here, unloaded), List.of());
         require(!gone.ok() && gone.error().code() == FailureCode.NOT_LOADED, "an unloaded box is not_loaded: " + gone);
-        require(dig.reconcile(args, standingAt(here, cleared)) == Primitive.Reconcile.DONE
-                        && dig.reconcile(args, standingAt(here, notDug)) == Primitive.Reconcile.RERUN,
+        require(dig.reconcile(args, Map.of(), standingAt(here, cleared)) == Primitive.Reconcile.DONE
+                        && dig.reconcile(args, Map.of(), standingAt(here, notDug)) == Primitive.Reconcile.RERUN,
                 "an interrupted excavate is done when clear and re-runs otherwise");
     }
 

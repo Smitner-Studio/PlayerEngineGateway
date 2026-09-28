@@ -41,7 +41,8 @@ public final class ExcavatePrimitive implements Primitive {
     }
 
     @Override
-    public void start(Map<String, Object> args, Map<String, Object> options, Context ctx, Consumer<TaskEnd> ended) {
+    public void start(Map<String, Object> args, Map<String, Object> options, Map<String, Object> pre, Context ctx,
+            Consumer<TaskEnd> ended) {
         AreaSpec.Box box = (AreaSpec.Box) args.get("box");
         AreaCommand.Prepared prepared = AreaCommand.prepare(ctx.mod(), AreaScan.Mode.EXCAVATE, box, null,
                 Boolean.TRUE.equals(options.get("confirm")));
@@ -71,7 +72,7 @@ public final class ExcavatePrimitive implements Primitive {
     }
 
     @Override
-    public ActionError postcondition(Map<String, Object> args, World world) {
+    public ActionError postcondition(Map<String, Object> args, Map<String, Object> pre, World world) {
         AreaSpec.Box b = (AreaSpec.Box) args.get("box");
         int left = 0;
         int total = 0;

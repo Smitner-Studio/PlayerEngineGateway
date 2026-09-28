@@ -176,6 +176,9 @@ public class ConversationManager {
         if (handleStop(msg, companions, server)) {
             return;
         }
+        if (handleConfirm(msg, companions)) {
+            return;
+        }
         boolean callByName = Player2ServerConfigHolder.get().isCallByNameChat();
         List<AgentConversationData> nearby = companions.stream()
                 .filter(c -> c.sameDimension() && c.distance() < CompanionAddress.NEAR)
@@ -332,6 +335,34 @@ public class ConversationManager {
                 : Component.translatable("message.playerengine.agent.owner_stop_ack", name));
         LOGGER.info("Stop from {} applied to {}", msg.userName(), name);
         return true;
+    }
+
+    /**
+     * An owner's yes or no to a companion's open {@code confirm} (design §5.3) answers it here,
+     * deterministically, and goes no further. Any other reply closes the question unanswered and
+     * carries on to the model as a normal message.
+     *
+     * @return true when the reply was consumed as an answer
+     */
+    private static boolean handleConfirm(UserMessage msg,
+            List<CompanionAddress.Candidate<AgentConversationData>> companions) {
+        UUID speaker = msg == null ? null : msg.authenticatedUserUuid();
+        if (speaker == null || msg.message() == null) {
+            return false;
+        }
+        boolean consumed = false;
+        for (CompanionAddress.Candidate<AgentConversationData> c : companions) {
+            com.player2.playerengine.PlayerEngineController mod = c.ref().getMod();
+            if (!mod.isOwner(speaker)) {
+                continue;
+            }
+            com.player2.playerengine.seam.Seam seam = mod.getCommandExecutor().seam();
+            if (seam.awaitingReply() && seam.reply(msg.message())) {
+                LOGGER.info("Confirm answered by {} for {}: {}", msg.userName(), c.ref().getName(), msg.message());
+                consumed = true;
+            }
+        }
+        return consumed;
     }
 
     private static void notifyPlayer(String userName, MinecraftServer server, Component message) {

@@ -69,21 +69,21 @@ public final class SignatureTable {
     private static List<Signature> build() {
         List<Signature> t = new ArrayList<>();
         // Queries (§5.3): yield, budgeted, never load a chunk.
-        t.add(query("inventory", List.of(), "{[item: ItemId]: int}", false, "what the companion carries"));
-        t.add(query("count", List.of(Arg.of("item", Type.ITEM)), "int", false, "how many of item it carries"));
-        t.add(query("position", List.of(), "Pos", false, "where the companion stands"));
-        t.add(query("owner_pos", List.of(), "Pos", false, "where the owner stands"));
-        t.add(query("owner_facing", List.of(), "Facing", false, "the way the owner faces"));
+        t.add(query("inventory", List.of(), "{[item: ItemId]: int}", true, "what the companion carries"));
+        t.add(query("count", List.of(Arg.of("item", Type.ITEM)), "int", true, "how many of item it carries"));
+        t.add(query("position", List.of(), "Pos", true, "where the companion stands"));
+        t.add(query("owner_pos", List.of(), "Pos", true, "where the owner stands"));
+        t.add(query("owner_facing", List.of(), "Facing", true, "the way the owner faces"));
         t.add(query("find_blocks", List.of(Arg.of("block", Type.BLOCK),
                         Arg.bounded("radius", Type.INT, 1, MAX_FIND_RADIUS),
                         Arg.bounded("max", Type.INT, 1, MAX_FIND_RESULTS)),
                 "Pos[]", true, "exposed blocks of that kind, nearest first"));
         t.add(query("containers", List.of(Arg.bounded("radius", Type.INT, 1, MAX_CONTAINER_RADIUS)),
-                "Container[]", false, "containers in sight or already known; a double chest is one handle"));
-        t.add(query("contents", List.of(Arg.of("c", Type.CONTAINER)), "{[item: ItemId]: int}", false,
+                "Container[]", true, "containers in sight or already known; a double chest is one handle"));
+        t.add(query("contents", List.of(Arg.of("c", Type.CONTAINER)), "{[item: ItemId]: int}", true,
                 "a known container's contents; an unknown one is denied until opened"));
-        t.add(query("last_area", List.of(), "Box | null", false, "the last box an area primitive finished"));
-        t.add(query("light_at", List.of(Arg.of("p", Type.POS)), "int", false, "the light level at p"));
+        t.add(query("last_area", List.of(), "Box | null", true, "the last box an area primitive finished"));
+        t.add(query("light_at", List.of(Arg.of("p", Type.POS)), "int", true, "the light level at p"));
         t.add(query("block_at", List.of(Arg.of("p", Type.POS)), "BlockId | \"hidden\"", true,
                 "the block at p, or hidden when no face of it is exposed"));
 
@@ -92,50 +92,52 @@ public final class SignatureTable {
                 "within 2 blocks of p", true, "walk to p"));
         t.add(primitive("follow_owner", "follow", null, List.of(Arg.bounded("until_near_blocks", Type.INT, 1, 64),
                         Arg.bounded("timeout_s", Type.INT, 1, MAX_WAIT_SECONDS)), true,
-                "within the range, or timeout", false, "follow the owner until near"));
+                "within the range, or timeout", true, "follow the owner until near"));
         t.add(primitive("wait", null, PermissionClass.MOVE, List.of(Arg.bounded("ticks", Type.INT, 1, MAX_WAIT_TICKS)),
-                true, "none", false, "stand still for ticks"));
+                true, "that many ticks have passed", true, "stand still for ticks"));
         t.add(primitive("wait_until", null, PermissionClass.MOVE, List.of(Arg.of("query_name", Type.QUERY_NAME),
                         Arg.of("args", Type.ANY), Arg.of("predicate", Type.PREDICATE),
                         Arg.bounded("timeout_s", Type.INT, 1, MAX_WAIT_SECONDS)), true,
-                "the predicate holds; re-queries at most every 20 ticks", false, "wait for a query to satisfy predicate"));
+                "the predicate holds; re-queries at most every 20 ticks", true, "wait for a query to satisfy predicate"));
 
         // World.
         t.add(primitive("excavate", "excavate", null, List.of(Arg.of("box", Type.BOX)), true,
                 "every non-excluded cell is air", true, "dig out a box; leaves players' blocks and containers"));
         t.add(primitive("fill", "fill", null, List.of(Arg.of("block", Type.BLOCK), Arg.of("box", Type.BOX)), true,
-                "every target cell is block", false, "fill a box with block"));
+                "every target cell is block", true, "fill a box with block"));
         t.add(primitive("place", null, PermissionClass.WORLD, List.of(Arg.of("block", Type.BLOCK), Arg.of("p", Type.POS)),
-                true, "block_at(p) == block", false, "place one block"));
+                true, "block_at(p) == block", true, "place one block"));
         t.add(primitive("mine", "mine", null, List.of(Arg.of("block", Type.BLOCK), Arg.of("n", Type.COUNT)), false,
-                "the drop item's inventory delta >= the expected drops for n", false, "mine n exposed blocks"));
+                "the drop item's inventory delta >= the expected drops for n", true, "mine n exposed blocks"));
         t.add(primitive("pickup_drops", "pickup_drops", null,
                 List.of(Arg.bounded("radius", Type.INT, 1, MAX_PICKUP_RADIUS)), true,
-                "no item entities left in the radius", false, "pick up dropped items nearby"));
+                "no item entities left in the radius", true, "pick up dropped items nearby"));
 
         // Items.
         t.add(primitive("get", "get", null, List.of(Arg.of("item", Type.ITEM), Arg.of("n", Type.COUNT)), true,
-                "count(item) >= n", false, "gather or craft until it carries n"));
+                "count(item) >= n", true, "gather or craft until it carries n"));
         t.add(primitive("craft", null, PermissionClass.ITEMS, List.of(Arg.of("item", Type.ITEM), Arg.of("n", Type.COUNT)),
-                false, "output delta >= n", false, "craft n"));
+                false, "output delta >= n", true, "craft n more; gathers missing ingredients"));
         t.add(primitive("smelt", "smelt", null, List.of(Arg.of("output", Type.ITEM), Arg.of("n", Type.COUNT)), false,
-                "output delta >= n", false, "smelt to n of output; the input comes from the inventory"));
+                "output delta >= n", true, "smelt n of output; the input comes from the inventory"));
         t.add(primitive("store", "deposit_to_storage", null, List.of(Arg.optional("c", Type.CONTAINER),
                         Arg.of("items", Type.ITEMS)), false,
-                "container delta = inventory delta", false, "store items, or \"all_except_tools\""));
+                "container delta = inventory delta", true,
+                "store items, or \"all_except_tools\"; without c, the nearest container in sight"));
         t.add(primitive("withdraw", "withdraw_from_storage", null, List.of(Arg.of("c", Type.CONTAINER),
                         Arg.of("items", Type.ITEMS)), false,
-                "inventory delta = container delta", false, "take items out of a container"));
+                "inventory delta = container delta", true, "take items out of a container"));
         t.add(primitive("give_owner", "give", null, List.of(Arg.of("item", Type.ITEM), Arg.of("n", Type.COUNT)), false,
-                "the owner's inventory delta, or an item entity at the owner", false, "hand items to the owner"));
+                "the owner's inventory delta, or an item entity at the owner", true, "hand items to the owner"));
         t.add(primitive("equip", "equip", null, List.of(Arg.of("item", Type.ITEM)), true,
-                "the item is held or worn", false, "hold or wear item"));
+                "the item is held or worn", true, "hold or wear item"));
 
         // Talk.
         t.add(primitive("say", null, PermissionClass.SELF, List.of(Arg.bounded("text", Type.TEXT, 1, MAX_TEXT)), true,
-                "none; at most 1 per 10 s per job", false, "say a line"));
+                "the line is in the companion's spoken log; at most 1 per 10 s, a sooner one waits", true,
+                "say a line"));
         t.add(primitive("confirm", null, PermissionClass.SELF, List.of(Arg.bounded("question", Type.TEXT, 1, MAX_TEXT)),
-                true, "the owner answered yes or no", false, "ask the owner and wait for yes or no"));
+                true, "the owner answered yes or no", true, "ask the owner and wait for yes or no"));
         return t;
     }
 

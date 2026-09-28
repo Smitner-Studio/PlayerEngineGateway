@@ -13,6 +13,9 @@ import com.player2.playerengine.player2api.Event;
 import com.player2.playerengine.player2api.manager.ConversationManager;
 import com.player2.playerengine.player2api.utils.CharacterUtils;
 import com.player2.playerengine.structureprotection.PlayerPlacedBlockStore;
+import com.player2.playerengine.containeraccess.ContainerResolver;
+import com.player2.playerengine.seam.ContainerHandle;
+import com.player2.playerengine.tasks.construction.area.AreaSpec;
 import com.player2.playerengine.util.ChunkHolds;
 import com.player2.playerengine.util.TicketChunkHolds;
 import dev.architectury.event.events.common.LifecycleEvent;
@@ -34,7 +37,13 @@ import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.storage.LevelResource;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.core.Direction;
 import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.level.block.ChestBlock;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.ChestType;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import org.apache.logging.log4j.LogManager;
@@ -160,6 +169,7 @@ public final class SmokeHarness {
             case "attack" -> attackAPlayer(level);
             case "far-owner" -> farOwner(level);
             case "xray" -> xray(level);
+            case "store" -> storeInDoubleChest(level);
             case "caps" -> turnCaps(level);
             case "two-ada" -> twoAdas(level);
             case "chunk-hold-restart" -> chunkHoldAfterRestart(level);
@@ -649,6 +659,68 @@ public final class SmokeHarness {
                 act(() -> say(OWNER_ID, OWNER_NAME, "SMOKE-CMD: mine sponge 1")),
                 waitFor(() -> level.getBlockState(hidden).is(Blocks.SPONGE) ? null : "exposed sponge mined",
                         90, () -> "the exposed sponge was not mined: " + botState()));
+    }
+
+    /**
+     * E6, E8, E9: a {@code deposit_to_storage} line naming the non-canonical half of a double chest,
+     * with a comma list the old grammar split wrongly, runs as the {@code store} primitive: both
+     * halves together gain exactly the 20 cobblestone and all the dirt the companion carried, the
+     * companion's inventory lost the same, and the seam knows the chest as opened. The seam marks it
+     * known only after the store's Task finished, so the last check also shows the line took the
+     * primitive path.
+     */
+    private static List<Stage> storeInDoubleChest(ServerLevel level) {
+        requireCompanion();
+        BlockPos site = arena(level, 19);
+        BlockPos left = site.offset(3, 1, 0);
+        BlockState leftState = Blocks.CHEST.defaultBlockState().setValue(ChestBlock.FACING, Direction.WEST)
+                .setValue(ChestBlock.TYPE, ChestType.LEFT);
+        BlockPos right = left.relative(ChestBlock.getConnectedDirection(leftState));
+        level.setBlockAndUpdate(left, leftState);
+        level.setBlockAndUpdate(right, leftState.setValue(ChestBlock.TYPE, ChestType.RIGHT));
+        place(site, 0, -4, 0.5, 0.5);
+        mod().getInventory().insertStack(new ItemStack(Items.COBBLESTONE, 32));
+        mod().getInventory().insertStack(new ItemStack(Items.DIRT, 5));
+        int cobble = carried(Items.COBBLESTONE);
+        int dirt = carried(Items.DIRT);
+        ContainerHandle chest = new ContainerHandle(new AreaSpec.Pos(right.getX(), right.getY(), right.getZ()),
+                new AreaSpec.Pos(left.getX(), left.getY(), left.getZ()), true);
+        Supplier<String> stored = () -> {
+            ContainerResolver.Resolution r = ContainerResolver.resolve(level, left);
+            if (!r.ok()) {
+                return "!the double chest is gone: " + r.detail();
+            }
+            int inCobble = 0;
+            int inDirt = 0;
+            for (int i = 0; i < r.resolved().container().getContainerSize(); i++) {
+                ItemStack s = r.resolved().container().getItem(i);
+                inCobble += s.is(Items.COBBLESTONE) ? s.getCount() : 0;
+                inDirt += s.is(Items.DIRT) ? s.getCount() : 0;
+            }
+            boolean moved = inCobble == 20 && inDirt == dirt && carried(Items.COBBLESTONE) == cobble - 20
+                    && carried(Items.DIRT) == 0;
+            if (inCobble > 20) {
+                return "!the chest holds " + inCobble + " cobblestone, more than the 20 asked for";
+            }
+            return moved && mod().getCommandExecutor().seam().isKnown(chest)
+                    ? "stored 20 cobblestone and " + dirt + " dirt in the " + r.resolved().totalSlots()
+                            + "-slot double chest named by its left half; the seam knows it" : null;
+        };
+        return List.of(
+                act(() -> say(OWNER_ID, OWNER_NAME, "SMOKE-CMD: deposit_to_storage " + left.getX() + " " + left.getY()
+                        + " " + left.getZ() + " cobblestone 20,dirt")),
+                waitFor(stored, 90, () -> "chest not filled as asked: carrying " + carried(Items.COBBLESTONE)
+                        + " cobblestone and " + carried(Items.DIRT) + " dirt (from " + cobble + " and " + dirt
+                        + "), known=" + mod().getCommandExecutor().seam().isKnown(chest) + ", " + botState()));
+    }
+
+    private static int carried(Item item) {
+        int n = 0;
+        for (int i = 0; i < mod().getInventory().getContainerSize(); i++) {
+            ItemStack s = mod().getInventory().getItem(i);
+            n += s.is(item) ? s.getCount() : 0;
+        }
+        return n;
     }
 
     /**
