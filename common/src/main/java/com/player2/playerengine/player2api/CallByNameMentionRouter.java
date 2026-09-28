@@ -1,14 +1,12 @@
 package com.player2.playerengine.player2api;
 
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Comparator;
 import java.util.HashMap;
-import java.util.HashSet;
+import java.util.IdentityHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -16,164 +14,107 @@ import java.util.UUID;
 import org.jetbrains.annotations.Nullable;
 
 /**
- * Parses a user chat message for bot mentions and resolves which nearby automatons should receive it.
- *
- * Semantics when call-by-name is enabled:
- * - Message is delivered to 0+ automatons depending on mentions.
- * - If no resolvable mentions are found, deliver to nobody.
+ * Parses a chat line for companion mentions and resolves which companions it reaches, by the
+ * rules of {@link CompanionAddress}: a unique name ({@code Arran's Ada}) or its owner's bare name
+ * reaches that companion anywhere in the speaker's dimension; another player's bare name reaches a
+ * companion only when it is the only one of that name within 64 blocks. A line with no resolvable
+ * mention reaches nobody.
  *
  * Mention forms supported:
  * - Unqualified: Ellie   (anywhere; boundary-aware)
  * - Qualified:  Rick's Ellie   or  Rick’s Ellie
  * - Explicit:   @Ellie or @"Chat GPT"
- * - Quoted:     "Chat GPT" (treated as a mention candidate in addressing contexts)
+ * - A leading spoken address that speech-to-text garbled, when it matches one companion within 64
+ *   blocks
  */
 public final class CallByNameMentionRouter {
     private CallByNameMentionRouter() {
     }
 
-    public record ResolvedTargets(Set<AgentConversationData> targets, @Nullable Event.UserMessage cleanedMessage) {
+    /**
+     * @param targets the companions the line reaches
+     * @param cleaned the line with a leading address stripped, or null when it reaches nobody
+     * @param notices the names that did not reach: too far, or not unambiguous
+     */
+    public record Resolved<T>(Set<T> targets, @Nullable String cleaned, List<CompanionAddress.Outcome<T>> notices) {
+        static <T> Resolved<T> none() {
+            return new Resolved<>(Set.of(), null, List.of());
+        }
     }
 
-    public static ResolvedTargets resolveTargets(Event.UserMessage msg, String speakerUsername,
-            List<AgentConversationData> candidates) {
-        if (msg == null || candidates == null || candidates.isEmpty()) {
-            return new ResolvedTargets(Collections.emptySet(), null);
+    public static <T> Resolved<T> resolveTargets(String raw, UUID speaker, List<CompanionAddress.Candidate<T>> candidates) {
+        if (raw == null || raw.isBlank() || candidates == null || candidates.isEmpty()) {
+            return Resolved.none();
         }
-        String raw = msg.message();
-        if (raw == null || raw.isBlank()) {
-            return new ResolvedTargets(Collections.emptySet(), null);
-        }
-
-        Map<String, List<AgentConversationData>> byBotKey = new HashMap<>();
-        Map<String, List<AgentConversationData>> byOwnerKey = new HashMap<>();
-        for (AgentConversationData d : candidates) {
-            if (d == null) {
-                continue;
+        Map<String, List<CompanionAddress.Candidate<T>>> byBotKey = new HashMap<>();
+        Set<String> ownerKeys = new LinkedHashSet<>();
+        for (CompanionAddress.Candidate<T> c : candidates) {
+            for (String k : c.names()) {
+                byBotKey.computeIfAbsent(k, x -> new ArrayList<>()).add(c);
             }
-            Character ch = d.getCharacter();
-            if (ch == null) {
-                continue;
+            String ownerKey = CompanionAddress.key(c.ownerName());
+            if (!ownerKey.isEmpty()) {
+                ownerKeys.add(ownerKey);
             }
-            addKey(byBotKey, normalizeKey(ch.name()), d);
-            addKey(byBotKey, normalizeKey(ch.shortName()), d);
-            addKey(byOwnerKey, normalizeKey(d.getMod().getOwnerUsername()), d);
         }
 
         CallByNameMentionParser.MentionParseResult parsed = CallByNameMentionParser.parse(raw, byBotKey.keySet(),
-                byOwnerKey.keySet());
+                ownerKeys);
         if (parsed.intents().isEmpty()) {
-            Optional<FuzzyAddressMatch> fuzzy = resolveUniqueFuzzyLeadingAddress(raw, byBotKey);
+            Map<String, List<CompanionAddress.Candidate<T>>> near = new HashMap<>();
+            byBotKey.forEach((k, list) -> {
+                for (CompanionAddress.Candidate<T> c : list) {
+                    if (c.sameDimension() && c.distance() <= CompanionAddress.NEAR) {
+                        near.computeIfAbsent(k, x -> new ArrayList<>()).add(c);
+                    }
+                }
+            });
+            Optional<FuzzyAddressMatch<T>> fuzzy = resolveUniqueFuzzyLeadingAddress(raw, near);
             if (fuzzy.isPresent()) {
-                FuzzyAddressMatch match = fuzzy.get();
+                FuzzyAddressMatch<T> match = fuzzy.get();
                 String cleaned = stripLeadingAddressing(raw, match.prefixLen()).orElse(match.canonicalKey());
-                Event.UserMessage cleanedMsg = msg.withMessage(cleaned);
-                return new ResolvedTargets(Set.of(match.target()), cleanedMsg);
+                return new Resolved<>(Set.of(match.target().ref()), cleaned, List.of());
             }
-            return new ResolvedTargets(Collections.emptySet(), null);
+            return Resolved.none();
         }
 
-        Set<AgentConversationData> out = new HashSet<>();
+        Set<T> reached = new LinkedHashSet<>();
+        List<CompanionAddress.Outcome<T>> notices = new ArrayList<>();
+        Set<String> namedUniquely = new LinkedHashSet<>();
         for (CallByNameMentionParser.MentionIntent intent : parsed.intents()) {
             if (intent instanceof CallByNameMentionParser.MentionIntent.Qualified q) {
-                String ownerKey = normalizeKey(q.owner());
-                String botKey = normalizeKey(q.bot());
-                if (ownerKey == null || botKey == null) {
-                    continue;
-                }
-                List<AgentConversationData> ownerCandidates = byOwnerKey.getOrDefault(ownerKey, List.of());
-                for (AgentConversationData d : ownerCandidates) {
-                    if (d == null) {
-                        continue;
-                    }
-                    if (candidateMatchesBotKey(d, botKey)) {
-                        out.add(d);
-                    }
-                }
-            } else if (intent instanceof CallByNameMentionParser.MentionIntent.Unqualified u) {
-                String botKey = normalizeKey(u.bot());
-                if (botKey == null) {
-                    continue;
-                }
-                List<AgentConversationData> matches = byBotKey.getOrDefault(botKey, List.of());
-                if (matches.isEmpty()) {
-                    continue;
-                }
-                List<AgentConversationData> owned = new ArrayList<>();
-                for (AgentConversationData d : matches) {
-                    if (d != null && ownerEquals(d, speakerUsername)) {
-                        owned.add(d);
-                    }
-                }
-                if (!owned.isEmpty()) {
-                    out.add(pickClosestStable(owned, speakerUsername));
-                } else {
-                    out.add(pickClosestStable(matches, speakerUsername));
+                CompanionAddress.Outcome<T> o = CompanionAddress.unique(q.owner(), q.bot(), candidates);
+                if (!(o instanceof CompanionAddress.Outcome.Nobody<T>)) {
+                    namedUniquely.add(CompanionAddress.key(q.bot()));
+                    collect(o, reached, notices);
                 }
             }
         }
-
-        if (out.isEmpty()) {
-            return new ResolvedTargets(Collections.emptySet(), null);
+        for (CallByNameMentionParser.MentionIntent intent : parsed.intents()) {
+            if (intent instanceof CallByNameMentionParser.MentionIntent.Unqualified u
+                    && !namedUniquely.contains(CompanionAddress.key(u.bot()))) {
+                collect(CompanionAddress.bare(u.bot(), speaker, candidates), reached, notices);
+            }
         }
-
+        if (reached.isEmpty()) {
+            return new Resolved<>(Set.of(), null, notices);
+        }
         String cleaned = parsed.stripLeadingAddressing()
                 .flatMap(prefixLen -> stripLeadingAddressing(raw, prefixLen))
                 .orElse(raw);
         if (cleaned == null || cleaned.isBlank()) {
-            return new ResolvedTargets(Collections.emptySet(), null);
+            return new Resolved<>(Set.of(), null, notices);
         }
-        Event.UserMessage cleanedMsg = cleaned.equals(raw) ? msg : msg.withMessage(cleaned);
-        return new ResolvedTargets(out, cleanedMsg);
+        return new Resolved<>(reached, cleaned, notices);
     }
 
-    private static boolean ownerEquals(AgentConversationData d, String speakerUsername) {
-        String owner = d.getMod().getOwnerUsername();
-        if (owner == null || speakerUsername == null) {
-            return false;
-        }
-        return owner.equalsIgnoreCase(speakerUsername);
-    }
-
-    private static boolean candidateMatchesBotKey(AgentConversationData d, String botKey) {
-        if (d == null || botKey == null) {
-            return false;
-        }
-        Character ch = d.getCharacter();
-        if (ch == null) {
-            return false;
-        }
-        return Objects.equals(normalizeKey(ch.name()), botKey) || Objects.equals(normalizeKey(ch.shortName()), botKey);
-    }
-
-    private static AgentConversationData pickClosestStable(List<AgentConversationData> candidates, String speakerUsername) {
-        if (candidates == null || candidates.isEmpty()) {
-            return null;
-        }
-        List<AgentConversationData> copy = new ArrayList<>(candidates);
-        copy.sort(Comparator
-                .comparingDouble((AgentConversationData d) -> safeDistanceToSpeaker(d, speakerUsername))
-                .thenComparing(d -> safeUuid(d)));
-        return copy.get(0);
-    }
-
-    private static double safeDistanceToSpeaker(AgentConversationData d, String speakerUsername) {
-        try {
-            if (d == null || speakerUsername == null) {
-                return Double.POSITIVE_INFINITY;
+    private static <T> void collect(CompanionAddress.Outcome<T> o, Set<T> reached, List<CompanionAddress.Outcome<T>> notices) {
+        if (o instanceof CompanionAddress.Outcome.Reach<T> r) {
+            reached.add(r.target().ref());
+        } else if (o instanceof CompanionAddress.Outcome.TooFar<T> || o instanceof CompanionAddress.Outcome.Choose<T>) {
+            if (!notices.contains(o)) {
+                notices.add(o);
             }
-            return com.player2.playerengine.player2api.status.StatusUtils.getDistanceToUsername(d.getMod(),
-                    speakerUsername);
-        } catch (Exception e) {
-            return Double.POSITIVE_INFINITY;
-        }
-    }
-
-    private static UUID safeUuid(AgentConversationData d) {
-        try {
-            return d.getUUID();
-        } catch (Exception e) {
-            return new UUID(0L, 0L);
         }
     }
 
@@ -198,34 +139,30 @@ public final class CallByNameMentionRouter {
         return c == ':' || c == ',' || c == ';' || java.lang.Character.isWhitespace(c);
     }
 
-    private record FuzzyAddressMatch(AgentConversationData target, String canonicalKey, int prefixLen) {
+    private record FuzzyAddressMatch<T>(CompanionAddress.Candidate<T> target, String canonicalKey, int prefixLen) {
     }
 
     private record LeadingAddress(String text, int prefixLen) {
     }
 
-    private static Optional<FuzzyAddressMatch> resolveUniqueFuzzyLeadingAddress(String raw,
-            Map<String, List<AgentConversationData>> byBotKey) {
+    private static <T> Optional<FuzzyAddressMatch<T>> resolveUniqueFuzzyLeadingAddress(String raw,
+            Map<String, List<CompanionAddress.Candidate<T>>> byBotKey) {
         Optional<LeadingAddress> leading = leadingAddress(raw);
         if (leading.isEmpty() || byBotKey == null || byBotKey.isEmpty()) {
             return Optional.empty();
         }
-        Map<UUID, FuzzyAddressMatch> matchesByBot = new HashMap<>();
-        for (Map.Entry<String, List<AgentConversationData>> entry : byBotKey.entrySet()) {
+        Map<CompanionAddress.Candidate<T>, FuzzyAddressMatch<T>> matchesByBot = new IdentityHashMap<>();
+        for (Map.Entry<String, List<CompanionAddress.Candidate<T>>> entry : byBotKey.entrySet()) {
             String key = entry.getKey();
             if (!looksLikeLeadingSttAddress(leading.get().text(), key)) {
                 continue;
             }
-            for (AgentConversationData data : entry.getValue()) {
-                if (data == null) {
-                    continue;
-                }
-                UUID uuid = safeUuid(data);
-                FuzzyAddressMatch existing = matchesByBot.get(uuid);
+            for (CompanionAddress.Candidate<T> c : entry.getValue()) {
+                FuzzyAddressMatch<T> existing = matchesByBot.get(c);
                 String canonical = existing == null
                         ? key
                         : shortestKey(existing.canonicalKey(), key);
-                matchesByBot.put(uuid, new FuzzyAddressMatch(data, canonical, leading.get().prefixLen()));
+                matchesByBot.put(c, new FuzzyAddressMatch<>(c, canonical, leading.get().prefixLen()));
             }
         }
         if (matchesByBot.size() != 1) {
@@ -375,18 +312,4 @@ public final class CallByNameMentionRouter {
         }
         return pos == needle.length();
     }
-
-    private static void addKey(Map<String, List<AgentConversationData>> map, @Nullable String key,
-            AgentConversationData d) {
-        if (key == null || key.isBlank() || d == null) {
-            return;
-        }
-        map.computeIfAbsent(key, k -> new ArrayList<>()).add(d);
-    }
-
-    @Nullable
-    private static String normalizeKey(@Nullable String s) {
-        return CallByNameMentionParser.normalizeKey(s);
-    }
 }
-

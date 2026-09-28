@@ -400,3 +400,33 @@ The lines carry players' chat.
 | `common/src/main/java/com/player2/playerengine/companion/CompanionRules.java` | `captureDecisions` key |
 | `common/src/main/java/com/player2/playerengine/player2api/AgentConversationData.java` | records each decision turn after the plan rules |
 | `common/src/main/java/com/player2/playerengine/companion/CompanionRulesSelfTest.java` | capture default and parsing; runs the capture self-test |
+
+**Unique names, hearing by name, and a stop anyone can give (R8 with R1).** Every companion answers
+to a unique name, its owner's name and its own: `Arran's Ada` (Player2NPC keeps one companion per
+character per owner, and the call-by-name parser already reads this possessive form). A unique name
+reaches that companion from anyone, at any distance in the speaker's dimension. A bare name from the
+companion's owner reaches the owner's own companion the same way. A bare name from anyone else
+reaches a companion only when it is the only one of that name within 64 blocks; otherwise nothing is
+delivered and the speaker is told the unique names to use. A unique name in another dimension gets
+a "too far" reply. Unnamed chat, and chat with call-by-name off, still reach only companions within
+64 blocks. A name never reaches two companions. Upstream sent another player's bare name to the
+nearest match at any range, and a qualified mention could reach a second companion through the bare
+name inside it.
+
+The model-bypassing stop lane (`stop <name>`, `<name> stop`) is open to every authenticated player
+with no proximity check, under the same naming rules: a unique name stops that companion, a bare
+name stops the speaker's own companion or the only one of that name within 64 blocks, and anything
+else stops none and asks which. The speaker, not the owner, gets the acknowledgement.
+
+| File | Change |
+|---|---|
+| `common/src/main/java/com/player2/playerengine/player2api/CompanionAddress.java` | new: which companion a unique or bare name reaches |
+| `common/src/main/java/com/player2/playerengine/player2api/CompanionAddressSelfTest.java` | new: reach, too far, which-one, no fan-out, strict stop lines, a bare stop stops at most one |
+| `common/src/main/java/com/player2/playerengine/player2api/CallByNameMentionRouter.java` | resolves mentions through `CompanionAddress` over every companion; reports too-far and which-one |
+| `common/src/main/java/com/player2/playerengine/player2api/StopIntent.java` | new, replaces `OwnerStopIntent`: stop lines with a bare or unique name |
+| `common/src/main/java/com/player2/playerengine/player2api/OwnerStopIntent.java`, `OwnerStopTargetResolution.java` | removed |
+| `common/src/main/java/com/player2/playerengine/player2api/manager/ConversationManager.java` | routes chat and stops by name across the dimension; tells the speaker too far or which one |
+| `common/src/main/java/com/player2/playerengine/player2api/ConversationControlSelfTest.java` | stop-line parsing through `StopIntent` |
+| `common/src/main/java/com/player2/playerengine/companion/CompanionRulesSelfTest.java` | runs the address self-test |
+| `common/src/main/java/com/player2/playerengine/smoke/SmokeHarness.java` | `far-owner` scenario |
+| `common/src/main/resources/assets/playerengine/lang/en_us.json` | too-far and which-one replies; smoke scenario list |

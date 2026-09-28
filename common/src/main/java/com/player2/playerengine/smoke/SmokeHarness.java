@@ -62,6 +62,8 @@ public final class SmokeHarness {
     private static final UUID STRANGER_ID = UUID.nameUUIDFromBytes("smoke-stranger".getBytes(StandardCharsets.UTF_8));
     private static final String OWNER_NAME = "SmokeOwner";
     private static final String STRANGER_NAME = "SmokeStranger";
+    private static final UUID NETHER_PLAYER_ID = UUID.nameUUIDFromBytes("smoke-nether".getBytes(StandardCharsets.UTF_8));
+    private static final String NETHER_PLAYER_NAME = "SmokeNether";
     /** Player2NPC's game id; its join handler asks the gateway for this game's characters. */
     private static final String GAME_ID = "player2-ai-npc-minecraft";
     private static final int FLOOR_Y = 120;
@@ -106,7 +108,8 @@ public final class SmokeHarness {
         if (!tickRegistered) {
             tickRegistered = true;
             TickEvent.SERVER_POST.register(SmokeHarness::tick);
-            LifecycleEvent.SERVER_STOPPING.register(server -> FakePlayers.quitAll(server, List.of(OWNER_ID, STRANGER_ID)));
+            LifecycleEvent.SERVER_STOPPING.register(server -> FakePlayers.quitAll(server,
+                    List.of(OWNER_ID, STRANGER_ID, NETHER_PLAYER_ID)));
         }
         HelpRegistry.register(new HelpEntry("playerengine", "smoke", "smoke <scenario>",
                 "help.playerengine.smoke.short", "help.playerengine.smoke.long",
@@ -153,6 +156,7 @@ public final class SmokeHarness {
             case "despawn" -> despawnReleases(level);
             case "chunk-hold" -> chunkHold(level);
             case "attack" -> attackAPlayer(level);
+            case "far-owner" -> farOwner(level);
             case "chunk-hold-restart" -> chunkHoldAfterRestart(level);
             case "goto" -> planWithInterruption(level, 6, Resume.NONE);
             case "restart" -> restart(level);
@@ -596,6 +600,76 @@ public final class SmokeHarness {
                 }, 5, "the hit path was never driven"));
     }
 
+    /**
+     * R8 with unique names. The companion is 100 blocks from everyone. The owner's line naming it is
+     * acted on; the owner's unnamed line is not; a stranger's bare name is not (no Ada within 64
+     * blocks) and the stranger is told the unique name; a player in the nether naming it uniquely is
+     * told it is too far; the stranger's line with the unique name is acted on.
+     */
+    private static List<Stage> farOwner(ServerLevel level) {
+        requireCompanion();
+        BlockPos site = arena(level, 15);
+        place(site, 0, -3, 0.5, 0.5);
+        ServerPlayer owner = (ServerPlayer) mod().getOwner();
+        FakePlayers.teleport(owner, site.offset(100, 1, 0));
+        FakePlayers.online(level, STRANGER_ID, STRANGER_NAME, site.offset(-100, 1, 0));
+        ServerLevel nether = level.getServer().getLevel(Level.NETHER);
+        if (nether == null) {
+            throw new IllegalStateException("no nether level");
+        }
+        FakePlayers.online(nether, NETHER_PLAYER_ID, NETHER_PLAYER_NAME, new BlockPos(site.getX() >> 3, 70, 0));
+        String unique = OWNER_NAME + "'s " + character.shortName();
+        List<String> notices = new java.util.concurrent.CopyOnWriteArrayList<>();
+        ConversationManager.noticeTap = (who, text) -> notices.add(who + ": "
+                + (text.getContents() instanceof net.minecraft.network.chat.contents.TranslatableContents t
+                        ? t.getKey() : text.getString()));
+        long[] seq = new long[1];
+        String gotoA = "SMOKE-CMD: goto " + site.getX() + " " + (site.getY() + 1) + " " + (site.getZ() + 3);
+        String gotoB = "SMOKE-CMD: goto " + site.getX() + " " + (site.getY() + 1) + " " + (site.getZ() - 3);
+        Supplier<String> moved = () -> mod().getCommandDispatchSeq() != seq[0]
+                ? "!a command was dispatched (seq " + seq[0] + "->" + mod().getCommandDispatchSeq() + ")" : null;
+        return List.of(
+                act(() -> {
+                    seq[0] = mod().getCommandDispatchSeq();
+                    say(OWNER_ID, OWNER_NAME, gotoA);
+                }),
+                waitFor(() -> mod().getCommandDispatchSeq() > seq[0] ? "owner naming it from 100 blocks: acted on" : null,
+                        REFUSAL_WINDOW_SEC, "the owner's named ask from 100 blocks was dropped"),
+                act(() -> {
+                    seq[0] = mod().getCommandDispatchSeq();
+                    sayRaw(OWNER_ID, OWNER_NAME, gotoB);
+                }),
+                window(moved, 8, () -> "owner's unnamed line from 100 blocks: ignored"),
+                act(() -> {
+                    seq[0] = mod().getCommandDispatchSeq();
+                    notices.clear();
+                    sayRaw(STRANGER_ID, STRANGER_NAME, character.shortName() + ", " + gotoB);
+                }),
+                window(moved, 8, () -> notices.contains(STRANGER_NAME + ": message.playerengine.call.which")
+                        ? "stranger's bare name from 100 blocks: not reached, told the unique name"
+                        : "!the stranger was not told which: " + notices),
+                act(() -> {
+                    seq[0] = mod().getCommandDispatchSeq();
+                    notices.clear();
+                    sayRaw(NETHER_PLAYER_ID, NETHER_PLAYER_NAME, unique + ", " + gotoB);
+                }),
+                window(moved, 8, () -> notices.contains(NETHER_PLAYER_NAME + ": message.playerengine.call.too_far")
+                        ? "unique name from the nether: told too far"
+                        : "!the nether player was not told too far: " + notices),
+                act(() -> {
+                    seq[0] = mod().getCommandDispatchSeq();
+                    sayRaw(STRANGER_ID, STRANGER_NAME, unique + ", " + gotoB);
+                    LOGGER.info("[smoke] marker {}", gotoB);
+                }),
+                waitFor(() -> mod().getCommandDispatchSeq() > seq[0]
+                                ? "stranger naming " + unique + " from 100 blocks: acted on" : null,
+                        REFUSAL_WINDOW_SEC, "the stranger's unique-name ask was dropped"),
+                act(() -> {
+                    ConversationManager.noticeTap = null;
+                    FakePlayers.teleport(owner, site.offset(0, 1, -3));
+                }));
+    }
+
     /** Checklist 5: a waterlogged block in the shell makes the excavate refuse. */
     private static List<Stage> waterlogged(ServerLevel level) {
         requireCompanion();
@@ -818,6 +892,11 @@ public final class SmokeHarness {
                 + " at " + bot().blockPosition().toShortString()
                 // A companion in a chunk that does not tick entities is frozen, whatever its task says.
                 + (((ServerLevel) bot().level()).isPositionEntityTicking(bot().blockPosition()) ? "" : " (chunk not ticking)");
+    }
+
+    /** A line as typed, with no name in front; a marker in it is not expected to reach the model. */
+    private static void sayRaw(UUID id, String name, String text) {
+        ConversationManager.onUserChatMessage(new Event.UserMessage(text, name, false, id));
     }
 
     private static void say(UUID id, String name, String text) {
