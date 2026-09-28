@@ -65,6 +65,11 @@ public final class PlanCoordinator {
     private boolean resumeRequested;
     private int consecutiveRefusals;
 
+    /** A companion's coordinator: its plans draw on the server-wide per-owner budget. */
+    public PlanCoordinator(Host host) {
+        this(host, PlanBudget.SHARED);
+    }
+
     public PlanCoordinator(Host host, PlanBudget budget) {
         this.host = host;
         this.budget = budget;

@@ -26,7 +26,6 @@ import com.player2.playerengine.player2api.AgentSideEffects.CommandExecutionStop
 import com.player2.playerengine.player2api.Event.InfoMessage;
 import com.player2.playerengine.player2api.config.Player2ServerConfigHolder;
 import com.player2.playerengine.player2api.plan.OwnerGate;
-import com.player2.playerengine.player2api.plan.PlanBudget;
 import com.player2.playerengine.player2api.plan.PlanCoordinator;
 import com.player2.playerengine.player2api.plan.PlanParser;
 import com.player2.playerengine.player2api.plan.PlanStore;
@@ -215,7 +214,7 @@ public class AgentConversationData {
     private volatile Runnable fallbackTimerCancel = null;
 
     /** Long-horizon work: plan memory for this companion (see PlanCoordinator). */
-    private final PlanCoordinator planCoordinator = new PlanCoordinator(new PlanHost(), PlanBudget.SHARED);
+    private final PlanCoordinator planCoordinator = new PlanCoordinator(new PlanHost());
     /** Plan step dispatches wait for the next server tick, outside any task-chain callback. */
     private final java.util.concurrent.ConcurrentLinkedQueue<Runnable> pendingPlanDispatch =
             new java.util.concurrent.ConcurrentLinkedQueue<>();

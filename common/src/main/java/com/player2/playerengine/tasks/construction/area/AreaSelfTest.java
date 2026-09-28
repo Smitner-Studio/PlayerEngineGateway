@@ -1,7 +1,13 @@
 package com.player2.playerengine.tasks.construction.area;
 
+import com.player2.playerengine.commands.AreaCommand;
 import java.util.HashMap;
 import java.util.Map;
+import net.minecraft.SharedConstants;
+import net.minecraft.server.Bootstrap;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 
 /** Area-command bounds, layout, pre-scan and verdict checks over a map-backed world. */
 public final class AreaSelfTest {
@@ -21,6 +27,7 @@ public final class AreaSelfTest {
         grammar();
         timeDerivedSizeCap();
         liquidsRefuseIncludingWaterlogged();
+        fluidStateMarksWaterloggedBlocksAsWater();
         fallingBlocksFoldOrRefuse();
         playerBlocksAreLeftAndGuarded();
         toolSlotsAndFillShortfall();
@@ -181,6 +188,27 @@ public final class AreaSelfTest {
         FakeWorld unloaded = new FakeWorld(stone(STONE_STONE_PICK));
         unloaded.set(3, 60, 0, new AreaScan.Cell(false, false, null, false, false, false, false, false, false, 0, false, false, ""));
         require(AreaScan.scan(AreaScan.Mode.EXCAVATE, b, unloaded, 30, 0, "", false).refused(), "unloaded shell refuses");
+    }
+
+    /** The world adapter's half of the liquid rule, on real block states (needs the vanilla bootstrap). */
+    private static void fluidStateMarksWaterloggedBlocksAsWater() {
+        SharedConstants.tryDetectVersion();
+        Bootstrap.bootStrap();
+        BlockState wetSlab = Blocks.STONE_SLAB.defaultBlockState().setValue(BlockStateProperties.WATERLOGGED, true);
+        require("water".equals(AreaCommand.liquidName(wetSlab)), "a waterlogged slab is water");
+        require("water".equals(AreaCommand.liquidName(Blocks.KELP.defaultBlockState())), "kelp is water");
+        require("water".equals(AreaCommand.liquidName(Blocks.WATER.defaultBlockState())), "water is water");
+        // Datapack tags are unbound here, so FluidTags.LAVA cannot name it; that it is a liquid is the rule.
+        require(AreaCommand.liquidName(Blocks.LAVA.defaultBlockState()) != null, "lava is a liquid");
+        require(AreaCommand.liquidName(Blocks.STONE_SLAB.defaultBlockState()) == null, "a dry slab is dry");
+        require(AreaCommand.liquidName(Blocks.STONE.defaultBlockState()) == null, "stone is dry");
+
+        AreaSpec.Box b = box(0, 60, 0, 3, 3, 3);
+        FakeWorld w = new FakeWorld(stone(STONE_STONE_PICK));
+        w.set(1, 61, 1, new AreaScan.Cell(true, false, AreaCommand.liquidName(wetSlab), false, false, false, false,
+                false, false, 10, false, false, "stone_slab"));
+        AreaScan.Result r = AreaScan.scan(AreaScan.Mode.EXCAVATE, b, w, 30, 0, "", false);
+        require(r.refused() && r.refusal().contains("water"), "a real waterlogged slab in the box refuses: " + r.refusal());
     }
 
     private static void fallingBlocksFoldOrRefuse() {

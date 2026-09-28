@@ -57,6 +57,7 @@ public final class PlanSelfTest {
         stepThatRunsTooLongIsStoppedAndRepaired();
         idlePlanExpires();
         budgetIsPerOwnerAcrossCompanions();
+        companionsShareTheServerBudget();
         perPlanCallCap();
         restartPausesAndOnlyIdempotentStepsResumeDirectly();
         return checks;
@@ -415,6 +416,20 @@ public final class PlanSelfTest {
         require(!third.onModelDecision(planOf("goto 1 2 3"), "", OWNER_TURN), "owner's hour is spent");
         require(third.onModelDecision(planOf("goto 1 2 3"), "", new PlanCoordinator.Turn(true, true, OTHER_OWNER)),
                 "another owner's allowance is separate");
+    }
+
+    /** The constructor the loop uses: two companions of one owner draw on one allowance. */
+    private static void companionsShareTheServerBudget() {
+        UUID owner = UUID.randomUUID(); // PlanBudget.SHARED is process-wide; no other check uses this owner
+        PlanCoordinator.Turn turn = new PlanCoordinator.Turn(true, true, owner);
+        PlanCoordinator ada = new PlanCoordinator(new MockHost());
+        PlanCoordinator rivet = new PlanCoordinator(new MockHost());
+        for (int i = 0; i < PlanBudget.CALLS_PER_OWNER_PER_HOUR; i++) {
+            require((i % 2 == 0 ? ada : rivet).onModelDecision(planOf("goto 1 2 3"), "", turn),
+                    "plan " + (i + 1) + " within the hour's allowance");
+        }
+        require(!new PlanCoordinator(new MockHost()).onModelDecision(planOf("goto 1 2 3"), "", turn),
+                "a third companion cannot extend the owner's hour");
     }
 
     private static void perPlanCallCap() {

@@ -185,8 +185,7 @@ public abstract class AreaCommand extends Command {
                 return new AreaScan.Cell(false, false, null, false, false, false, false, false, false, 0, false, false, "");
             }
             BlockState st = level.getBlockState(m);
-            FluidState fluid = st.getFluidState();
-            String liquid = fluid.isEmpty() ? null : fluid.is(FluidTags.LAVA) ? "lava" : "water";
+            String liquid = liquidName(st);
             float hardness = st.getDestroySpeed(level, m);
             float bestSpeed = 1.0F;
             boolean correct = !st.requiresCorrectToolForDrops();
@@ -216,6 +215,15 @@ public abstract class AreaCommand extends Command {
                     fillBlock != null && st.is(fillBlock),
                     name(st.getBlock()));
         };
+    }
+
+    /**
+     * The liquid a block holds, read from its fluid state so waterlogged blocks (slabs, stairs, kelp)
+     * count as water: digging one out leaves a source block behind. Null when dry.
+     */
+    public static String liquidName(BlockState st) {
+        FluidState fluid = st.getFluidState();
+        return fluid.isEmpty() ? null : fluid.is(FluidTags.LAVA) ? "lava" : "water";
     }
 
     private static int freeSlots(PlayerEngineController mod) {
