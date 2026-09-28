@@ -25,6 +25,7 @@ import com.player2.playerengine.player2api.UserBlacklistPolicy;
 import com.player2.playerengine.player2api.AgentSideEffects.CommandExecutionStopReason;
 import com.player2.playerengine.player2api.Event.InfoMessage;
 import com.player2.playerengine.player2api.config.Player2ServerConfigHolder;
+import com.player2.playerengine.player2api.plan.OwnerGate;
 import com.player2.playerengine.player2api.plan.PlanBudget;
 import com.player2.playerengine.player2api.plan.PlanCoordinator;
 import com.player2.playerengine.player2api.plan.PlanParser;
@@ -221,9 +222,6 @@ public class AgentConversationData {
     private volatile boolean planLoaded;
     /** Whether the chain in progress was started by the authenticated owner (UUID, never name). */
     private volatile boolean chainInitiatorIsOwner;
-
-    /** Commands only the authenticated owner may have run: long earthworks change the world. */
-    static final Set<String> OWNER_ONLY_COMMAND_IDS = Set.of("excavate", "fill");
 
     public AgentConversationData(PlayerEngineController mod) {
         this.mod = mod;
@@ -1218,7 +1216,7 @@ public class AgentConversationData {
         if (!greetingResponse && !isPeerTurn && conversationTurnGate.accepts(turnTicket)) {
             command = applyPlanAndOwnership(jsonResp, lastEvent, command, cmdId);
             cmdId = resolveCommandId(command);
-        } else if (isPeerTurn && cmdId != null && OWNER_ONLY_COMMAND_IDS.contains(cmdId)) {
+        } else if (isPeerTurn && ownerOnlyCommandIn(command) != null) {
             command = null;
             cmdId = null;
         }
@@ -1286,10 +1284,10 @@ public class AgentConversationData {
      * reply may still dispatch (null when the plan took over or the command was refused).
      */
     private String applyPlanAndOwnership(JsonObject jsonResp, Event lastEvent, String command, String cmdId) {
-        boolean userTurn = lastEvent instanceof Event.UserMessage;
-        boolean ownerTurn = userTurn ? isAuthenticatedOwner((Event.UserMessage) lastEvent) : chainInitiatorIsOwner;
-        if (cmdId != null && OWNER_ONLY_COMMAND_IDS.contains(cmdId) && !ownerTurn) {
-            LOGGER.info("[Plan] refused owner-only command {} on a non-owner turn for bot={}", cmdId, getName());
+        PlanCoordinator.Turn turn = OwnerGate.turn(lastEvent, ownerUuid(), chainInitiatorIsOwner);
+        String ownerOnly = ownerOnlyCommandIn(command);
+        if (ownerOnly != null && !turn.ownerTurn()) {
+            LOGGER.info("[Plan] refused owner-only command {} on a non-owner turn for bot={}", ownerOnly, getName());
             addEventToQueue(new InfoMessage("Only your owner can ask you to dig out or fill an area, so you did "
                     + "not start it. Decline politely in one short line."));
             command = null;
@@ -1299,10 +1297,17 @@ public class AgentConversationData {
             planCoordinator.cancel("stop command");
         }
         PlanParser.Result plan = PlanParser.parse(jsonResp.get("plan"), this::registeredCommandId);
-        UUID initiator = userTurn ? ((Event.UserMessage) lastEvent).authenticatedUserUuid() : null;
-        boolean planTook = planCoordinator.onModelDecision(plan, command,
-                new PlanCoordinator.Turn(userTurn, ownerTurn, initiator));
+        boolean planTook = planCoordinator.onModelDecision(plan, command, turn);
         return planTook ? null : command;
+    }
+
+    private String ownerOnlyCommandIn(String command) {
+        return OwnerGate.ownerOnlyCommandIn(command, mod.getCommandExecutor().getCommandPrefix(),
+                this::registeredCommandId);
+    }
+
+    private UUID ownerUuid() {
+        return mod.getOwner() == null ? null : mod.getOwner().getUUID();
     }
 
     /** The registered command id a step's first word names (aliases resolved), or null. */
@@ -1312,8 +1317,7 @@ public class AgentConversationData {
     }
 
     private boolean isAuthenticatedOwner(Event.UserMessage um) {
-        UUID sender = um == null ? null : um.authenticatedUserUuid();
-        return sender != null && mod.getOwner() != null && sender.equals(mod.getOwner().getUUID());
+        return OwnerGate.isOwner(um, ownerUuid());
     }
 
     /** Server tick: loads a saved plan once, runs queued step dispatches, then the plan clocks. */

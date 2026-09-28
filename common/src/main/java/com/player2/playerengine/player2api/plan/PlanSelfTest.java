@@ -3,6 +3,7 @@ package com.player2.playerengine.player2api.plan;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import com.player2.playerengine.player2api.Event;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -47,6 +48,9 @@ public final class PlanSelfTest {
         malformedPlanLeavesTheReplyAlone();
         supersededStepReportedAsFinishedPausesThePlan();
         nonOwnerCannotPlanOrResume();
+        ownershipIsTheAuthenticatedUuid();
+        ownerOnlyCommandsAreFoundInEverySemicolonPart();
+        feedbackTurnInOwnerChainCanStartAPlan();
         staleGenerationFinishIsDropped();
         stepThatRunsTooLongIsStoppedAndRepaired();
         idlePlanExpires();
@@ -310,6 +314,41 @@ public final class PlanSelfTest {
         require(!c.onModelDecision(reply("{\"plan\":\"resume\"}"), "", STRANGER_TURN), "stranger resume refused");
         require(!c.onModelDecision(reply("{\"plan\":\"cancel\"}"), "", STRANGER_TURN) && c.hasPlan(),
                 "stranger cannot cancel either");
+    }
+
+    private static void ownershipIsTheAuthenticatedUuid() {
+        require(OwnerGate.isOwner(new Event.UserMessage("dig a room", "Arran", false, OWNER), OWNER), "owner's UUID");
+        require(!OwnerGate.isOwner(new Event.UserMessage("dig a room", "Arran"), OWNER),
+                "the owner's name without an authenticated UUID is not the owner");
+        require(!OwnerGate.isOwner(new Event.UserMessage("dig a room", "Arran", true, OTHER_OWNER), OWNER),
+                "another player's UUID under the owner's name is not the owner");
+        require(!OwnerGate.isOwner(new Event.UserMessage("dig a room", "Arran", false, OWNER), null),
+                "no owner, no owner turns");
+        PlanCoordinator.Turn spoofed = OwnerGate.turn(new Event.UserMessage("excavate 9 4 9", "Arran"), OWNER, true);
+        require(spoofed.userTurn() && !spoofed.ownerTurn(), "an unauthenticated chat line never inherits the chain");
+    }
+
+    private static void ownerOnlyCommandsAreFoundInEverySemicolonPart() {
+        Function<String, String> resolve = name -> KNOWN.contains(name) ? name : null;
+        require("excavate".equals(OwnerGate.ownerOnlyCommandIn("goto 1 2 3; excavate 9 4 9", "@", resolve)),
+                "an owner-only command after ';' is found");
+        require("fill".equals(OwnerGate.ownerOnlyCommandIn("@fill dirt 3 1 3", "@", resolve)), "prefixed");
+        require("excavate".equals(OwnerGate.ownerOnlyCommandIn("goto 1 2 3;@EXCAVATE 3 3 3", "@", resolve)),
+                "prefix and case inside a later part");
+        require(OwnerGate.ownerOnlyCommandIn("goto 1 2 3; mine stone 5", "@", resolve) == null, "ordinary line");
+        require(OwnerGate.ownerOnlyCommandIn(null, "@", resolve) == null, "no command");
+    }
+
+    private static void feedbackTurnInOwnerChainCanStartAPlan() {
+        MockHost h = new MockHost();
+        PlanCoordinator c = coordinator(h);
+        PlanCoordinator.Turn feedback = OwnerGate.turn(new Event.InfoMessage("goto finished"), OWNER, true);
+        require(!feedback.userTurn() && feedback.ownerTurn() && OWNER.equals(feedback.initiator()),
+                "a feedback turn in the owner's chain is the owner's: " + feedback);
+        require(c.onModelDecision(planOf("excavate 9 4 9", "pickup_drops"), "", feedback)
+                && h.dispatched.equals(List.of("excavate 9 4 9")), "a plan sent after a command finished starts");
+        PlanCoordinator.Turn strangerChain = OwnerGate.turn(new Event.InfoMessage("goto finished"), OWNER, false);
+        require(!strangerChain.ownerTurn() && strangerChain.initiator() == null, "a stranger's chain stays theirs");
     }
 
     private static void staleGenerationFinishIsDropped() {
