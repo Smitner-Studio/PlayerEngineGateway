@@ -2,7 +2,7 @@
 
 ## TLDR: Plan memory in the main chat loop, plus bounded, verified area commands (excavate, fill) on the embedded Baritone builder
 
-Status: reviewed (Fable, 2026-09-27); implementation WIP, see section 7. Section 6 records the resolutions and is binding: where it
+Status: reviewed (Fable, 2026-09-27); shipped as gateway.6, see section 7. Section 6 records the resolutions and is binding: where it
 differs from sections 3-5, section 6 wins. Implementation is on `feat/planner-area-commands`,
 branched from `gateway` at gateway.5 (d669af0).
 
@@ -672,7 +672,11 @@ Not witnessed (production wiring that has no test double; the in-game smoke cove
 - the ACTIVE-REPLACE ordering on a live `UserTaskChain`. The unit test drives the seq directly; the
   ordering claim rests on reading `UserTaskChain.java:472-560`.
 
-## 7. Status and next steps (2026-09-27, end of session)
+## 7. Status and next steps (shipped as gateway.6, 2026-09-28)
+
+**Shipped as gateway.6** on `feat/companion-smoke` (the release commit bumps `mod_version` and adds
+the NOTICE and README sections). The merge into `gateway` and the pack update are still to do. The
+text below is the state at the WIP commit.
 
 Branch `feat/planner-area-commands`, in worktree `../PlayerEngineGateway-planner`, cut from
 `gateway` at d669af0 (gateway.5). It is committed as WIP and is **not** merged into `gateway`. The
@@ -731,5 +735,5 @@ pack is untouched.
      exists (harmless);
    - `AreaBuildTask` relies on `onStart` being re-run after a chain interruption. Verify that in game.
 4. **Ship:** version `gateway.6`, NOTICE (files table, protection policy, Sable gap, drop despawn)
-   and README (plan field, area commands), merge into `gateway`, then in the pack
+   and README (plan field, area commands): done in the gateway.6 release commit. Still to do: merge into `gateway`, then in the pack
    `task companion-build` and `task check`, CHANGELOG, and a README companion section with examples.
