@@ -127,6 +127,7 @@ public final class SmokeHarness {
                 List.of(new ArgNote("scenario", "help.playerengine.smoke.arg.scenario")), 2, null, "diagnostics"));
         return Commands.literal("smoke")
                 .requires(src -> src.hasPermission(2))
+                .then(EvalHarness.node())
                 .then(Commands.argument("scenario", StringArgumentType.word())
                         .executes(ctx -> {
                             start(ctx.getSource().getServer(), StringArgumentType.getString(ctx, "scenario"));

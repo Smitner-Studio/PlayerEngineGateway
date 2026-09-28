@@ -76,6 +76,9 @@ removed before the reply is parsed.
 
 Build with `task build` (jar in `neoforge/build/libs/`); check the routing with `task test`.
 Both need a JDK 21 (`JDK=<path>`, default the Temurin 21 install).
+`task witness-jar BASE=gateway.7` builds the tier B eval harness (`smoke/EvalHarness.java`,
+driven by the pack's `task companion-eval`) into an older release under `build/witness-<BASE>/`,
+for red witnesses that must fail on the build before a fix.
 
 Companion rules (`config/playerengine-companion.properties`, see [NOTICE.md](NOTICE.md)):
 
