@@ -27,13 +27,13 @@ tasks:
         silent: true
 
   test:
-    desc: 'Run the gateway, companion-rules, planner and smoke-gate self-tests [JDK]'
+    desc: 'Run the gateway, companion-rules, planner, program-interpreter and smoke-gate self-tests [JDK]'
     preconditions:
       - *need-jdk
     env:
       JAVA_HOME: '{{.JDK}}'
     cmds:
-      - cmd /d /c "{{.GRADLEW}}" :common:gatewaySelfTest :common:companionSelfTest :common:planSelfTest :common:smokeGateSelfTest --no-daemon -q
+      - cmd /d /c "{{.GRADLEW}}" :common:gatewaySelfTest :common:companionSelfTest :common:planSelfTest :common:programSelfTest :common:smokeGateSelfTest --no-daemon -q
 
   seam-signatures:
     desc: 'Regenerate the seam signature table, common/src/main/resources/playerengine/seam/signatures.json, after editing SignatureTable [JDK]'

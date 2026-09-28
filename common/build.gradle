@@ -68,6 +68,43 @@ tasks.register('planSelfTest', JavaExec) {
     enableAssertions = true
 }
 
+// The program package stays pure (companion-architecture §11 stage 3): no Minecraft types, and from
+// the rest of the mod only the seam's plain value types, so the seam adapter is its one door.
+def checkProgramPurity = tasks.register('checkProgramPurity') {
+    group = 'verification'
+    description = 'Fails when the program interpreter names Minecraft or mod classes beyond the seam value types.'
+    def dir = file('src/main/java/com/player2/playerengine/program')
+    inputs.dir(dir)
+    doLast {
+        def forbidden = ~/\b(?:net\.minecraft|com\.mojang)\.|\bcom\.player2\.playerengine\.(?!program\b|seam\.(?:ActionError|Outcome|FailureCode)\b)/
+        int files = 0
+        dir.eachFileRecurse { File f ->
+            if (!f.name.endsWith('.java')) {
+                return
+            }
+            files++
+            f.getText("UTF-8").eachLine(1) { String line, int n ->
+                if (line =~ forbidden) {
+                    throw new GradleException("${f.name}:${n}: the program package must stay pure: ${line.trim()}")
+                }
+            }
+        }
+        if (files == 0) {
+            throw new GradleException("no sources under ${dir}")
+        }
+        println "program purity: ${files} files name no Minecraft or mod types"
+    }
+}
+
+tasks.register('programSelfTest', JavaExec) {
+    group = 'verification'
+    description = 'Checks the program interpreter over a stub world: lint, yield and restore, caps, reconcile, jobs.'
+    dependsOn tasks.named('classes'), checkProgramPurity
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass.set('com.player2.playerengine.program.ProgramSelfTest')
+    enableAssertions = true
+}
+
 tasks.register('smokeGateSelfTest', JavaExec) {
     group = 'verification'
     description = 'Checks the live smoke command is registered only under -Dplayerengine.smoke=true.'
