@@ -349,3 +349,21 @@ reason truncates the reply before `command` and fails the parse.
 | File | Change |
 |---|---|
 | `common/src/main/java/com/player2/playerengine/player2api/Prompts.java` | `reason`: one sentence, at most 200 characters |
+
+**Any player may command any companion (R1).** gateway.6 let only the authenticated owner run
+`excavate` and `fill` or give, resume or cancel a plan. Both gates are gone: the command check
+(`OwnerGate.OWNER_ONLY_COMMAND_IDS`) and the plan check (`PlanCoordinator`, which authorised only
+owner turns). A turn now belongs to its authenticated sender, and a command-feedback turn to the
+player whose chat started the chain; any such turn may plan, resume or cancel, and each player's
+plans draw on that player's own hourly allowance. A line with no authenticated sender still cannot
+plan. Another companion's chat still cannot start `excavate` or `fill`. The owner-only stop phrase
+is unchanged here.
+
+| File | Change |
+|---|---|
+| `common/src/main/java/com/player2/playerengine/player2api/plan/OwnerGate.java` | a turn belongs to its authenticated sender or the chain's; owner-only set removed; peer-refused area commands |
+| `common/src/main/java/com/player2/playerengine/player2api/plan/PlanCoordinator.java` | any player's turn may plan, resume and cancel; `Turn` carries the initiator only |
+| `common/src/main/java/com/player2/playerengine/player2api/plan/PlanSelfTest.java` | a stranger's plan starts, resumes and cancels; no player, no plan |
+| `common/src/main/java/com/player2/playerengine/player2api/AgentConversationData.java` | owner-only refusal removed; the chain remembers its initiating player |
+| `common/src/main/java/com/player2/playerengine/player2api/Prompts.java` | any player may give a command or a plan |
+| `common/src/main/java/com/player2/playerengine/smoke/SmokeHarness.java` | `stranger`: a second player's excavate command and plan each clear a box |

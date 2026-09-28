@@ -24,9 +24,13 @@ public final class PlanSelfTest {
         String n = "drop".equals(name) ? "give" : name;
         return KNOWN.contains(n) ? n : null;
     };
-    private static final PlanCoordinator.Turn OWNER_TURN = new PlanCoordinator.Turn(true, true, OWNER);
-    private static final PlanCoordinator.Turn FEEDBACK_TURN = new PlanCoordinator.Turn(false, true, OWNER);
-    private static final PlanCoordinator.Turn STRANGER_TURN = new PlanCoordinator.Turn(true, false, null);
+    /** Another authenticated player: under R1 they may do everything the owner may. */
+    private static final UUID STRANGER = UUID.fromString("00000000-0000-0000-0000-00000000000c");
+    private static final PlanCoordinator.Turn OWNER_TURN = new PlanCoordinator.Turn(true, OWNER);
+    private static final PlanCoordinator.Turn FEEDBACK_TURN = new PlanCoordinator.Turn(false, OWNER);
+    private static final PlanCoordinator.Turn STRANGER_TURN = new PlanCoordinator.Turn(true, STRANGER);
+    /** A chat line with no authenticated sender: no player asked. */
+    private static final PlanCoordinator.Turn UNAUTHENTICATED_TURN = new PlanCoordinator.Turn(true, null);
 
     private static int checks;
 
@@ -50,10 +54,10 @@ public final class PlanSelfTest {
         malformedPlanLeavesTheReplyAlone();
         supersededStepReportedAsFinishedPausesThePlan();
         everyLineThatRunsACommandMovesTheSeq();
-        nonOwnerCannotPlanOrResume();
+        anyPlayerMayPlanResumeAndCancel();
         ownershipIsTheAuthenticatedUuid();
-        ownerOnlyCommandsAreFoundInEverySemicolonPart();
-        feedbackTurnInOwnerChainCanStartAPlan();
+        peerRefusedCommandsAreFoundInEverySemicolonPart();
+        feedbackTurnInAPlayersChainCanStartAPlan();
         staleGenerationFinishIsDropped();
         stepThatRunsTooLongIsStoppedAndRepaired();
         idlePlanExpires();
@@ -256,7 +260,8 @@ public final class PlanSelfTest {
         h.last().stopped(PlanCoordinator.StopKind.CANCELLED, null);
         require(c.status() == CompanionPlan.Status.PAUSED, "cancelled step pauses");
         c.onUserMessage("Carry on.", false);
-        require(!c.onModelDecision(new PlanParser.Absent(), "", STRANGER_TURN), "a stranger's continue does nothing");
+        require(!c.onModelDecision(new PlanParser.Absent(), "", UNAUTHENTICATED_TURN),
+                "an unauthenticated continue does nothing");
         c.onUserMessage("continue", true);
         require(c.onModelDecision(reply("{\"message\":\"Back to it.\",\"command\":\"\"}"), "", OWNER_TURN),
                 "owner continue resumes without a plan field");
@@ -332,17 +337,22 @@ public final class PlanSelfTest {
         require(CommandExecutor.countsAsDispatch("bodylanguage_lesson"), "only the bodylang command is exempt");
     }
 
-    private static void nonOwnerCannotPlanOrResume() {
+    /** R1: any authenticated player, owner or not, may start, resume and cancel a plan. */
+    private static void anyPlayerMayPlanResumeAndCancel() {
         MockHost h = new MockHost();
         PlanCoordinator c = coordinator(h);
-        require(!c.onModelDecision(planOf("excavate 9 4 9"), "", STRANGER_TURN), "stranger plan refused");
-        require(h.dispatched.isEmpty() && !c.hasPlan(), "nothing dispatched for a stranger");
-        require(h.modelTurns.size() == 1 && h.modelTurns.get(0).contains("Only your owner"), "refusal told");
-        c.onModelDecision(planOf("goto 1 2 3", "pickup_drops"), "", OWNER_TURN);
+        require(!c.onModelDecision(planOf("excavate 9 4 9"), "", UNAUTHENTICATED_TURN), "no player, no plan");
+        require(h.dispatched.isEmpty() && !c.hasPlan(), "nothing dispatched without a player");
+        require(c.onModelDecision(planOf("excavate 9 4 9", "pickup_drops"), "", STRANGER_TURN)
+                && h.dispatched.equals(List.of("excavate 9 4 9")), "a stranger's excavate plan starts");
         h.last().stopped(PlanCoordinator.StopKind.CANCELLED, null);
-        require(!c.onModelDecision(reply("{\"plan\":\"resume\"}"), "", STRANGER_TURN), "stranger resume refused");
-        require(!c.onModelDecision(reply("{\"plan\":\"cancel\"}"), "", STRANGER_TURN) && c.hasPlan(),
-                "stranger cannot cancel either");
+        require(c.onModelDecision(reply("{\"plan\":\"resume\"}"), "", STRANGER_TURN), "a stranger resumes it");
+        h.last().stopped(PlanCoordinator.StopKind.CANCELLED, null);
+        c.beginTurn();
+        c.onUserMessage("continue", true);
+        require(c.onModelDecision(new PlanParser.Absent(), "", STRANGER_TURN), "a stranger's continue resumes it");
+        require(!c.onModelDecision(reply("{\"plan\":\"cancel\"}"), "", STRANGER_TURN) && !c.hasPlan(),
+                "a stranger cancels it");
     }
 
     private static void ownershipIsTheAuthenticatedUuid() {
@@ -353,31 +363,35 @@ public final class PlanSelfTest {
                 "another player's UUID under the owner's name is not the owner");
         require(!OwnerGate.isOwner(new Event.UserMessage("dig a room", "Arran", false, OWNER), null),
                 "no owner, no owner turns");
-        PlanCoordinator.Turn spoofed = OwnerGate.turn(new Event.UserMessage("excavate 9 4 9", "Arran"), OWNER, true);
-        require(spoofed.userTurn() && !spoofed.ownerTurn(), "an unauthenticated chat line never inherits the chain");
+        PlanCoordinator.Turn spoofed = OwnerGate.turn(new Event.UserMessage("excavate 9 4 9", "Arran"), OWNER);
+        require(spoofed.userTurn() && spoofed.initiator() == null,
+                "an unauthenticated chat line belongs to no player and never inherits the chain");
+        PlanCoordinator.Turn stranger = OwnerGate.turn(new Event.UserMessage("dig", "Bob", false, STRANGER), OWNER);
+        require(STRANGER.equals(stranger.initiator()), "a chat turn belongs to its authenticated sender");
     }
 
-    private static void ownerOnlyCommandsAreFoundInEverySemicolonPart() {
+    private static void peerRefusedCommandsAreFoundInEverySemicolonPart() {
         Function<String, String> resolve = name -> KNOWN.contains(name) ? name : null;
-        require("excavate".equals(OwnerGate.ownerOnlyCommandIn("goto 1 2 3; excavate 9 4 9", "@", resolve)),
-                "an owner-only command after ';' is found");
-        require("fill".equals(OwnerGate.ownerOnlyCommandIn("@fill dirt 3 1 3", "@", resolve)), "prefixed");
-        require("excavate".equals(OwnerGate.ownerOnlyCommandIn("goto 1 2 3;@EXCAVATE 3 3 3", "@", resolve)),
+        require("excavate".equals(OwnerGate.peerRefusedCommandIn("goto 1 2 3; excavate 9 4 9", "@", resolve)),
+                "a peer-refused command after ';' is found");
+        require("fill".equals(OwnerGate.peerRefusedCommandIn("@fill dirt 3 1 3", "@", resolve)), "prefixed");
+        require("excavate".equals(OwnerGate.peerRefusedCommandIn("goto 1 2 3;@EXCAVATE 3 3 3", "@", resolve)),
                 "prefix and case inside a later part");
-        require(OwnerGate.ownerOnlyCommandIn("goto 1 2 3; mine stone 5", "@", resolve) == null, "ordinary line");
-        require(OwnerGate.ownerOnlyCommandIn(null, "@", resolve) == null, "no command");
+        require(OwnerGate.peerRefusedCommandIn("goto 1 2 3; mine stone 5", "@", resolve) == null, "ordinary line");
+        require(OwnerGate.peerRefusedCommandIn(null, "@", resolve) == null, "no command");
     }
 
-    private static void feedbackTurnInOwnerChainCanStartAPlan() {
+    private static void feedbackTurnInAPlayersChainCanStartAPlan() {
         MockHost h = new MockHost();
         PlanCoordinator c = coordinator(h);
-        PlanCoordinator.Turn feedback = OwnerGate.turn(new Event.InfoMessage("goto finished"), OWNER, true);
-        require(!feedback.userTurn() && feedback.ownerTurn() && OWNER.equals(feedback.initiator()),
-                "a feedback turn in the owner's chain is the owner's: " + feedback);
+        PlanCoordinator.Turn feedback = OwnerGate.turn(new Event.InfoMessage("goto finished"), STRANGER);
+        require(!feedback.userTurn() && STRANGER.equals(feedback.initiator()),
+                "a feedback turn belongs to the player who started the chain: " + feedback);
         require(c.onModelDecision(planOf("excavate 9 4 9", "pickup_drops"), "", feedback)
                 && h.dispatched.equals(List.of("excavate 9 4 9")), "a plan sent after a command finished starts");
-        PlanCoordinator.Turn strangerChain = OwnerGate.turn(new Event.InfoMessage("goto finished"), OWNER, false);
-        require(!strangerChain.ownerTurn() && strangerChain.initiator() == null, "a stranger's chain stays theirs");
+        PlanCoordinator.Turn noOne = OwnerGate.turn(new Event.InfoMessage("goto finished"), null);
+        require(noOne.initiator() == null && !new PlanCoordinator(new MockHost(), new PlanBudget(2))
+                .onModelDecision(planOf("goto 1 2 3"), "", noOne), "a chain no player started cannot plan");
     }
 
     private static void staleGenerationFinishIsDropped() {
@@ -431,14 +445,14 @@ public final class PlanSelfTest {
         require(rivet.onModelDecision(planOf("goto 1 2 3"), "", OWNER_TURN), "second plan, other companion");
         PlanCoordinator third = new PlanCoordinator(new MockHost(), shared);
         require(!third.onModelDecision(planOf("goto 1 2 3"), "", OWNER_TURN), "owner's hour is spent");
-        require(third.onModelDecision(planOf("goto 1 2 3"), "", new PlanCoordinator.Turn(true, true, OTHER_OWNER)),
+        require(third.onModelDecision(planOf("goto 1 2 3"), "", new PlanCoordinator.Turn(true, OTHER_OWNER)),
                 "another owner's allowance is separate");
     }
 
     /** The constructor the loop uses: two companions of one owner draw on one allowance. */
     private static void companionsShareTheServerBudget() {
         UUID owner = UUID.randomUUID(); // PlanBudget.SHARED is process-wide; no other check uses this owner
-        PlanCoordinator.Turn turn = new PlanCoordinator.Turn(true, true, owner);
+        PlanCoordinator.Turn turn = new PlanCoordinator.Turn(true, owner);
         PlanCoordinator ada = new PlanCoordinator(new MockHost());
         PlanCoordinator rivet = new PlanCoordinator(new MockHost());
         for (int i = 0; i < PlanBudget.CALLS_PER_OWNER_PER_HOUR; i++) {

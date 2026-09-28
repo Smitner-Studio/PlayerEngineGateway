@@ -573,24 +573,34 @@ public final class SmokeHarness {
                                 : "!command never dispatched (seq " + mod().getCommandDispatchSeq() + ")"));
     }
 
-    /** Checklist 8: a second player's dig plan is declined by the owner gate. */
+    /**
+     * Checklist 8 under R1 (no difference between owners and strangers): a second player's excavate
+     * command, then their excavate plan, each clear a box. The command path and the plan path were
+     * the two owner gates.
+     */
     private static List<Stage> stranger(ServerLevel level) {
         requireCompanion();
         BlockPos site = arena(level, 2);
-        BlockPos a = site.offset(2, 1, -1);
-        BlockPos b = site.offset(4, 2, 1);
-        fillBox(level, a, b);
-        place(site, 0, -6, 0.5, -2.5);
-        FakePlayers.online(level, STRANGER_ID, STRANGER_NAME, site.offset(-1, 1, -4));
-        int total = solid(level, a, b);
-        long seqBefore = mod().getCommandDispatchSeq();
+        BlockPos a1 = site.offset(2, 1, -4);
+        BlockPos b1 = site.offset(4, 2, -2);
+        BlockPos a2 = site.offset(2, 1, 2);
+        BlockPos b2 = site.offset(4, 2, 4);
+        fillBox(level, a1, b1);
+        fillBox(level, a2, b2);
+        place(site, 0, -7, -2.5, 0.5);
+        FakePlayers.online(level, STRANGER_ID, STRANGER_NAME, site.offset(-1, 1, -5));
+        int total1 = solid(level, a1, b1);
+        int total2 = solid(level, a2, b2);
         return List.of(
-                act(() -> say(STRANGER_ID, STRANGER_NAME, "SMOKE-PLAN: excavate " + corners(a, b))),
-                window(() -> mod().getCommandDispatchSeq() != seqBefore ? "!stranger's plan dispatched a command" : null,
-                        REFUSAL_WINDOW_SEC,
-                        () -> solid(level, a, b) == total && mod().getPlanStatusLine().isEmpty()
-                                ? "declined: no dispatch (seq " + seqBefore + "), no plan, box intact " + total
-                                : "!box " + solid(level, a, b) + "/" + total + " plan='" + mod().getPlanStatusLine() + "'"));
+                act(() -> say(STRANGER_ID, STRANGER_NAME, "SMOKE-CMD: excavate " + corners(a1, b1))),
+                waitFor(() -> solid(level, a1, b1) == 0 ? "stranger's excavate command cleared " + total1 + " cells" : null,
+                        DIG_TIMEOUT_SEC, () -> "stranger's command: box " + solid(level, a1, b1) + "/" + total1 + ", "
+                                + botState()),
+                act(() -> say(STRANGER_ID, STRANGER_NAME, "SMOKE-PLAN: excavate " + corners(a2, b2))),
+                waitFor(() -> solid(level, a2, b2) == 0 && mod().getPlanStatusLine().isEmpty()
+                                ? "stranger's excavate plan cleared " + total2 + " cells" : null,
+                        DIG_TIMEOUT_SEC, () -> "stranger's plan: box " + solid(level, a2, b2) + "/" + total2 + " plan='"
+                                + mod().getPlanStatusLine() + "', " + botState()));
     }
 
     /**

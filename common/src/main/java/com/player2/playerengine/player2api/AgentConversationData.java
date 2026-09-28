@@ -228,8 +228,8 @@ public class AgentConversationData {
     private final java.util.concurrent.ConcurrentLinkedQueue<Runnable> pendingPlanDispatch =
             new java.util.concurrent.ConcurrentLinkedQueue<>();
     private volatile boolean planLoaded;
-    /** Whether the chain in progress was started by the authenticated owner (UUID, never name). */
-    private volatile boolean chainInitiatorIsOwner;
+    /** The authenticated player (UUID, never name) whose chat started the chain in progress, or null. */
+    private volatile UUID chainInitiator;
 
     public AgentConversationData(PlayerEngineController mod) {
         this.mod = mod;
@@ -386,7 +386,7 @@ public class AgentConversationData {
             deferredInfoQueue.clear();
         }
         chainInitiatorUsername = null;
-        chainInitiatorIsOwner = false;
+        chainInitiator = null;
         synchronized (this) {
             // The greeting event went with the queue; the flag must not force a later turn.
             greetingQueued = false;
@@ -490,19 +490,18 @@ public class AgentConversationData {
         resetB5TurnState();
 
         String lastUserInBatch = null;
-        Boolean lastUserIsOwner = null;
+        UUID lastUserUuid = null;
         boolean ownerInBatch = false;
         planCoordinator.beginTurn();
         for (Event e : eventQueue) {
             if (e instanceof Event.UserMessage um) {
                 lastUserInBatch = um.userName();
-                boolean owner = isAuthenticatedOwner(um);
-                lastUserIsOwner = owner;
-                if (owner) {
+                lastUserUuid = um.authenticatedUserUuid();
+                if (isAuthenticatedOwner(um)) {
                     ownerInBatch = true;
                     mod.markOwnerMessage(System.currentTimeMillis());
                 }
-                planCoordinator.onUserMessage(um.message(), owner);
+                planCoordinator.onUserMessage(um.message(), lastUserUuid != null);
             }
         }
         synchronized (this) {
@@ -515,7 +514,7 @@ public class AgentConversationData {
         }
         if (lastUserInBatch != null) {
             chainInitiatorUsername = lastUserInBatch;
-            chainInitiatorIsOwner = Boolean.TRUE.equals(lastUserIsOwner);
+            chainInitiator = lastUserUuid;
         }
 
         final String relayInitiator = lastUserInBatch != null ? lastUserInBatch : chainInitiatorUsername;
@@ -1250,7 +1249,7 @@ public class AgentConversationData {
         if (!greetingResponse && !isPeerTurn && conversationTurnGate.accepts(turnTicket)) {
             command = applyPlanAndOwnership(jsonResp, lastEvent, command, cmdId);
             cmdId = resolveCommandId(command);
-        } else if (isPeerTurn && ownerOnlyCommandIn(command) != null) {
+        } else if (isPeerTurn && peerRefusedCommandIn(command) != null) {
             command = null;
             cmdId = null;
         }
@@ -1314,19 +1313,11 @@ public class AgentConversationData {
     }
 
     /**
-     * Applies the reply's {@code plan} field and the owner-only rules, and returns the command the
-     * reply may still dispatch (null when the plan took over or the command was refused).
+     * Applies the reply's {@code plan} field and returns the command the reply may still dispatch
+     * (null when the plan took over). Any player may command any companion (R1).
      */
     private String applyPlanAndOwnership(JsonObject jsonResp, Event lastEvent, String command, String cmdId) {
-        PlanCoordinator.Turn turn = OwnerGate.turn(lastEvent, ownerUuid(), chainInitiatorIsOwner);
-        String ownerOnly = ownerOnlyCommandIn(command);
-        if (ownerOnly != null && !turn.ownerTurn()) {
-            LOGGER.info("[Plan] refused owner-only command {} on a non-owner turn for bot={}", ownerOnly, getName());
-            addEventToQueue(new InfoMessage("Only your owner can ask you to dig out or fill an area, so you did "
-                    + "not start it. Decline politely in one short line."));
-            command = null;
-            cmdId = null;
-        }
+        PlanCoordinator.Turn turn = OwnerGate.turn(lastEvent, chainInitiator);
         if ("stop".equals(cmdId)) {
             planCoordinator.cancel("stop command");
         }
@@ -1335,8 +1326,8 @@ public class AgentConversationData {
         return planTook ? null : command;
     }
 
-    private String ownerOnlyCommandIn(String command) {
-        return OwnerGate.ownerOnlyCommandIn(command, mod.getCommandExecutor().getCommandPrefix(),
+    private String peerRefusedCommandIn(String command) {
+        return OwnerGate.peerRefusedCommandIn(command, mod.getCommandExecutor().getCommandPrefix(),
                 this::registeredCommandId);
     }
 
