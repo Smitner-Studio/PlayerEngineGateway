@@ -47,6 +47,7 @@ public final class CompanionRulesSelfTest {
         mineNamesTheBlockThatDropsCobblestone();
         checks += com.player2.playerengine.tasks.container.ContainerDepositSelfTest.runAll();
         checks += com.player2.playerengine.player2api.PeerTalkPolicySelfTest.runAll();
+        checks += com.player2.playerengine.player2api.OfflineOwnerChatSelfTest.runAll();
         checks += com.player2.playerengine.chains.GestureGuardSelfTest.runAll();
         checks += com.player2.playerengine.automaton.utils.player.FeetChunkSelfTest.runAll();
         System.out.println("companion self-test: " + checks + " checks passed");

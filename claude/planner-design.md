@@ -623,6 +623,7 @@ plan 116 planner + 67 area checks), and so is `task build`.
 | a dig estimated over 20 min is refused with a size that fits | `timeDerivedSizeCap` | drop the `MAX_STEP_SECONDS` refusal: "16x8x16 of stone with a wooden pickaxe is refused…: null" | 3c1ca2d | Proven |
 | liquid in the box or shell refuses the scan | `liquidsRefuseIncludingWaterlogged` | liquid check in `AreaScan.scan` → `if (false)`: NPE on the null refusal at the waterlogged-shell check (`AreaSelfTest.java:175`) | 3c1ca2d | Proven |
 | the fluid state marks waterlogged blocks as water | `fluidStateMarksWaterloggedBlocksAsWater` via `AreaCommand.liquidName` on real block states | decide by `LiquidBlock` type: "a waterlogged slab is water" | 8ccf34e | Proven |
+| an error or chat line for an offline owner is skipped, not thrown on the tick (**bug, fixed**; found on a boot-gate server) | `OfflineOwnerChatSelfTest` in `:common:companionSelfTest`, calling `AgentSideEffects.onError` / `broadcastChatToPlayer` with a null player | the shipped unguarded helper: NPE "because \"player\" is null" → "an error with no online owner is logged, not thrown"; green after, companion 598 → 601 | 4b7ff21 | Proven |
 
 Before 8ccf34e, the shared-budget wiring and the fluid-state mapping could not go red: the budget test built
 its own shared `PlanBudget`, and the map-backed scan test was handed `liquid="water"`, so it never
