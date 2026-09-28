@@ -75,7 +75,7 @@ Files changed from upstream:
 | `common/src/main/java/com/player2/playerengine/player2api/Player2PayerResolution.java` | server-wide work is billable with no player online when the gateway is enabled |
 | `common/src/main/java/com/player2/playerengine/player2api/utils/AudioUtils.java` | text-to-speech skipped when the gateway is enabled |
 | `common/build.gradle` | `gatewaySelfTest` task |
-| `gradle.properties` | version `1.21.1-1.4.0-gateway.6` |
+| `gradle.properties` | version `1.21.1-1.4.0-gateway.7` |
 | `neoforge/src/main/resources/META-INF/neoforge.mods.toml` | display name "PlayerEngine (OpenAI-gateway fork)" |
 | `README.md`, `NOTICE.md`, `Taskfile.yml`, `.gitignore` | fork documentation and build entries |
 
@@ -254,7 +254,7 @@ freezing it there).
 | `common/build.gradle`, `Taskfile.yml` | `planSelfTest` and `smokeGateSelfTest` tasks, run by `task test` |
 | `gradle.properties` | version `1.21.1-1.4.0-gateway.6` |
 
-## Unreleased
+## Greeting and chunk fixes (gateway.7)
 
 **The greeting no longer eats "continue".** Upstream forced the first reply of every fresh
 conversation to `bodylang greeting`, and that turn skipped the plan and owner rules. After a
@@ -289,3 +289,4 @@ else after a companion claimed it is released when the companion leaves.
 | `common/src/main/java/com/player2/playerengine/MCCommands.java` | releases every companion-forced chunk at server stop |
 | `common/src/main/java/com/player2/playerengine/companion/CompanionRulesSelfTest.java` | runs the chunk ownership self-test |
 | `common/src/main/java/com/player2/playerengine/smoke/SmokeHarness.java` | `chunks` and `despawn` scenarios |
+| `gradle.properties` | version `1.21.1-1.4.0-gateway.7` |
