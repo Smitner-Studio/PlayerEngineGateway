@@ -448,6 +448,11 @@ public final class SmokeHarness {
 
     private static void fail(String name, String why) {
         LOGGER.error("[smoke] {} FAIL: {}", name, why);
+        // A failed scenario can leave a plan or a dig running; stop it so the next scenario
+        // reports its own result instead of this one's leftovers.
+        if (!"restart".equals(name) && companion() != null && !mod().getPlanStatusLine().isEmpty()) {
+            say(OWNER_ID, OWNER_NAME, "stop");
+        }
     }
 
     // --- companion ------------------------------------------------------------------------------
@@ -484,8 +489,14 @@ public final class SmokeHarness {
 
     /** What the companion is doing, for a timeout's FAIL line. */
     private static String botState() {
-        Object task = mod().getUserTaskChain().getCurrentTask();
-        return "task=" + (task == null ? "none" : task) + " at " + bot().blockPosition().toShortString();
+        com.player2.playerengine.tasks.base.Task task = mod().getUserTaskChain().getCurrentTask();
+        var builder = mod().getBaritone().getBuilderProcess();
+        return "task=" + (task == null ? "none" : task + (task.isFinished() ? " (finished)" : ""))
+                + " builder=" + (builder.isActive() ? builder.isPaused() ? "paused" : "active" : "idle")
+                + " runner=" + (mod().getTaskRunner().isActive() ? "on" : "off")
+                + " chain=" + (mod().getTaskRunner().getCurrentTaskChain() == null ? "none"
+                        : mod().getTaskRunner().getCurrentTaskChain().getName())
+                + " at " + bot().blockPosition().toShortString();
     }
 
     private static void say(UUID id, String name, String text) {
