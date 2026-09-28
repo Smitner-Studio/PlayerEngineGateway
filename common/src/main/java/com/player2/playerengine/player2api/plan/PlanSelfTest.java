@@ -3,6 +3,7 @@ package com.player2.playerengine.player2api.plan;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import com.player2.playerengine.commands.base.CommandExecutor;
 import com.player2.playerengine.player2api.Event;
 import java.util.ArrayList;
 import java.util.List;
@@ -47,6 +48,7 @@ public final class PlanSelfTest {
         stopClearsThePlan();
         malformedPlanLeavesTheReplyAlone();
         supersededStepReportedAsFinishedPausesThePlan();
+        everyLineThatRunsACommandMovesTheSeq();
         nonOwnerCannotPlanOrResume();
         ownershipIsTheAuthenticatedUuid();
         ownerOnlyCommandsAreFoundInEverySemicolonPart();
@@ -301,6 +303,15 @@ public final class PlanSelfTest {
         require(p.status() == CompanionPlan.Status.PAUSED && p.cursor() == 0, "superseded step pauses the plan");
         require(h.dispatched.size() == 1, "nothing dispatched after supersession: " + h.dispatched);
         require(p.results().get(0).equals("superseded"), "result recorded");
+    }
+
+    private static void everyLineThatRunsACommandMovesTheSeq() {
+        require(CommandExecutor.countsAsDispatch("goto 1 2 3"), "a command moves the seq");
+        require(!CommandExecutor.countsAsDispatch("bodylang nod_head"), "a gesture does not");
+        require(!CommandExecutor.countsAsDispatch(" BodyLang greeting ; bodylang victory"), "gestures only do not");
+        require(CommandExecutor.countsAsDispatch("bodylang nod_head; goto 1 2 3"),
+                "a gesture in front of a command still replaces the running step");
+        require(CommandExecutor.countsAsDispatch("bodylanguage_lesson"), "only the bodylang command is exempt");
     }
 
     private static void nonOwnerCannotPlanOrResume() {

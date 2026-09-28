@@ -151,8 +151,7 @@ public class CommandExecutor {
          return;
       }
       line = line.substring(this.getCommandPrefix().length());
-      // Gestures suspend and resume the running task rather than replace it, so they do not count.
-      if (!line.trim().toLowerCase(java.util.Locale.ROOT).startsWith("bodylang")) {
+      if (countsAsDispatch(line)) {
          this.mod.bumpCommandDispatchSeq();
       }
       String[] parts = line.split(";");
@@ -171,6 +170,21 @@ public class CommandExecutor {
          onAccepted.run();
       }
       this.executeRecursive(commands, parts, 0, null, onFinish, onFinishWithNote, getException);
+   }
+
+   /**
+    * Whether a line (prefix removed) moves the command dispatch seq. Gestures suspend and resume the
+    * running task rather than replace it, so a line of gestures only does not count; any other part
+    * does, since every part runs.
+    */
+   public static boolean countsAsDispatch(String lineWithoutPrefix) {
+      for (String part : lineWithoutPrefix.split(";")) {
+         String p = part.trim();
+         if (!p.isEmpty() && !p.split("\\s+")[0].equalsIgnoreCase("bodylang")) {
+            return true;
+         }
+      }
+      return false;
    }
 
    public void execute(String line, Consumer<CommandException> getException) {
