@@ -13,6 +13,7 @@ import com.player2.playerengine.player2api.Event;
 import com.player2.playerengine.player2api.manager.ConversationManager;
 import com.player2.playerengine.player2api.utils.CharacterUtils;
 import com.player2.playerengine.structureprotection.PlayerPlacedBlockStore;
+import dev.architectury.event.events.common.LifecycleEvent;
 import dev.architectury.event.events.common.TickEvent;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayDeque;
@@ -98,6 +99,7 @@ public final class SmokeHarness {
         if (!tickRegistered) {
             tickRegistered = true;
             TickEvent.SERVER_POST.register(SmokeHarness::tick);
+            LifecycleEvent.SERVER_STOPPING.register(server -> FakePlayers.quitAll(server, List.of(OWNER_ID, STRANGER_ID)));
         }
         HelpRegistry.register(new HelpEntry("playerengine", "smoke", "smoke <scenario>",
                 "help.playerengine.smoke.short", "help.playerengine.smoke.long",
@@ -179,7 +181,12 @@ public final class SmokeHarness {
                         DIG_TIMEOUT_SEC, () -> "remaining " + solid(level, a, b) + "/" + total + ", " + botState()));
     }
 
-    /** Checklist 4: player-placed blocks on two faces of the box's shell are never broken. */
+    /**
+     * Checklist 4: player-placed blocks on two faces of the box's shell, and two inside the box, are
+     * never broken. The inside ones make the check able to fail: without protection they are plain
+     * targets of the dig, so a run with the store ignored breaks them. They are planks, which break
+     * by hand; stone would make that run refuse for want of a pickaxe instead.
+     */
     private static List<Stage> protectedShell(ServerLevel level) {
         requireCompanion();
         if (!mod().getBaritoneSettings().respectStructuresEnabled.get() || PlayerPlacedBlockStore.get() == null) {
@@ -197,16 +204,19 @@ public final class SmokeHarness {
         for (BlockPos p : BlockPos.betweenClosed(a.offset(-1, 0, 0), new BlockPos(a.getX() - 1, b.getY(), b.getZ()))) {
             guarded.add(p.immutable());
         }
+        List<BlockPos> inside = List.of(a.immutable(), new BlockPos(a.getX() + 1, b.getY(), a.getZ() + 1));
+        guarded.addAll(inside);
         String dim = level.dimension().location().toString();
         for (BlockPos p : guarded) {
-            level.setBlockAndUpdate(p, Blocks.COBBLESTONE.defaultBlockState());
+            level.setBlockAndUpdate(p, Blocks.OAK_PLANKS.defaultBlockState());
             PlayerPlacedBlockStore.get().add(dim, p);
         }
         place(site, 0, -7, 0.5, -3.5);
-        int total = solid(level, a, b);
+        int total = solid(level, a, b) - inside.size();
+        Supplier<Integer> left = () -> solid(level, a, b) - inside.size();
         Supplier<String> broken = () -> {
             for (BlockPos p : guarded) {
-                if (!level.getBlockState(p).is(Blocks.COBBLESTONE)) {
+                if (!level.getBlockState(p).is(Blocks.OAK_PLANKS)) {
                     return "!player-placed block at " + p.toShortString() + " was broken";
                 }
             }
@@ -216,9 +226,10 @@ public final class SmokeHarness {
                 act(() -> say(OWNER_ID, OWNER_NAME, "SMOKE-CMD: excavate " + corners(a, b))),
                 waitFor(() -> {
                     String hit = broken.get();
-                    return hit != null ? hit : solid(level, a, b) == 0 ? "cleared " + total + " cells" : null;
-                }, DIG_TIMEOUT_SEC, () -> "remaining " + solid(level, a, b) + "/" + total),
-                window(broken, 3, () -> guarded.size() + " player-placed shell blocks intact"),
+                    return hit != null ? hit : left.get() == 0 ? "cleared " + total + " cells" : null;
+                }, DIG_TIMEOUT_SEC, () -> "remaining " + left.get() + "/" + total + ", " + botState()),
+                window(broken, 3, () -> (guarded.size() - inside.size()) + " player-placed shell blocks and "
+                        + inside.size() + " inside the box intact"),
                 act(() -> guarded.forEach(p -> PlayerPlacedBlockStore.get().remove(dim, p))));
     }
 
@@ -360,6 +371,11 @@ public final class SmokeHarness {
                 waitFor(() -> companion() == null ? null
                                 : "re-summoned " + companion().getName() + " on the owner's join",
                         90, "no companion after the owner's join"),
+                // A companion saved into the world would load beside the re-summoned one, and the
+                // harness could then watch the copy that never hears "continue".
+                window(() -> companionCount() > 1 ? "!" + companionCount() + " companions for " + character.id()
+                                + " after the owner's join" : null,
+                        5, () -> "one " + character.id()),
                 waitFor(() -> mod().getPlanStatusLine().contains("paused")
                                 ? "plan loaded paused (" + mod().getPlanStatusLine() + ")" : null,
                         30, () -> "no paused plan after the restart: plan='" + mod().getPlanStatusLine() + "'"),
@@ -469,6 +485,11 @@ public final class SmokeHarness {
         return null;
     }
 
+    private static long companionCount() {
+        return ConversationManager.getDataByOwner(OWNER_ID).stream()
+                .filter(d -> character.id().equals(d.getCharacter().id())).count();
+    }
+
     private static void requireCompanion() {
         if (companion() == null) {
             throw new IllegalStateException("no companion; run `playerengine smoke spawn` first");
@@ -496,7 +517,9 @@ public final class SmokeHarness {
                 + " runner=" + (mod().getTaskRunner().isActive() ? "on" : "off")
                 + " chain=" + (mod().getTaskRunner().getCurrentTaskChain() == null ? "none"
                         : mod().getTaskRunner().getCurrentTaskChain().getName())
-                + " at " + bot().blockPosition().toShortString();
+                + " at " + bot().blockPosition().toShortString()
+                // A companion in a chunk that does not tick entities is frozen, whatever its task says.
+                + (((ServerLevel) bot().level()).isPositionEntityTicking(bot().blockPosition()) ? "" : " (chunk not ticking)");
     }
 
     private static void say(UUID id, String name, String text) {

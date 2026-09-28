@@ -72,6 +72,22 @@ final class FakePlayers {
         return p;
     }
 
+    /**
+     * What a server stop does to a real player before the world is saved: it disconnects them, and
+     * the logout fires the architectury quit event, on which Player2NPC dismisses their companions.
+     * A fake never disconnects, so without this its companion is saved into the world and a second
+     * copy is summoned on the next join. The fake stays listed, so {@code saveAll} still writes its
+     * player data for {@link #login}.
+     */
+    static void quitAll(MinecraftServer server, List<UUID> ids) {
+        for (UUID id : ids) {
+            ServerPlayer p = server.getPlayerList().getPlayer(id);
+            if (p != null) {
+                PlayerEvent.PLAYER_QUIT.invoker().quit(p);
+            }
+        }
+    }
+
     static void teleport(ServerPlayer p, BlockPos to) {
         p.moveTo(to.getX() + 0.5, to.getY(), to.getZ() + 0.5, 0f, 0f);
     }
