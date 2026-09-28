@@ -71,6 +71,9 @@ public class PlayerExtraController {
    }
 
    public void attack(Entity entity) {
+      if (com.player2.playerengine.companion.NoPvp.isProtected(entity)) {
+         return;
+      }
       if (this.inRange(entity)) {
          if (com.player2.playerengine.companion.CompanionRules.survivalParityEnabled()) {
             this.hurtWithCooldown(entity);

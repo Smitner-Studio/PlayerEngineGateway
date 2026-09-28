@@ -5,7 +5,6 @@ import com.player2.playerengine.chains.FoodChain;
 import com.player2.playerengine.chains.MLGBucketFallChain;
 import com.player2.playerengine.chains.ForceEquipGearChain;
 import com.player2.playerengine.chains.MobDefenseChain;
-import com.player2.playerengine.chains.PlayerDefenseChain;
 import com.player2.playerengine.chains.PlayerInteractionFixChain;
 import com.player2.playerengine.chains.PreEquipItemChain;
 import com.player2.playerengine.chains.UnstuckChain;
@@ -163,7 +162,6 @@ public class PlayerEngineController {
       new WorldSurvivalChain(this.taskRunner);
       this.foodChain = new FoodChain(this.taskRunner);
       this.forceEquipGearChain = new ForceEquipGearChain(this.taskRunner);
-      new PlayerDefenseChain(this.taskRunner);
       this.storageTracker = new ItemStorageTracker(this, this.trackerManager,
             container -> this.containerSubTracker = container);
       this.entityTracker = new EntityTracker(this.trackerManager);

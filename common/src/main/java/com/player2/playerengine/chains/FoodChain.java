@@ -189,7 +189,7 @@ public class FoodChain extends SingleTaskChain {
    public boolean isActive() {
       // FoodChain must always evaluate its priority so that auto-eat can trigger even when no
       // CollectFoodTask is running (i.e. when mainTask is null). This mirrors the pattern used by
-      // PlayerDefenseChain and MobDefenseChain which also need to fire without a pre-existing task.
+      // MobDefenseChain, which also needs to fire without a pre-existing task.
       return true;
    }
 

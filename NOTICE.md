@@ -367,3 +367,22 @@ is unchanged here.
 | `common/src/main/java/com/player2/playerengine/player2api/AgentConversationData.java` | owner-only refusal removed; the chain remembers its initiating player |
 | `common/src/main/java/com/player2/playerengine/player2api/Prompts.java` | any player may give a command or a plan |
 | `common/src/main/java/com/player2/playerengine/smoke/SmokeHarness.java` | `stranger`: a second player's excavate command and plan each clear a box |
+
+**Companions never attack players (R2).** Upstream's `attack` took a player name, and a
+companion hit twice by a player retaliated until it forgot or killed them. Every companion hit goes
+through `PlayerExtraController.attack`, which now refuses any player target; `attack` with a player
+name (or the word "player") fails with a stated reason before a task starts, and its target filter
+skips players. The player-retaliation chain is removed. Hero and hostile defence already target
+monsters only.
+
+| File | Change |
+|---|---|
+| `common/src/main/java/com/player2/playerengine/companion/NoPvp.java` | new: the fixed rule and the player-name check |
+| `common/src/main/java/com/player2/playerengine/control/PlayerExtraController.java` | never hits a player |
+| `common/src/main/java/com/player2/playerengine/commands/AttackPlayerOrMobCommand.java` | refuses a player target; the filter skips players |
+| `common/src/main/java/com/player2/playerengine/chains/PlayerDefenseChain.java` | removed: retaliation against players |
+| `common/src/main/java/com/player2/playerengine/tasks/entity/KillPlayerTask.java` | removed: only the retaliation chain used it |
+| `common/src/main/java/com/player2/playerengine/PlayerEngineController.java` | no player-defence chain |
+| `common/src/main/java/com/player2/playerengine/chains/FoodChain.java`, `commands/SetFollowModeCommand.java` | comments no longer name the removed chain |
+| `common/src/main/java/com/player2/playerengine/smoke/SmokeHarness.java` | `attack` scenario |
+| `common/src/main/resources/assets/playerengine/lang/en_us.json` | smoke scenario list |

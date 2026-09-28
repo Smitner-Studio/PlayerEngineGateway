@@ -152,6 +152,7 @@ public final class SmokeHarness {
             case "resume" -> planWithInterruption(level, 8, Resume.REATTACH);
             case "despawn" -> despawnReleases(level);
             case "chunk-hold" -> chunkHold(level);
+            case "attack" -> attackAPlayer(level);
             case "chunk-hold-restart" -> chunkHoldAfterRestart(level);
             case "goto" -> planWithInterruption(level, 6, Resume.NONE);
             case "restart" -> restart(level);
@@ -550,6 +551,49 @@ public final class SmokeHarness {
         } catch (java.io.IOException e) {
             throw new IllegalStateException("no " + CHUNK_HOLD_MARKER + "; run chunk-hold on the first boot", e);
         }
+    }
+
+    /**
+     * R2: the owner, then a second player, each order the companion to attack the other player; no
+     * attack task starts. Then the companion's own hit path is driven directly at a player beside it,
+     * and it does not swing. Fake players are invulnerable (NeoForge {@code FakePlayer}), so damage
+     * cannot be the witness; the attack task and the swing are.
+     */
+    private static List<Stage> attackAPlayer(ServerLevel level) {
+        requireCompanion();
+        BlockPos site = arena(level, 14);
+        place(site, 0, -3, 0.5, 0.5);
+        ServerPlayer stranger = FakePlayers.online(level, STRANGER_ID, STRANGER_NAME, site.offset(2, 1, 0));
+        long[] seq = new long[1];
+        Supplier<String> attacking = () -> {
+            com.player2.playerengine.tasks.base.Task t = mod().getUserTaskChain().getCurrentTask();
+            return t != null && t.getClass().getSimpleName().equals("AttackAndGetDropsTask") && !t.isFinished()
+                    ? "!an attack task is running: " + t : null;
+        };
+        return List.of(
+                act(() -> {
+                    seq[0] = mod().getCommandDispatchSeq();
+                    say(OWNER_ID, OWNER_NAME, "SMOKE-CMD: attack " + STRANGER_NAME);
+                }),
+                window(attacking, REFUSAL_WINDOW_SEC, () -> mod().getCommandDispatchSeq() > seq[0]
+                        ? "owner's attack on " + STRANGER_NAME + " refused (seq " + seq[0] + "->" + mod().getCommandDispatchSeq() + ")"
+                        : "!the owner's attack command never dispatched"),
+                act(() -> {
+                    seq[0] = mod().getCommandDispatchSeq();
+                    say(STRANGER_ID, STRANGER_NAME, "SMOKE-CMD: attack " + OWNER_NAME);
+                }),
+                window(attacking, REFUSAL_WINDOW_SEC, () -> mod().getCommandDispatchSeq() > seq[0]
+                        ? "stranger's attack on " + OWNER_NAME + " refused" : "!the stranger's attack command never dispatched"),
+                waitFor(() -> {
+                    bot().teleportTo(stranger.getX() - 1.0, stranger.getY(), stranger.getZ());
+                    bot().swinging = false;
+                    float before = stranger.getHealth();
+                    mod().getControllerExtras().attack(stranger);
+                    if (bot().swinging) {
+                        return "!the companion swung at a player";
+                    }
+                    return stranger.getHealth() == before ? "the hit path did not swing at the player beside it" : "!damage dealt";
+                }, 5, "the hit path was never driven"));
     }
 
     /** Checklist 5: a waterlogged block in the shell makes the excavate refuse. */
