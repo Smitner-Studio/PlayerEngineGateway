@@ -151,7 +151,9 @@ public class CommandExecutor {
          return;
       }
       line = line.substring(this.getCommandPrefix().length());
-      if (countsAsDispatch(line)) {
+      // The chain's own idle fallback after a task finishes is not a new order: bumping for it
+      // would make a plan's next step, scheduled in that same tick, look superseded.
+      if (countsAsDispatch(line) && !this.mod.getUserTaskChain().isInstallingIdleCommand()) {
          this.mod.bumpCommandDispatchSeq();
       }
       String[] parts = line.split(";");
