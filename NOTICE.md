@@ -271,3 +271,21 @@ marker. A resume phrase now applies only to the turn it arrived in.
 | `common/src/main/java/com/player2/playerengine/player2api/plan/PlanSelfTest.java` | a continue applies only to its own turn |
 | `common/src/main/java/com/player2/playerengine/smoke/SmokeHarness.java` | `resume` scenario: one continue after re-attach resumes the plan |
 | `common/src/main/resources/assets/playerengine/lang/en_us.json` | smoke scenario list |
+
+**Companions release only the chunks they forced.** Upstream un-forced any chunk a companion left,
+including chunks an operator's `/forceload` or another mod had forced, keyed holds by chunk
+coordinates without the dimension, and never released a hold when a companion was removed. A
+companion now never claims a chunk that is already forced, keys holds by dimension and chunk,
+releases its whole 3x3 hold when Player2NPC removes it, and every hold is released at server stop
+so none is saved into the world. Still open until the ticket-based fix: a chunk forced by someone
+else after a companion claimed it is released when the companion leaves.
+
+| File | Change |
+|---|---|
+| `common/src/main/java/com/player2/playerengine/util/ChunkController.java` | holds by dimension and chunk; never claims a forced chunk; release-all per companion and at stop |
+| `common/src/main/java/com/player2/playerengine/util/ChunkControllerSelfTest.java` | new: chunk ownership self-test, run by `companionSelfTest` |
+| `common/src/main/java/com/player2/playerengine/trackers/ChunkLoadingTracker.java` | re-asserts the hold each second; releases it on a dimension change and on reset |
+| `common/src/main/java/com/player2/playerengine/PlayerEngineController.java` | removal and stale-controller pruning release the companion's chunks |
+| `common/src/main/java/com/player2/playerengine/MCCommands.java` | releases every companion-forced chunk at server stop |
+| `common/src/main/java/com/player2/playerengine/companion/CompanionRulesSelfTest.java` | runs the chunk ownership self-test |
+| `common/src/main/java/com/player2/playerengine/smoke/SmokeHarness.java` | `chunks` and `despawn` scenarios |

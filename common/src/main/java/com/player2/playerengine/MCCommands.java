@@ -174,6 +174,14 @@ public class MCCommands {
             }
         });
         LifecycleEvent.SERVER_STOPPING.register(server -> {
+            // Before the world saves: companion holds live in memory only, so a chunk still forced
+            // at save would look foreign on the next start and never be released.
+            try {
+                int released = com.player2.playerengine.util.ChunkController.instance.releaseEverything();
+                LOGGER.info("SERVER_STOPPING: released {} companion-forced chunk(s)", released);
+            } catch (Exception e) {
+                LOGGER.warn("SERVER_STOPPING chunk release failed: {}", e.getMessage());
+            }
             // On dedicated, drop queued AI work before tearing down executors so the next start
             // doesn't pick up a stuck queue. Integrated server keeps single-player conversation
             // state for the next session. Plans are kept: plan.json loads PAUSED on the next start.

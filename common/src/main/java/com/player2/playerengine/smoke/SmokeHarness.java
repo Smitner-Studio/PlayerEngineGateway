@@ -28,6 +28,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.level.block.Blocks;
@@ -64,6 +65,8 @@ public final class SmokeHarness {
     /** A refusal is decided on the first model turn; the loopback mock answers in milliseconds. */
     private static final int REFUSAL_WINDOW_SEC = 20;
     private static final int DIG_TIMEOUT_SEC = 240;
+    /** The highest arena slot a scenario uses. */
+    private static final int MAX_SLOT = 10;
 
     private static boolean tickRegistered;
     private static Run active;
@@ -141,7 +144,9 @@ public final class SmokeHarness {
             case "plan" -> planWithInterruption(level, 5, Resume.CONTINUE);
             case "waterlogged" -> waterlogged(level);
             case "stranger" -> stranger(level);
+            case "chunks" -> chunksSurvive(level);
             case "resume" -> planWithInterruption(level, 8, Resume.REATTACH);
+            case "despawn" -> despawnReleases(level);
             case "goto" -> planWithInterruption(level, 6, Resume.NONE);
             case "restart" -> restart(level);
             default -> {
@@ -333,6 +338,87 @@ public final class SmokeHarness {
             stages.add(bothCleared(level, a1, b1, a2, b2, "both boxes cleared"));
         }
         return stages;
+    }
+
+    /**
+     * The arena's chunks are forced by the harness before the companion arrives. They stay forced
+     * when the companion walks off to another arena, comes back, and stops.
+     */
+    private static List<Stage> chunksSurvive(ServerLevel level) {
+        requireCompanion();
+        BlockPos site = arena(level, 7);
+        BlockPos away = arena(level, 10);
+        List<ChunkPos> arenaChunks = arenaChunks(site);
+        Supplier<String> released = () -> {
+            for (ChunkPos c : arenaChunks) {
+                if (!level.getForcedChunks().contains(c.toLong())) {
+                    return "!arena chunk " + c.x + "," + c.z + " was un-forced by the companion";
+                }
+            }
+            return null;
+        };
+        return List.of(
+                act(() -> place(site, 0, -6, 0.5, 0.5)),
+                window(released, 3, () -> "companion held the arena for 3 s"),
+                act(() -> place(away, 0, -6, 0.5, 0.5)),
+                window(released, 4, () -> arenaChunks.size() + " arena chunks still forced after it left"),
+                act(() -> place(site, 0, -6, 0.5, 0.5)),
+                window(released, 3, () -> ""),
+                act(() -> say(OWNER_ID, OWNER_NAME, "stop")),
+                window(released, 4, () -> "and after it came back and stopped"));
+    }
+
+    /**
+     * The companion forces the chunks of its 3x3 hold that no arena forces; when Player2NPC dismisses
+     * it, all of them are released and the arena's own chunks are not. It is then summoned again for
+     * the scenarios that follow.
+     */
+    private static List<Stage> despawnReleases(ServerLevel level) {
+        requireCompanion();
+        BlockPos site = arena(level, 9);
+        ServerPlayer owner = (ServerPlayer) mod().getOwner();
+        List<ChunkPos> arenaChunks = arenaChunks(site);
+        List<ChunkPos> own = new ArrayList<>();
+        return List.of(
+                act(() -> place(site, 0, -6, 0.5, 0.5)),
+                waitFor(() -> {
+                    own.clear();
+                    ChunkPos at = bot().chunkPosition();
+                    for (int dx = -1; dx <= 1; dx++) {
+                        for (int dz = -1; dz <= 1; dz++) {
+                            ChunkPos c = new ChunkPos(at.x + dx, at.z + dz);
+                            if (!harnessForced(level, c)) {
+                                own.add(c);
+                            }
+                        }
+                    }
+                    if (own.isEmpty()) {
+                        return "!every chunk of the hold is an arena's; the check would be vacuous";
+                    }
+                    for (ChunkPos c : own) {
+                        if (!level.getForcedChunks().contains(c.toLong())) {
+                            return null;
+                        }
+                    }
+                    return "companion forced its own " + own.size() + " chunk(s)";
+                }, 20, () -> "the companion never forced its own chunks around " + bot().chunkPosition()),
+                act(() -> invoke(companionManager(owner), "dismissCompanion", Character.class, character)),
+                waitFor(() -> companion() == null ? "dismissed" : null, 20, "companion still registered after dismiss"),
+                window(() -> {
+                    for (ChunkPos c : own) {
+                        if (level.getForcedChunks().contains(c.toLong())) {
+                            return "!chunk " + c.x + "," + c.z + " still forced after the companion was dismissed";
+                        }
+                    }
+                    for (ChunkPos c : arenaChunks) {
+                        if (!level.getForcedChunks().contains(c.toLong())) {
+                            return "!arena chunk " + c.x + "," + c.z + " un-forced by the dismissal";
+                        }
+                    }
+                    return null;
+                }, 3, () -> "all " + own.size() + " released, arena kept"),
+                act(() -> invoke(companionManager(owner), "spawnCompanion", Character.class, character)),
+                waitFor(() -> companion() == null ? null : "summoned again", 60, "no companion after summoning it again"));
     }
 
     /** Checklist 5: a waterlogged block in the shell makes the excavate refuse. */
@@ -593,12 +679,31 @@ public final class SmokeHarness {
         return new BlockPos(spawn.getX() + 200 + slot * 24, FLOOR_Y, spawn.getZ());
     }
 
-    private static void forceChunks(ServerLevel level, BlockPos c) {
+    /** The chunks the harness forces for an arena centred on {@code c}. */
+    private static List<ChunkPos> arenaChunks(BlockPos c) {
+        List<ChunkPos> list = new ArrayList<>();
         for (int cx = (c.getX() - 12) >> 4; cx <= (c.getX() + 12) >> 4; cx++) {
             for (int cz = (c.getZ() - 12) >> 4; cz <= (c.getZ() + 12) >> 4; cz++) {
-                level.setChunkForced(cx, cz, true);
-                level.getChunk(cx, cz);
+                list.add(new ChunkPos(cx, cz));
             }
+        }
+        return list;
+    }
+
+    /** Whether any arena slot's forcing covers {@code c}, used in this run or not. */
+    private static boolean harnessForced(ServerLevel level, ChunkPos c) {
+        for (int slot = 0; slot <= MAX_SLOT; slot++) {
+            if (arenaChunks(site(level, slot)).contains(c)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static void forceChunks(ServerLevel level, BlockPos c) {
+        for (ChunkPos p : arenaChunks(c)) {
+            level.setChunkForced(p.x, p.z, true);
+            level.getChunk(p.x, p.z);
         }
     }
 

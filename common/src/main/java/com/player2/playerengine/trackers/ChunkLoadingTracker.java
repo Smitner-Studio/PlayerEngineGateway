@@ -17,6 +17,7 @@ public class ChunkLoadingTracker {
     private int ticks = 20;
     private long playerLastSeen = -1;
     private LivingEntity entity;
+    private ServerLevel heldIn;
 
     public ChunkLoadingTracker(PlayerEngineController controller) {
         this.entity = controller.getEntity();
@@ -42,17 +43,24 @@ public class ChunkLoadingTracker {
 //            playerLastSeen = -1;
 //            return false;
 //        }
+        ServerLevel level = (ServerLevel) entity.level();
+        if (level != heldIn) {
+            // A dimension change: the old holds belong to the old level.
+            ChunkController.instance.releaseAll(entity.getUUID());
+            chunks.clear();
+            heldIn = level;
+        }
         List<ChunkPos> list = chunksToHold(entity.getX(), entity.getZ());
 
+        // Every tick, not only on entry: a chunk that was someone else's when the companion arrived
+        // is claimed once they let it go. load() is idempotent.
         for(ChunkPos chunk : list){
-            if(!chunks.contains(chunk)){
-                ChunkController.instance.load((ServerLevel) entity.level(), entity.getUUID(), chunk.x, chunk.z);
-            }
+            ChunkController.instance.load(level, entity.getUUID(), chunk.x, chunk.z);
             chunks.remove(chunk);
         }
 
         for(ChunkPos chunk : chunks){
-            ChunkController.instance.unload((ServerLevel) entity.level(), entity.getUUID(), chunk.x, chunk.z);
+            ChunkController.instance.unload(level, entity.getUUID(), chunk.x, chunk.z);
         }
 
         this.chunks = list;
@@ -76,11 +84,11 @@ public class ChunkLoadingTracker {
         return list;
     }
 
+    /** Releases the whole hold, in whatever level it was taken. */
     public void reset() {
-        if(entity.level() instanceof ServerLevel){
-            ChunkController.instance.unload((ServerLevel) entity.level(), entity.getUUID(), entity.chunkPosition().x, entity.chunkPosition().z);
-            chunks.clear();
-            playerLastSeen = 0;
-        }
+        ChunkController.instance.releaseAll(entity.getUUID());
+        chunks.clear();
+        heldIn = null;
+        playerLastSeen = 0;
     }
 }
