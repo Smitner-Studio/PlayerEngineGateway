@@ -19,6 +19,7 @@ import org.apache.logging.log4j.Logger;
 import com.google.gson.JsonObject;
 
 import com.player2.playerengine.PlayerEngineController;
+import com.player2.playerengine.commands.base.CommandCaller;
 import com.player2.playerengine.companion.CompanionRules;
 import com.player2.playerengine.player2api.BotBlacklistPolicy;
 import com.player2.playerengine.player2api.UserBlacklistPolicy;
@@ -1365,6 +1366,21 @@ public class AgentConversationData {
         return OwnerGate.isOwner(um, ownerUuid());
     }
 
+    /**
+     * Who this companion's next command line runs for: the chain's authenticated initiator, an
+     * operator when online with permission level 2 (the level the mod's own server commands need).
+     * No initiator, or one offline, is {@link CommandCaller#UNPRIVILEGED}.
+     */
+    public CommandCaller commandCaller() {
+        UUID who = chainInitiator;
+        MinecraftServer server = mod.getPlayer() == null ? null : mod.getPlayer().getServer();
+        if (who == null || server == null) {
+            return CommandCaller.UNPRIVILEGED;
+        }
+        net.minecraft.server.level.ServerPlayer player = server.getPlayerList().getPlayer(who);
+        return new CommandCaller(who, player != null && player.hasPermissions(2));
+    }
+
     /** Server tick: loads a saved plan once, runs queued step dispatches, then the plan clocks. */
     public void tickPlan() {
         if (!planLoaded && mod.getOwner() != null) {
@@ -1402,7 +1418,7 @@ public class AgentConversationData {
                     } else {
                         listener.stopped(PlanCoordinator.StopKind.CANCELLED, null);
                     }
-                }, listener::accepted);
+                }, listener::accepted, commandCaller());
             });
         }
 

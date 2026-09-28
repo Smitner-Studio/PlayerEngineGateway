@@ -1,14 +1,19 @@
 package com.player2.playerengine.commands.base;
 
 import com.player2.playerengine.PlayerEngineController;
+import com.player2.playerengine.companion.NoPvp;
 import com.player2.playerengine.util.Debug;
 import com.player2.playerengine.util.helpers.FuzzySearchHelper;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.function.Consumer;
+import java.util.function.Function;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 public class CommandExecutor {
@@ -28,6 +33,7 @@ public class CommandExecutor {
          "drop", "give");
 
    private final HashMap<String, Command> commandSheet = new HashMap<>();
+   private final HashMap<String, PermissionClass> permissionClasses = new HashMap<>();
    private final PlayerEngineController mod;
 
    public CommandExecutor(PlayerEngineController mod) {
@@ -39,14 +45,62 @@ public class CommandExecutor {
       return name == null ? null : this.commandSheet.get(resolveName(name.toLowerCase(java.util.Locale.ROOT)));
    }
 
-   public void registerNewCommand(Command... commands) {
+   /**
+    * Registers {@code commands}, each under the class {@code classOf} gives its name. A command with
+    * no class registers nothing: the whole call throws before any command is added, so a companion
+    * never runs with a partial or unclassed command sheet.
+    *
+    * @throws UnclassedCommandException naming every command {@code classOf} has no class for
+    */
+   public void registerNewCommand(Function<String, PermissionClass> classOf, Command... commands) {
+      List<String> unclassed = new ArrayList<>();
+      for (Command command : commands) {
+         if (classOf.apply(command.getName()) == null) {
+            unclassed.add(command.getName());
+         }
+      }
+      if (!unclassed.isEmpty()) {
+         throw new UnclassedCommandException(unclassed);
+      }
       for (Command command : commands) {
          if (this.commandSheet.containsKey(command.getName())) {
             Debug.logInternal("Command with name " + command.getName() + " already exists! Can't register that name twice.");
          } else {
             this.commandSheet.put(command.getName(), command);
+            this.permissionClasses.put(command.getName(), classOf.apply(command.getName()));
          }
       }
+   }
+
+   /** The class a registered command was registered under, or null for an unregistered name. */
+   public PermissionClass permissionClassOf(String name) {
+      Command command = this.getRegisteredCommand(name);
+      return command == null ? null : this.permissionClasses.get(command.getName());
+   }
+
+   /**
+    * Why {@code caller} may not run {@code lineWithoutPrefix}, or null when every part may run. Every
+    * {@code ;} part is checked, since every part runs. Unknown names are left to the caller's own
+    * does-not-exist handling.
+    */
+   public String refusal(String lineWithoutPrefix, CommandCaller caller, Predicate<String> namesAPlayer) {
+      for (String part : lineWithoutPrefix.split(";")) {
+         String[] tokens = part.trim().split("\\s+");
+         if (tokens.length == 0 || tokens[0].isEmpty()) {
+            continue;
+         }
+         PermissionClass permissionClass = this.permissionClassOf(tokens[0]);
+         if (permissionClass == null) {
+            continue;
+         }
+         String name = this.getRegisteredCommand(tokens[0]).getName();
+         String why = CommandPolicy.refusal(name, permissionClass,
+               Arrays.asList(tokens).subList(1, tokens.length), caller, namesAPlayer);
+         if (why != null) {
+            return why;
+         }
+      }
+      return null;
    }
 
    public String getCommandPrefix() {
@@ -140,9 +194,26 @@ public class CommandExecutor {
     * commands in the chain end via {@link Command#finishWithNote(String)} with a non-blank note, the
     * chain still runs to completion (a success-with-note advances like a clean success) and the joined
     * note is delivered here once the chain finishes. A fully clean chain routes through {@code onFinish}.
+    * Runs for {@link CommandCaller#UNPRIVILEGED}.
     */
    public void execute(
          String line,
+         Runnable onAccepted,
+         Runnable onFinish,
+         Consumer<String> onFinishWithNote,
+         Consumer<CommandException> getException) {
+      this.execute(line, CommandCaller.UNPRIVILEGED, onAccepted, onFinish, onFinishWithNote, getException);
+   }
+
+   /**
+    * As the overload without {@code caller}, with the permission check for {@code caller}: a line
+    * {@link CommandPolicy} refuses runs no part, never reaches {@code onAccepted}, and ends on
+    * {@code getException} with a message starting {@link CommandPolicy#DENIED}. The dispatch seq still
+    * moves, since the order was given.
+    */
+   public void execute(
+         String line,
+         CommandCaller caller,
          Runnable onAccepted,
          Runnable onFinish,
          Consumer<String> onFinishWithNote,
@@ -165,6 +236,14 @@ public class CommandExecutor {
          }
       } catch (CommandException var7) {
          getException.accept(var7);
+         return;
+      }
+
+      String refusal = this.refusal(line, caller,
+            name -> NoPvp.namesAPlayer(name, this.mod.getWorld() == null ? null : this.mod.getWorld().getServer()));
+      if (refusal != null) {
+         Debug.logMessage("Refused command line \"" + line + "\": " + refusal);
+         getException.accept(new CommandException(refusal));
          return;
       }
 

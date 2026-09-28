@@ -4,6 +4,7 @@ package com.player2.playerengine.player2api;
 import java.util.function.Consumer;
 
 import com.player2.playerengine.PlayerEngineController;
+import com.player2.playerengine.commands.base.CommandCaller;
 import com.player2.playerengine.commands.base.CommandExecutor;
 import com.player2.playerengine.commands.base.UnknownCommandException;
 import com.player2.playerengine.retrieval.RagDeepSearchCommands;
@@ -118,7 +119,8 @@ public class AgentSideEffects {
         // command part:
         if (characterMessage.command() != null && !characterMessage.command().isBlank()) {
             onCommandListGenerated(characterMessage.sendingCharacterData().getMod(), characterMessage.command(),
-                    characterMessage.sendingCharacterData()::onCommandFinish);
+                    characterMessage.sendingCharacterData()::onCommandFinish, null,
+                    characterMessage.sendingCharacterData().commandCaller());
         }
     }
 
@@ -129,16 +131,18 @@ public class AgentSideEffects {
 
     public static void onCommandListGenerated(PlayerEngineController mod, String command,
                                               Consumer<CommandExecutionStopReason> onStop) {
-        onCommandListGenerated(mod, command, onStop, null);
+        onCommandListGenerated(mod, command, onStop, null, CommandCaller.UNPRIVILEGED);
     }
 
     /**
      * @param onAcceptedSeq receives the controller's command dispatch seq once the line has parsed and
      *                      is about to run; null when the caller does not track supersession
+     * @param caller the player the line runs for, whose permissions the dispatcher checks
      */
     public static void onCommandListGenerated(PlayerEngineController mod, String command,
                                               Consumer<CommandExecutionStopReason> onStop,
-                                              java.util.function.LongConsumer onAcceptedSeq) {
+                                              java.util.function.LongConsumer onAcceptedSeq,
+                                              CommandCaller caller) {
         CommandExecutor cmdExecutor = mod.getCommandExecutor();
         String commandWithPrefix = cmdExecutor.isClientCommand(command) ? command
                 : (cmdExecutor.getCommandPrefix() + command);
@@ -221,6 +225,7 @@ public class AgentSideEffects {
                 () ->
                         cmdExecutor.execute(
                                 processedCommandWithPrefix,
+                                caller,
                                 () -> {
                                     if (onAcceptedSeq != null) {
                                         onAcceptedSeq.accept(mod.getCommandDispatchSeq());
