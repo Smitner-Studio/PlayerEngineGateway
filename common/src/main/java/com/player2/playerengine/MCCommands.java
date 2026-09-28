@@ -251,7 +251,7 @@ public class MCCommands {
 
     private static void registerFromDispatch(CommandDispatcher<CommandSourceStack> dispatcher) {
         contributeHelpEntries();
-        dispatcher.register(
+        dispatcher.register(com.player2.playerengine.smoke.SmokeGate.attach(
                 Commands.literal("playerengine")
                          .then(registerRelog())
                          .then(registerSummon())
@@ -261,8 +261,9 @@ public class MCCommands {
                          .then(registerCapability())
                          .then(registerResolve())
                          .then(registerMemory())
-                        .then(registerHelp())
-                        .then(com.player2.playerengine.smoke.SmokeHarness.register()));
+                        .then(registerHelp()),
+                com.player2.playerengine.smoke.SmokeGate.enabled(),
+                com.player2.playerengine.smoke.SmokeHarness::register));
         // Coverage authority: walk the live merged dispatcher (both /playerengine and /player2npc
         // roots are already registered via their CommandRegistrationEvent paths before SERVER_STARTING)
         // and verify every counted leaf has a HelpEntry. One walk covers both mods.
@@ -421,9 +422,6 @@ public class MCCommands {
                         new ArgNote("page", "help.playerengine.help.arg.page")), 0, null, "general"));
 
         // diagnostics
-        HelpRegistry.register(new HelpEntry("playerengine", "smoke", "smoke <scenario>",
-                "help.playerengine.smoke.short", "help.playerengine.smoke.long",
-                List.of(new ArgNote("scenario", "help.playerengine.smoke.arg.scenario")), 2, null, "diagnostics"));
         HelpRegistry.register(new HelpEntry("playerengine", "queue clear", "queue clear [player]",
                 "help.playerengine.queue-clear.short", "help.playerengine.queue-clear.long",
                 List.of(new ArgNote("player", "help.playerengine.queue-clear.arg.player")), 2, null, "diagnostics"));

@@ -59,6 +59,15 @@ tasks.register('planSelfTest', JavaExec) {
     enableAssertions = true
 }
 
+tasks.register('smokeGateSelfTest', JavaExec) {
+    group = 'verification'
+    description = 'Checks the live smoke command is registered only under -Dplayerengine.smoke=true.'
+    dependsOn tasks.named('classes')
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass.set('com.player2.playerengine.smoke.SmokeGateSelfTest')
+    enableAssertions = true
+}
+
 def ellieGpsAtomicCallerFiles = files(
         'src/main/java/com/player2/playerengine/commands/CreateWaypointCommand.java',
         'src/main/java/com/player2/playerengine/commands/AuditWaypointCommand.java',

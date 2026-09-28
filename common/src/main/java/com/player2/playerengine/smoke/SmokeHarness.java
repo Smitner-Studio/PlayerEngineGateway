@@ -1,42 +1,54 @@
 package com.player2.playerengine.smoke;
 
-import com.mojang.authlib.GameProfile;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.player2.playerengine.PlayerEngineController;
+import com.player2.playerengine.automaton.api.Settings;
+import com.player2.playerengine.help.ArgNote;
+import com.player2.playerengine.help.HelpEntry;
+import com.player2.playerengine.help.HelpRegistry;
 import com.player2.playerengine.player2api.AgentConversationData;
 import com.player2.playerengine.player2api.Character;
 import com.player2.playerengine.player2api.Event;
 import com.player2.playerengine.player2api.manager.ConversationManager;
+import com.player2.playerengine.player2api.utils.CharacterUtils;
 import com.player2.playerengine.structureprotection.PlayerPlacedBlockStore;
 import dev.architectury.event.events.common.TickEvent;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Deque;
+import java.util.List;
+import java.util.UUID;
+import java.util.function.Supplier;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
-import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.List;
-import java.util.UUID;
-import java.util.function.Supplier;
-
 /**
- * SPIKE: op-only live smoke scenarios for the companion planner. Simulated owner and stranger are
- * NeoForge FakePlayers (reached by reflection so common stays loader-neutral); the companion is
- * summoned through Player2NPC's own CompanionManager; chat enters through
- * {@link ConversationManager#onUserChatMessage}, the method the chat event calls. The model is a
- * loopback mock (PLAYERENGINE_GATEWAY_URL) that echoes the command or plan named after a
- * {@code SMOKE-CMD:} / {@code SMOKE-PLAN:} marker, so every reply still goes through the real
- * response parser, plan coordinator and owner gate. Each scenario logs one
- * {@code [smoke] <name> ok|FAILED: ...} line.
+ * Live smoke scenarios for the companion planner, run on a dedicated test server by
+ * {@code /playerengine smoke <scenario>} (registered only under {@link SmokeGate}).
+ *
+ * <p>The owner and a stranger are {@link FakePlayers}; the companion is summoned through Player2NPC's
+ * own {@code CompanionManager}; chat enters through {@link ConversationManager#onUserChatMessage}, the
+ * method the chat event calls. The model is a loopback mock ({@code PLAYERENGINE_GATEWAY_URL}) that
+ * echoes the command or plan named after a {@code SMOKE-CMD:} / {@code SMOKE-PLAN:} marker, so every
+ * reply still goes through the real response parser, plan coordinator, owner gate and command
+ * executor. Only the chat packet decode is skipped.
+ *
+ * <p>Each scenario is a list of stages (act once, then poll the world until settled) and logs exactly
+ * one {@code [smoke] <name> ok: ...} or {@code [smoke] <name> FAIL: ...} line. Every marker line sent
+ * is logged as {@code [smoke] marker ...}, so the runner can check the mock answered it: a refusal
+ * scenario must not pass because the model was never asked.
  */
 public final class SmokeHarness {
     private static final Logger LOGGER = LogManager.getLogger("smoke");
@@ -44,16 +56,42 @@ public final class SmokeHarness {
     private static final UUID STRANGER_ID = UUID.nameUUIDFromBytes("smoke-stranger".getBytes(StandardCharsets.UTF_8));
     private static final String OWNER_NAME = "SmokeOwner";
     private static final String STRANGER_NAME = "SmokeStranger";
+    /** Player2NPC's game id; its join handler asks the gateway for this game's characters. */
+    private static final String GAME_ID = "player2-ai-npc-minecraft";
     private static final int FLOOR_Y = 120;
+    private static final int POLL_TICKS = 10;
+    /** A refusal is decided on the first model turn; the loopback mock answers in milliseconds. */
+    private static final int REFUSAL_WINDOW_SEC = 20;
+    private static final int DIG_TIMEOUT_SEC = 240;
 
-    private static final List<Probe> PROBES = new ArrayList<>();
     private static boolean tickRegistered;
+    private static Run active;
+    /** The fake owner whose per-player Player2NPC tick the harness drives (a fake never ticks). */
+    private static ServerPlayer tickedOwner;
+    private static Character character;
 
     private SmokeHarness() {
     }
 
-    /** A condition polled once a second until it settles or times out. */
-    private record Probe(String name, long deadlineTick, Supplier<String> check, Supplier<String> onTimeout) {
+    /**
+     * One stage: {@code enter} acts once; {@code poll} returns null to keep waiting, {@code "!why"} to
+     * fail, or a note (possibly empty) to pass. At the deadline {@code onTimeout} decides, with the
+     * same convention: a refusal window passes on timeout, a wait fails.
+     */
+    private record Stage(Runnable enter, Supplier<String> poll, int timeoutSec, Supplier<String> onTimeout) {
+    }
+
+    private static final class Run {
+        final String name;
+        final Deque<Stage> stages;
+        final List<String> notes = new ArrayList<>();
+        Stage stage;
+        long deadlineTick;
+
+        Run(String name, List<Stage> stages) {
+            this.name = name;
+            this.stages = new ArrayDeque<>(stages);
+        }
     }
 
     public static LiteralArgumentBuilder<CommandSourceStack> register() {
@@ -61,179 +99,452 @@ public final class SmokeHarness {
             tickRegistered = true;
             TickEvent.SERVER_POST.register(SmokeHarness::tick);
         }
+        HelpRegistry.register(new HelpEntry("playerengine", "smoke", "smoke <scenario>",
+                "help.playerengine.smoke.short", "help.playerengine.smoke.long",
+                List.of(new ArgNote("scenario", "help.playerengine.smoke.arg.scenario")), 2, null, "diagnostics"));
         return Commands.literal("smoke")
                 .requires(src -> src.hasPermission(2))
                 .then(Commands.argument("scenario", StringArgumentType.word())
                         .executes(ctx -> {
-                            String scenario = StringArgumentType.getString(ctx, "scenario");
-                            try {
-                                start(ctx.getSource().getServer(), scenario);
-                            } catch (Exception e) {
-                                LOGGER.error("[smoke] {} FAILED: {}", scenario, e.toString(), e);
-                            }
+                            start(ctx.getSource().getServer(), StringArgumentType.getString(ctx, "scenario"));
                             return 1;
                         }));
     }
 
-    private static void start(MinecraftServer server, String scenario) throws Exception {
-        ServerLevel level = server.overworld();
-        switch (scenario) {
-            case "spawn" -> spawn(server, level);
-            case "excavate" -> excavate(server, level, 0, false);
-            case "waterlogged" -> excavate(server, level, 1, true);
-            case "stranger" -> stranger(server, level, 2);
-            default -> LOGGER.error("[smoke] {} FAILED: unknown scenario", scenario);
+    private static void start(MinecraftServer server, String name) {
+        if (active != null) {
+            fail(name, "scenario " + active.name + " is still running");
+            return;
         }
+        List<Stage> stages;
+        try {
+            stages = scenario(server.overworld(), name);
+        } catch (RuntimeException e) {
+            LOGGER.error("[smoke] {} FAIL: {}", name, e.toString(), e);
+            return;
+        }
+        if (stages == null) {
+            return;
+        }
+        active = new Run(name, stages);
+        advance(server);
+    }
+
+    private static List<Stage> scenario(ServerLevel level, String name) {
+        return switch (name) {
+            case "spawn" -> spawn(level);
+            case "excavate" -> excavate(level);
+            case "protected" -> protectedShell(level);
+            case "stop" -> stopMidDig(level);
+            case "plan" -> planWithInterruption(level, 5, true);
+            case "waterlogged" -> waterlogged(level);
+            case "stranger" -> stranger(level);
+            case "goto" -> planWithInterruption(level, 6, false);
+            case "restart" -> restart(level);
+            default -> {
+                fail(name, "unknown scenario");
+                yield null;
+            }
+        };
     }
 
     // --- scenarios ------------------------------------------------------------------------------
 
-    private static void spawn(MinecraftServer server, ServerLevel level) throws Exception {
-        BlockPos site = site(level, 0);
-        arena(level, site);
-        ServerPlayer owner = fakePlayer(level, OWNER_ID, OWNER_NAME, site.offset(0, 1, -5));
+    /** Setup: the fake owner summons the gateway's first character through Player2NPC. */
+    private static List<Stage> spawn(ServerLevel level) {
+        BlockPos site = arena(level, 0);
+        ServerPlayer owner = FakePlayers.online(level, OWNER_ID, OWNER_NAME, site.offset(0, 1, -6));
+        character = CharacterUtils.requestFirstCharacter(owner, GAME_ID);
         if (companion() == null) {
-            Object manager = Class.forName("com.goodbird.player2npc.companion.CompanionManager")
-                    .getMethod("get", ServerPlayer.class).invoke(null, owner);
-            Character ada = new Character("foreman-ada", "Foreman Ada", "Ada", "Foreman Ada here.",
-                    "You are Foreman Ada.", "", new String[0]);
-            manager.getClass().getMethod("spawnCompanion", Character.class).invoke(manager, ada);
+            invoke(companionManager(owner), "spawnCompanion", Character.class, character);
         }
-        long deadline = server.getTickCount() + 20L * 60;
-        PROBES.add(new Probe("spawn", deadline,
-                () -> companion() == null ? null
-                        : "companion " + companion().getName() + " at " + companion().getMod().getPlayer().blockPosition()
-                                + " owner=" + companion().getMod().getOwner().getUUID(),
-                () -> "no companion registered for the fake owner within 60 s"));
+        return List.of(waitFor(() -> companion() == null ? null
+                : "companion " + companion().getName() + " (" + character.id() + ") at " + bot().blockPosition()
+                        + " owner=" + mod().getOwner().getUUID(),
+                60, "no companion registered for the fake owner"));
     }
 
-    /** Checklist 1 (clean box clears) and 5 (a waterlogged shell cell refuses the box). */
-    private static void excavate(MinecraftServer server, ServerLevel level, int slot, boolean waterlogged) {
-        String name = waterlogged ? "waterlogged" : "excavate";
-        AgentConversationData data = requireCompanion(name);
-        if (data == null) {
-            return;
-        }
-        BlockPos site = site(level, slot);
-        arena(level, site);
+    /** Checklist 1: a real excavate completes. */
+    private static List<Stage> excavate(ServerLevel level) {
+        requireCompanion();
+        BlockPos site = arena(level, 0);
         BlockPos a = site.offset(2, 1, -1);
         BlockPos b = site.offset(4, 2, 1);
         fillBox(level, a, b);
-        if (waterlogged) {
-            level.setBlockAndUpdate(b.offset(1, -1, 0), Blocks.OAK_SLAB.defaultBlockState()
-                    .setValue(BlockStateProperties.WATERLOGGED, true));
-        }
-        PlayerEngineController mod = data.getMod();
-        teleport(level, (ServerPlayer) mod.getOwner(), site.offset(0, 1, -4));
-        mod.getPlayer().teleportTo(site.getX() + 0.5, site.getY() + 1, site.getZ() - 2.5);
+        place(site, 0, -6, 0.5, -2.5);
         int total = solid(level, a, b);
-        long seqBefore = mod.getCommandDispatchSeq();
-        say(OWNER_ID, OWNER_NAME, "SMOKE-CMD: excavate " + corners(a, b));
-        long deadline = server.getTickCount() + 20L * (waterlogged ? 30 : 240);
-        if (!waterlogged) {
-            PROBES.add(new Probe(name, deadline,
-                    () -> solid(level, a, b) == 0 ? "cleared " + total + " cells; plan=" + mod.getPlanStatusLine() : null,
-                    () -> "remaining " + solid(level, a, b) + "/" + total + " seq " + seqBefore + "->"
-                            + mod.getCommandDispatchSeq()));
-        } else {
-            // Refusal: the command ran (seq moved) and the box is untouched when the window closes.
-            PROBES.add(new Probe(name, deadline,
-                    () -> solid(level, a, b) < total ? "!box was dug: " + solid(level, a, b) + "/" + total : null,
-                    () -> mod.getCommandDispatchSeq() > seqBefore && solid(level, a, b) == total
-                            ? "=refused: seq " + seqBefore + "->" + mod.getCommandDispatchSeq() + ", box intact " + total
-                            : "command never dispatched (seq " + mod.getCommandDispatchSeq() + ")"));
+        return List.of(
+                act(() -> say(OWNER_ID, OWNER_NAME, "SMOKE-CMD: excavate " + corners(a, b))),
+                waitFor(() -> solid(level, a, b) == 0 ? "cleared " + total + " cells" : null,
+                        DIG_TIMEOUT_SEC, () -> "remaining " + solid(level, a, b) + "/" + total + ", " + botState()));
+    }
+
+    /** Checklist 4: player-placed blocks on two faces of the box's shell are never broken. */
+    private static List<Stage> protectedShell(ServerLevel level) {
+        requireCompanion();
+        if (!mod().getBaritoneSettings().respectStructuresEnabled.get() || PlayerPlacedBlockStore.get() == null) {
+            throw new IllegalStateException("structure protection is off or has no store; the check would be vacuous");
         }
+        BlockPos site = arena(level, 3);
+        BlockPos a = site.offset(2, 1, -1);
+        BlockPos b = site.offset(4, 2, 1);
+        fillBox(level, a, b);
+        // The north face stands between the companion and the box; the west face is a flank.
+        List<BlockPos> guarded = new ArrayList<>();
+        for (BlockPos p : BlockPos.betweenClosed(a.offset(-1, 0, -1), new BlockPos(b.getX(), b.getY(), a.getZ() - 1))) {
+            guarded.add(p.immutable());
+        }
+        for (BlockPos p : BlockPos.betweenClosed(a.offset(-1, 0, 0), new BlockPos(a.getX() - 1, b.getY(), b.getZ()))) {
+            guarded.add(p.immutable());
+        }
+        String dim = level.dimension().location().toString();
+        for (BlockPos p : guarded) {
+            level.setBlockAndUpdate(p, Blocks.COBBLESTONE.defaultBlockState());
+            PlayerPlacedBlockStore.get().add(dim, p);
+        }
+        place(site, 0, -7, 0.5, -3.5);
+        int total = solid(level, a, b);
+        Supplier<String> broken = () -> {
+            for (BlockPos p : guarded) {
+                if (!level.getBlockState(p).is(Blocks.COBBLESTONE)) {
+                    return "!player-placed block at " + p.toShortString() + " was broken";
+                }
+            }
+            return null;
+        };
+        return List.of(
+                act(() -> say(OWNER_ID, OWNER_NAME, "SMOKE-CMD: excavate " + corners(a, b))),
+                waitFor(() -> {
+                    String hit = broken.get();
+                    return hit != null ? hit : solid(level, a, b) == 0 ? "cleared " + total + " cells" : null;
+                }, DIG_TIMEOUT_SEC, () -> "remaining " + solid(level, a, b) + "/" + total),
+                window(broken, 3, () -> guarded.size() + " player-placed shell blocks intact"),
+                act(() -> guarded.forEach(p -> PlayerPlacedBlockStore.get().remove(dim, p))));
+    }
+
+    /** Checklist 3: an owner stop mid-dig restores the builder settings the dig changed. */
+    private static List<Stage> stopMidDig(ServerLevel level) {
+        requireCompanion();
+        BlockPos site = arena(level, 4);
+        BlockPos a = site.offset(2, 1, -2);
+        BlockPos b = site.offset(6, 3, 2);
+        fillBox(level, a, b);
+        place(site, 0, -6, 0.5, -3.5);
+        int total = solid(level, a, b);
+        BuilderSettings before = BuilderSettings.of(mod().getBaritoneSettings());
+        int[] remainingAtStop = new int[1];
+        return List.of(
+                act(() -> say(OWNER_ID, OWNER_NAME, "SMOKE-CMD: excavate " + corners(a, b))),
+                waitFor(() -> {
+                    BuilderSettings now = BuilderSettings.of(mod().getBaritoneSettings());
+                    return solid(level, a, b) < total && !now.equals(before)
+                            ? "mid-dig " + before.diff(now) : null;
+                }, 120, () -> "the dig never changed the builder settings (remaining " + solid(level, a, b)
+                        + "/" + total + "); the restore check would be vacuous"),
+                act(() -> say(OWNER_ID, OWNER_NAME, "stop")),
+                waitFor(() -> {
+                    remainingAtStop[0] = solid(level, a, b);
+                    return BuilderSettings.of(mod().getBaritoneSettings()).equals(before)
+                            ? "stopped at " + remainingAtStop[0] + "/" + total + ", settings restored" : null;
+                }, 20, () -> "settings not restored after stop: "
+                        + before.diff(BuilderSettings.of(mod().getBaritoneSettings()))),
+                window(() -> solid(level, a, b) < remainingAtStop[0] - 1
+                                ? "!still digging after the stop: " + solid(level, a, b) + "/" + total : null,
+                        6, () -> BuilderSettings.of(mod().getBaritoneSettings()).equals(before)
+                                ? "idle after the stop" : "!settings changed again after the stop"));
+    }
+
+    /**
+     * Checklist 2 ({@code resume}) and 7: a 2-step plan starts, a direct {@code goto} from the model
+     * mid-step pauses it (the CommandExecutor dispatch bump), and with {@code resume} the owner's
+     * "continue" finishes both steps. Without {@code resume} the plan is left paused on disk for the
+     * restart scenario.
+     */
+    private static List<Stage> planWithInterruption(ServerLevel level, int slot, boolean resume) {
+        requireCompanion();
+        BlockPos site = arena(level, slot);
+        BlockPos a1 = site.offset(2, 1, -4);
+        BlockPos b1 = site.offset(4, 2, -2);
+        BlockPos a2 = site.offset(2, 1, 2);
+        BlockPos b2 = site.offset(4, 2, 4);
+        fillBox(level, a1, b1);
+        fillBox(level, a2, b2);
+        place(site, 0, -7, -2.5, 0.5);
+        int total1 = solid(level, a1, b1);
+        BlockPos away = site.offset(-5, 1, 0);
+        long[] seq = new long[1];
+        List<Stage> stages = new ArrayList<>(List.of(
+                act(() -> say(OWNER_ID, OWNER_NAME, "SMOKE-PLAN: excavate " + corners(a1, b1)
+                        + " | excavate " + corners(a2, b2))),
+                waitFor(() -> mod().getPlanStatusLine().contains("step 1/2 running") && solid(level, a1, b1) < total1
+                                ? "step 1 digging" : null,
+                        120, () -> "step 1 never started: plan='" + mod().getPlanStatusLine() + "' box "
+                                + solid(level, a1, b1) + "/" + total1),
+                act(() -> {
+                    seq[0] = mod().getCommandDispatchSeq();
+                    say(OWNER_ID, OWNER_NAME, "SMOKE-CMD: goto " + away.getX() + " " + away.getY() + " " + away.getZ());
+                }),
+                waitFor(() -> mod().getPlanStatusLine().contains("step 1/2 paused")
+                                ? "goto paused it mid-step 1 (seq " + seq[0] + "->" + mod().getCommandDispatchSeq()
+                                        + ", box " + solid(level, a1, b1) + "/" + total1 + " left)"
+                                : null,
+                        30, () -> "plan not paused by the goto: plan='" + mod().getPlanStatusLine() + "' seq "
+                                + seq[0] + "->" + mod().getCommandDispatchSeq())));
+        if (resume) {
+            stages.add(act(() -> say(OWNER_ID, OWNER_NAME, "continue")));
+            stages.add(bothCleared(level, a1, b1, a2, b2, "continue resumed it; both boxes cleared"));
+        }
+        return stages;
+    }
+
+    /** Checklist 5: a waterlogged block in the shell makes the excavate refuse. */
+    private static List<Stage> waterlogged(ServerLevel level) {
+        requireCompanion();
+        BlockPos site = arena(level, 1);
+        BlockPos a = site.offset(2, 1, -1);
+        BlockPos b = site.offset(4, 2, 1);
+        fillBox(level, a, b);
+        level.setBlockAndUpdate(b.offset(1, -1, 0), Blocks.OAK_SLAB.defaultBlockState()
+                .setValue(BlockStateProperties.WATERLOGGED, true));
+        place(site, 0, -6, 0.5, -2.5);
+        int total = solid(level, a, b);
+        long seqBefore = mod().getCommandDispatchSeq();
+        return List.of(
+                act(() -> say(OWNER_ID, OWNER_NAME, "SMOKE-CMD: excavate " + corners(a, b))),
+                window(() -> solid(level, a, b) < total ? "!box was dug: " + solid(level, a, b) + "/" + total : null,
+                        REFUSAL_WINDOW_SEC,
+                        () -> mod().getCommandDispatchSeq() > seqBefore && solid(level, a, b) == total
+                                ? "refused: seq " + seqBefore + "->" + mod().getCommandDispatchSeq() + ", box intact " + total
+                                : "!command never dispatched (seq " + mod().getCommandDispatchSeq() + ")"));
     }
 
     /** Checklist 8: a second player's dig plan is declined by the owner gate. */
-    private static void stranger(MinecraftServer server, ServerLevel level, int slot) {
-        AgentConversationData data = requireCompanion("stranger");
-        if (data == null) {
-            return;
-        }
-        BlockPos site = site(level, slot);
-        arena(level, site);
+    private static List<Stage> stranger(ServerLevel level) {
+        requireCompanion();
+        BlockPos site = arena(level, 2);
         BlockPos a = site.offset(2, 1, -1);
         BlockPos b = site.offset(4, 2, 1);
         fillBox(level, a, b);
-        PlayerEngineController mod = data.getMod();
-        mod.getPlayer().teleportTo(site.getX() + 0.5, site.getY() + 1, site.getZ() - 2.5);
-        teleport(level, (ServerPlayer) mod.getOwner(), site.offset(0, 1, -4));
-        fakePlayer(level, STRANGER_ID, STRANGER_NAME, site.offset(-1, 1, -4));
+        place(site, 0, -6, 0.5, -2.5);
+        FakePlayers.online(level, STRANGER_ID, STRANGER_NAME, site.offset(-1, 1, -4));
         int total = solid(level, a, b);
-        long seqBefore = mod.getCommandDispatchSeq();
-        say(STRANGER_ID, STRANGER_NAME, "SMOKE-PLAN: excavate " + corners(a, b));
-        long deadline = server.getTickCount() + 20L * 30;
-        PROBES.add(new Probe("stranger", deadline,
-                () -> mod.getCommandDispatchSeq() != seqBefore ? "!stranger's plan dispatched a command" : null,
-                () -> solid(level, a, b) == total && mod.getPlanStatusLine().isEmpty()
-                        ? "=declined: no dispatch (seq " + seqBefore + "), no plan, box intact " + total
-                        : "box " + solid(level, a, b) + "/" + total + " plan='" + mod.getPlanStatusLine() + "'"));
+        long seqBefore = mod().getCommandDispatchSeq();
+        return List.of(
+                act(() -> say(STRANGER_ID, STRANGER_NAME, "SMOKE-PLAN: excavate " + corners(a, b))),
+                window(() -> mod().getCommandDispatchSeq() != seqBefore ? "!stranger's plan dispatched a command" : null,
+                        REFUSAL_WINDOW_SEC,
+                        () -> solid(level, a, b) == total && mod().getPlanStatusLine().isEmpty()
+                                ? "declined: no dispatch (seq " + seqBefore + "), no plan, box intact " + total
+                                : "!box " + solid(level, a, b) + "/" + total + " plan='" + mod().getPlanStatusLine() + "'"));
     }
 
-    // --- polling --------------------------------------------------------------------------------
+    /**
+     * Checklist 6, on a second boot of the same world after {@code goto} left a plan paused: the owner
+     * logs back in, Player2NPC re-summons the companion from its join handler, the plan loads PAUSED
+     * from plan.json, and "continue" finishes it.
+     */
+    private static List<Stage> restart(ServerLevel level) {
+        BlockPos site = site(level, 6);
+        forceChunks(level, site);
+        BlockPos a1 = site.offset(2, 1, -4);
+        BlockPos b1 = site.offset(4, 2, -2);
+        BlockPos a2 = site.offset(2, 1, 2);
+        BlockPos b2 = site.offset(4, 2, 4);
+        if (solid(level, a2, b2) == 0) {
+            throw new IllegalStateException("step 2's box is already clear; run `goto` on the first boot");
+        }
+        ServerPlayer owner = FakePlayers.login(level, OWNER_ID, OWNER_NAME, site.offset(0, 1, -7));
+        character = CharacterUtils.requestFirstCharacter(owner, GAME_ID);
+        tickedOwner = owner;
+        return List.of(
+                waitFor(() -> companion() == null ? null
+                                : "re-summoned " + companion().getName() + " on the owner's join",
+                        90, "no companion after the owner's join"),
+                waitFor(() -> mod().getPlanStatusLine().contains("paused")
+                                ? "plan loaded paused (" + mod().getPlanStatusLine() + ")" : null,
+                        30, () -> "no paused plan after the restart: plan='" + mod().getPlanStatusLine() + "'"),
+                act(() -> say(OWNER_ID, OWNER_NAME, "continue")),
+                bothCleared(level, a1, b1, a2, b2, "continue finished it; both boxes cleared"));
+    }
+
+    // --- stages ---------------------------------------------------------------------------------
+
+    private static Stage act(Runnable r) {
+        return new Stage(r, () -> "", 1, () -> "");
+    }
+
+    private static Stage waitFor(Supplier<String> poll, int timeoutSec, Supplier<String> why) {
+        return new Stage(() -> { }, poll, timeoutSec, () -> "!timeout after " + timeoutSec + " s: " + why.get());
+    }
+
+    private static Stage waitFor(Supplier<String> poll, int timeoutSec, String why) {
+        return waitFor(poll, timeoutSec, () -> why);
+    }
+
+    /** Holds for {@code seconds}: {@code violation} fails it early, {@code verdict} decides at the end. */
+    private static Stage window(Supplier<String> violation, int seconds, Supplier<String> verdict) {
+        return new Stage(() -> { }, violation, seconds, verdict);
+    }
+
+    private static Stage bothCleared(ServerLevel level, BlockPos a1, BlockPos b1, BlockPos a2, BlockPos b2, String note) {
+        return waitFor(() -> solid(level, a1, b1) == 0 && solid(level, a2, b2) == 0
+                        && mod().getPlanStatusLine().isEmpty() ? note : null,
+                DIG_TIMEOUT_SEC, () -> "boxes " + solid(level, a1, b1) + " and " + solid(level, a2, b2)
+                        + " left, plan='" + mod().getPlanStatusLine() + "', " + botState());
+    }
 
     private static void tick(MinecraftServer server) {
-        if (PROBES.isEmpty() || server.getTickCount() % 20 != 0) {
+        if (tickedOwner != null) {
+            try {
+                invoke(companionManager(tickedOwner), "serverTick", null, null);
+            } catch (RuntimeException e) {
+                LOGGER.error("[smoke] Player2NPC tick for the fake owner failed; no longer driving it", e);
+                tickedOwner = null;
+            }
+        }
+        if (active == null || server.getTickCount() % POLL_TICKS != 0) {
             return;
         }
-        for (Probe p : new ArrayList<>(PROBES)) {
-            String verdict;
-            try {
-                verdict = p.check().get();
-            } catch (Exception e) {
-                verdict = "!" + e;
+        Stage stage = active.stage;
+        String verdict;
+        try {
+            verdict = stage.poll().get();
+            if (verdict == null && server.getTickCount() >= active.deadlineTick) {
+                verdict = stage.onTimeout().get();
             }
-            if (verdict == null && server.getTickCount() >= p.deadlineTick()) {
-                String t = p.onTimeout().get();
-                // A timeout verdict starting with '=' is the expected outcome (a refusal window).
-                verdict = t.startsWith("=") ? t.substring(1) : "!timeout: " + t;
-            }
-            if (verdict == null) {
-                continue;
-            }
-            PROBES.remove(p);
-            if (verdict.startsWith("!")) {
-                LOGGER.error("[smoke] {} FAILED: {}", p.name(), verdict.substring(1));
-            } else {
-                LOGGER.info("[smoke] {} ok: {}", p.name(), verdict);
-            }
+        } catch (RuntimeException e) {
+            verdict = "!" + e;
+        }
+        if (verdict == null) {
+            return;
+        }
+        if (verdict.startsWith("!")) {
+            fail(active.name, verdict.substring(1));
+            active = null;
+            return;
+        }
+        if (!verdict.isEmpty()) {
+            active.notes.add(verdict);
+        }
+        advance(server);
+    }
+
+    private static void advance(MinecraftServer server) {
+        Stage next = active.stages.poll();
+        if (next == null) {
+            LOGGER.info("[smoke] {} ok: {}", active.name, String.join("; ", active.notes));
+            active = null;
+            return;
+        }
+        active.stage = next;
+        active.deadlineTick = server.getTickCount() + 20L * next.timeoutSec();
+        try {
+            next.enter().run();
+        } catch (RuntimeException e) {
+            LOGGER.error("[smoke] {} FAIL: {}", active.name, e.toString(), e);
+            active = null;
         }
     }
 
-    // --- helpers --------------------------------------------------------------------------------
+    private static void fail(String name, String why) {
+        LOGGER.error("[smoke] {} FAIL: {}", name, why);
+    }
+
+    // --- companion ------------------------------------------------------------------------------
 
     private static AgentConversationData companion() {
-        Collection<AgentConversationData> all = ConversationManager.getDataByOwner(OWNER_ID);
-        return all.isEmpty() ? null : all.iterator().next();
+        if (character == null) {
+            return null;
+        }
+        for (AgentConversationData d : ConversationManager.getDataByOwner(OWNER_ID)) {
+            if (character.id().equals(d.getCharacter().id())) {
+                return d;
+            }
+        }
+        return null;
     }
 
-    private static AgentConversationData requireCompanion(String scenario) {
-        AgentConversationData data = companion();
-        if (data == null) {
-            LOGGER.error("[smoke] {} FAILED: no companion; run `playerengine smoke spawn` first", scenario);
+    private static void requireCompanion() {
+        if (companion() == null) {
+            throw new IllegalStateException("no companion; run `playerengine smoke spawn` first");
         }
-        return data;
+        String leftover = mod().getPlanStatusLine();
+        if (!leftover.isEmpty()) {
+            throw new IllegalStateException("an earlier scenario left a plan behind: " + leftover);
+        }
+    }
+
+    private static PlayerEngineController mod() {
+        return companion().getMod();
+    }
+
+    private static LivingEntity bot() {
+        return mod().getPlayer();
+    }
+
+    /** What the companion is doing, for a timeout's FAIL line. */
+    private static String botState() {
+        Object task = mod().getUserTaskChain().getCurrentTask();
+        return "task=" + (task == null ? "none" : task) + " at " + bot().blockPosition().toShortString();
     }
 
     private static void say(UUID id, String name, String text) {
+        if (text.contains("SMOKE-")) {
+            LOGGER.info("[smoke] marker {}", text);
+        }
         // The pack runs call-by-name chat: an unaddressed line never reaches the companion.
-        ConversationManager.onUserChatMessage(new Event.UserMessage("Ada, " + text, name, false, id));
+        ConversationManager.onUserChatMessage(new Event.UserMessage(
+                character.shortName() + ", " + text, name, false, id));
     }
+
+    /** Moves the owner and the companion into place (offsets from the arena centre). */
+    private static void place(BlockPos site, int ownerDx, int ownerDz, double botDx, double botDz) {
+        FakePlayers.teleport((ServerPlayer) mod().getOwner(), site.offset(ownerDx, 1, ownerDz));
+        bot().teleportTo(site.getX() + botDx, site.getY() + 1, site.getZ() + botDz);
+    }
+
+    /** Player2NPC's per-player manager, reached reflectively (it is another mod). */
+    private static Object companionManager(ServerPlayer owner) {
+        try {
+            return Class.forName("com.goodbird.player2npc.companion.CompanionManager")
+                    .getMethod("get", ServerPlayer.class).invoke(null, owner);
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException("Player2NPC CompanionManager unavailable: " + e, e);
+        }
+    }
+
+    private static void invoke(Object target, String method, Class<?> argType, Object arg) {
+        try {
+            if (argType == null) {
+                target.getClass().getMethod(method).invoke(target);
+            } else {
+                target.getClass().getMethod(method, argType).invoke(target, arg);
+            }
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException("CompanionManager." + method + " failed: " + e, e);
+        }
+    }
+
+    // --- world ----------------------------------------------------------------------------------
 
     private static BlockPos site(ServerLevel level, int slot) {
         BlockPos spawn = level.getSharedSpawnPos();
         return new BlockPos(spawn.getX() + 200 + slot * 24, FLOOR_Y, spawn.getZ());
     }
 
-    /** A 17x17 stone platform at FLOOR_Y with air above it, chunks loaded and forced. */
-    private static void arena(ServerLevel level, BlockPos c) {
+    private static void forceChunks(ServerLevel level, BlockPos c) {
         for (int cx = (c.getX() - 12) >> 4; cx <= (c.getX() + 12) >> 4; cx++) {
             for (int cz = (c.getZ() - 12) >> 4; cz <= (c.getZ() + 12) >> 4; cz++) {
                 level.setChunkForced(cx, cz, true);
                 level.getChunk(cx, cz);
             }
         }
+    }
+
+    /** A 17x17 stone platform at FLOOR_Y with air above it, chunks loaded and forced. */
+    private static BlockPos arena(ServerLevel level, int slot) {
+        BlockPos c = site(level, slot);
+        forceChunks(level, c);
         for (int x = -8; x <= 8; x++) {
             for (int z = -8; z <= 8; z++) {
                 level.setBlockAndUpdate(c.offset(x, 0, z), Blocks.STONE.defaultBlockState());
@@ -242,6 +553,7 @@ public final class SmokeHarness {
                 }
             }
         }
+        return c;
     }
 
     private static void fillBox(ServerLevel level, BlockPos a, BlockPos b) {
@@ -264,96 +576,32 @@ public final class SmokeHarness {
         return a.getX() + " " + a.getY() + " " + a.getZ() + " " + b.getX() + " " + b.getY() + " " + b.getZ();
     }
 
-    private static void teleport(ServerLevel level, ServerPlayer p, BlockPos to) {
-        p.moveTo(to.getX() + 0.5, to.getY(), to.getZ() + 0.5, 0f, 0f);
-    }
-
-    /**
-     * NeoForge FakePlayer (FakePlayerFactory is NeoForge's, so reached reflectively from common),
-     * listed as online and in the level without being a ticking entity.
-     */
-    private static ServerPlayer fakePlayer(ServerLevel level, UUID id, String name, BlockPos at) {
-        ServerPlayer existing = (ServerPlayer) level.getPlayerByUUID(id);
-        if (existing != null) {
-            teleport(level, existing, at);
-            return existing;
+    /** The per-entity builder settings an area task changes and must restore on every exit. */
+    private record BuilderSettings(boolean allowBreak, boolean allowPlace, boolean buildInLayers,
+            boolean layerOrder, List<Item> throwaways) {
+        static BuilderSettings of(Settings s) {
+            return new BuilderSettings(s.allowBreak.get(), s.allowPlace.get(), s.buildInLayers.get(),
+                    s.layerOrder.get(), List.copyOf(s.acceptableThrowawayItems.get()));
         }
-        try {
-            ServerPlayer p = (ServerPlayer) Class.forName("net.neoforged.neoforge.common.util.FakePlayerFactory")
-                    .getMethod("get", ServerLevel.class, GameProfile.class)
-                    .invoke(null, level, new GameProfile(id, name));
-            teleport(level, p, at);
-            giveChannel(p);
-            listInLevel(level, p);
-            listAsOnline(level.getServer(), p);
-            return p;
-        } catch (ReflectiveOperationException e) {
-            throw new IllegalStateException("FakePlayerFactory unavailable: " + e, e);
-        }
-    }
 
-    /**
-     * FakePlayerNetHandler's Connection has no netty channel, and NeoForge's hasChannel (reached
-     * from vanilla time sync and mods' payload sends) dereferences it. An EmbeddedChannel absorbs
-     * writes (Carpet's fake-player technique).
-     */
-    private static void giveChannel(ServerPlayer p) {
-        try {
-            var cf = net.minecraft.server.network.ServerCommonPacketListenerImpl.class.getDeclaredField("connection");
-            cf.setAccessible(true);
-            var conn = cf.get(p.connection);
-            var f = net.minecraft.network.Connection.class.getDeclaredField("channel");
-            f.setAccessible(true);
-            if (f.get(conn) == null) {
-                f.set(conn, new io.netty.channel.embedded.EmbeddedChannel());
+        String diff(BuilderSettings o) {
+            List<String> d = new ArrayList<>();
+            if (allowBreak != o.allowBreak) {
+                d.add("allowBreak " + allowBreak + "->" + o.allowBreak);
             }
-        } catch (ReflectiveOperationException e) {
-            throw new IllegalStateException("Connection.channel unavailable: " + e, e);
+            if (allowPlace != o.allowPlace) {
+                d.add("allowPlace " + allowPlace + "->" + o.allowPlace);
+            }
+            if (buildInLayers != o.buildInLayers) {
+                d.add("buildInLayers " + buildInLayers + "->" + o.buildInLayers);
+            }
+            if (layerOrder != o.layerOrder) {
+                d.add("layerOrder " + layerOrder + "->" + o.layerOrder);
+            }
+            if (!throwaways.equals(o.throwaways)) {
+                d.add("throwaways " + throwaways.size() + "->" + o.throwaways.size() + " items");
+            }
+            return d.isEmpty() ? "no change" : String.join(", ", d);
         }
-    }
-
-    /**
-     * The chat range check reads {@code level.players()}. Adding the FakePlayer as an entity
-     * (addNewPlayer) makes it tick, and mods that send payloads on player tick (AppleSkin) crash on
-     * its channel-less connection, so only the level's player list is written.
-     */
-    @SuppressWarnings("unchecked")
-    private static void listInLevel(ServerLevel level, ServerPlayer p) {
-        try {
-            var f = ServerLevel.class.getDeclaredField("players");
-            f.setAccessible(true);
-            ((List<ServerPlayer>) f.get(level)).add(p);
-        } catch (ReflectiveOperationException e) {
-            throw new IllegalStateException("ServerLevel.players unavailable: " + e, e);
-        }
-    }
-
-    /**
-     * Billing (Player2PayerResolution) and chat fan-out read the PlayerList, which a FakePlayer is
-     * never in. Both backing fields are reached reflectively (mojmap names at runtime on
-     * NeoForge 1.21.1).
-     */
-    @SuppressWarnings("unchecked")
-    private static void listAsOnline(MinecraftServer server, ServerPlayer p) {
-        var list = server.getPlayerList();
-        if (list.getPlayer(p.getUUID()) != null) {
-            return;
-        }
-        try {
-            // NeoForge patches getPlayers() to an unmodifiable view, so write the backing list.
-            var players = net.minecraft.server.players.PlayerList.class.getDeclaredField("players");
-            players.setAccessible(true);
-            ((List<ServerPlayer>) players.get(list)).add(p);
-            var f = net.minecraft.server.players.PlayerList.class.getDeclaredField("playersByUUID");
-            f.setAccessible(true);
-            ((java.util.Map<UUID, ServerPlayer>) f.get(list)).put(p.getUUID(), p);
-        } catch (ReflectiveOperationException e) {
-            throw new IllegalStateException("PlayerList.playersByUUID unavailable: " + e, e);
-        }
-    }
-
-    @SuppressWarnings("unused")
-    private static void markPlayerPlaced(ServerLevel level, BlockPos pos) {
-        PlayerPlacedBlockStore.get().add(level.dimension().location().toString(), pos);
     }
 }

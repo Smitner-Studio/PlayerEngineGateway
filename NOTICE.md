@@ -77,6 +77,8 @@ Files changed from upstream:
 | `common/build.gradle` | `gatewaySelfTest` task |
 | `gradle.properties` | version `1.21.1-1.4.0-gateway.5` |
 | `neoforge/src/main/resources/META-INF/neoforge.mods.toml` | display name "PlayerEngine (OpenAI-gateway fork)" |
+| `common/src/main/java/com/player2/playerengine/smoke/*` | new: op-only `/playerengine smoke <scenario>` live test harness (fake owner and stranger, mock-model scenarios); `MCCommands` registers it only when the JVM runs with `-Dplayerengine.smoke=true` |
+| `common/build.gradle` | `smokeGateSelfTest` task, run by `task test` |
 | `README.md`, `NOTICE.md`, `Taskfile.yml`, `.gitignore` | fork documentation and build entries |
 
 The exact changes are the commits on branch `gateway` after `40732ba`:
