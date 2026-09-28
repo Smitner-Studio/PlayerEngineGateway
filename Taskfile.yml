@@ -34,3 +34,32 @@ tasks:
       JAVA_HOME: '{{.JDK}}'
     cmds:
       - cmd /d /c "{{.GRADLEW}}" :common:gatewaySelfTest :common:companionSelfTest :common:planSelfTest :common:smokeGateSelfTest --no-daemon -q
+
+  witness-jar:
+    desc: 'Build the eval harness (smoke/EvalHarness.java) into an older release for the tier B red witnesses: a worktree of BASE under build/witness-<BASE>, the harness copied in and attached to its /playerengine smoke node, and that release''s NeoForge jar built there; prints its path [BASE=gateway.7, JDK]'
+    vars:
+      BASE: '{{.BASE | default "gateway.7"}}'
+      DIR: '{{.ROOT_DIR}}/build/witness-{{.BASE}}'
+      SMOKE: common/src/main/java/com/player2/playerengine/smoke
+    preconditions:
+      - *need-jdk
+      - sh: git -C "{{.ROOT_DIR}}" rev-parse -q --verify "{{.BASE}}^{commit}"
+        msg: 'No commit {{.BASE}} in this repo. Pass BASE=<tag or commit>.'
+    env:
+      JAVA_HOME: '{{.JDK}}'
+    cmds:
+      # The worktree is this task's own scratch copy; it is rebuilt from BASE on every run.
+      - cmd: >-
+          git -C "{{.ROOT_DIR}}" worktree remove --force "{{.DIR}}" 2>/dev/null || true
+        silent: true
+      - git -C "{{.ROOT_DIR}}" worktree add --detach "{{.DIR}}" "{{.BASE}}"
+      - cp "{{.ROOT_DIR}}/{{.SMOKE}}/EvalHarness.java" "{{.DIR}}/{{.SMOKE}}/"
+      - sed -i 's/return Commands.literal("smoke")/return Commands.literal("smoke").then(EvalHarness.node())/' "{{.DIR}}/{{.SMOKE}}/SmokeHarness.java"
+      - cmd: >-
+          grep -q 'then(EvalHarness.node())' "{{.DIR}}/{{.SMOKE}}/SmokeHarness.java"
+          || { echo "witness-jar - {{.BASE}} has no smoke node to attach the eval to"; exit 1; }
+        silent: true
+      - cmd /d /c "{{fromSlash .DIR}}\gradlew.bat" -p "{{fromSlash .DIR}}" :neoforge:build -x test --no-daemon -q
+      - cmd: >-
+          ls "{{.DIR}}"/neoforge/build/libs/playerengine-neoforge-*-{{.BASE}}.jar | sed 's/^/witness jar=/'
+        silent: true
