@@ -175,6 +175,11 @@ public class MCCommands {
         });
         LifecycleEvent.SERVER_STARTED.register(server -> {
             try {
+                com.player2.playerengine.util.ForcedChunkClear.onServerStarted(server);
+            } catch (Exception e) {
+                LOGGER.warn("SERVER_STARTED one-time forced-chunk clear failed: {}", e.getMessage());
+            }
+            try {
                 com.player2.playerengine.util.ChunkHolds.get().serverStarted(server);
             } catch (Exception e) {
                 LOGGER.warn("SERVER_STARTED chunk-hold sweep failed: {}", e.getMessage());

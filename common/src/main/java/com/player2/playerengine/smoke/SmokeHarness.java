@@ -181,7 +181,9 @@ public final class SmokeHarness {
         }
         return List.of(waitFor(() -> companion() == null ? null
                 : "companion " + companion().getName() + " (" + character.id() + ") at " + bot().blockPosition()
-                        + " owner=" + mod().getOwner().getUUID(),
+                        + " owner=" + mod().getOwner().getUUID() + "; one-time forced-chunk clear this start: "
+                        + (com.player2.playerengine.util.ForcedChunkClear.lastRunCleared() < 0 ? "skipped"
+                                : com.player2.playerengine.util.ForcedChunkClear.lastRunCleared() + " cleared"),
                 60, "no companion registered for the fake owner"));
     }
 
@@ -494,7 +496,20 @@ public final class SmokeHarness {
         String[] marker = readMarker(level).trim().split(" ");
         UUID staleGhost = UUID.fromString(marker[0]);
         UUID[] mine = new UUID[1];
+        List<ChunkPos> forcedOnBoot1 = arenaChunks(site(level, 11));
         return List.of(
+                waitFor(() -> {
+                    if (com.player2.playerengine.util.ForcedChunkClear.lastRunCleared() != -1) {
+                        return "!the one-time forced-chunk clear ran again on the second start ("
+                                + com.player2.playerengine.util.ForcedChunkClear.lastRunCleared() + " cleared)";
+                    }
+                    for (ChunkPos c : forcedOnBoot1) {
+                        if (!level.getForcedChunks().contains(c.toLong())) {
+                            return "!chunk " + c.x + "," + c.z + " forceloaded on the first boot was un-forced";
+                        }
+                    }
+                    return "one-time clear skipped; " + forcedOnBoot1.size() + " chunks forceloaded on the first boot kept";
+                }, 5, "forced chunks never checked"),
                 waitFor(() -> {
                     List<UUID> owned = new ArrayList<>();
                     tickets.holders().forEach((c, o) -> {

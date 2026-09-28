@@ -462,3 +462,18 @@ needs no `playerengine/settings.txt` for it. `settings.txt` still overrides it.
 |---|---|
 | `common/src/main/java/com/player2/playerengine/automaton/api/Settings.java` | `allowOnlyExposedOres` defaults to `true` |
 | `common/src/main/java/com/player2/playerengine/util/PerceptionSelfTest.java` | checks the default |
+
+**A one-time clear of vanilla forced chunks.** gateway.7 and earlier held companion chunks as
+vanilla forced flags with no owner, and a crash could leave them forced for good; nothing can tell
+them from an operator's `/forceload`. On the first gateway.8 start of a world, every vanilla forced
+chunk in every dimension is un-forced once, each logged, and the world records the clear in
+`data/playerengine_forced_chunk_clear.dat`. It never runs again, so a chunk forced afterwards stays.
+Operators re-issue any `/forceload` they still want after that first start.
+
+| File | Change |
+|---|---|
+| `common/src/main/java/com/player2/playerengine/util/ForcedChunkClear.java` | new: the one-time clear and its world record |
+| `common/src/main/java/com/player2/playerengine/util/ForcedChunkClearSelfTest.java` | new: clears all once; a later start clears nothing |
+| `common/src/main/java/com/player2/playerengine/MCCommands.java` | runs the clear at server start, before the ticket sweep |
+| `common/src/main/java/com/player2/playerengine/companion/CompanionRulesSelfTest.java` | runs the clear self-test |
+| `common/src/main/java/com/player2/playerengine/smoke/SmokeHarness.java` | `spawn` reports the clear; `chunk-hold-restart` checks it was skipped and the first boot's forced chunks kept |
