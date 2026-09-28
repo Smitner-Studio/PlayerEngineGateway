@@ -430,3 +430,18 @@ else stops none and asks which. The speaker, not the owner, gets the acknowledge
 | `common/src/main/java/com/player2/playerengine/companion/CompanionRulesSelfTest.java` | runs the address self-test |
 | `common/src/main/java/com/player2/playerengine/smoke/SmokeHarness.java` | `far-owner` scenario |
 | `common/src/main/resources/assets/playerengine/lang/en_us.json` | too-far and which-one replies; smoke scenario list |
+
+**Model-turn caps.** Each speaking player gets 60 model turns an hour across all companions, and
+each companion 120 in total, over a rolling hour, whatever endpoint the companion uses (gx10 had no
+cap). A turn belongs to the player whose line is in it, or to the player whose chat started the
+chain for a command-feedback turn; another companion's chat counts only against the companion. Over
+either cap the companion says it is worn out and makes no model call.
+
+| File | Change |
+|---|---|
+| `common/src/main/java/com/player2/playerengine/player2api/TurnCaps.java` | new: rolling-hour caps per player and per companion |
+| `common/src/main/java/com/player2/playerengine/player2api/TurnCapsSelfTest.java` | new: turn 61 from one player and turn 121 on one companion make no call |
+| `common/src/main/java/com/player2/playerengine/player2api/AgentConversationData.java` | charges each turn before the model call; the tired line; request count |
+| `common/src/main/java/com/player2/playerengine/companion/CompanionRulesSelfTest.java` | runs the caps self-test |
+| `common/src/main/java/com/player2/playerengine/smoke/SmokeHarness.java` | `caps` scenario |
+| `common/src/main/resources/assets/playerengine/lang/en_us.json` | smoke scenario list |

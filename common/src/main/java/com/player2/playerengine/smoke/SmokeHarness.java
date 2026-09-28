@@ -157,6 +157,7 @@ public final class SmokeHarness {
             case "chunk-hold" -> chunkHold(level);
             case "attack" -> attackAPlayer(level);
             case "far-owner" -> farOwner(level);
+            case "caps" -> turnCaps(level);
             case "chunk-hold-restart" -> chunkHoldAfterRestart(level);
             case "goto" -> planWithInterruption(level, 6, Resume.NONE);
             case "restart" -> restart(level);
@@ -668,6 +669,39 @@ public final class SmokeHarness {
                     ConversationManager.noticeTap = null;
                     FakePlayers.teleport(owner, site.offset(0, 1, -3));
                 }));
+    }
+
+    /**
+     * Turn caps, with the player cap lowered to 3 for the run: a second player's first three lines
+     * each reach the model, the fourth makes no model call. The companion's request count is taken
+     * where the request is submitted.
+     */
+    private static List<Stage> turnCaps(ServerLevel level) {
+        requireCompanion();
+        BlockPos site = arena(level, 17);
+        place(site, 0, -3, 0.5, 0.5);
+        FakePlayers.online(level, STRANGER_ID, STRANGER_NAME, site.offset(-2, 1, -2));
+        com.player2.playerengine.player2api.TurnCaps.SHARED.resetForSmoke(3,
+                com.player2.playerengine.player2api.TurnCaps.PER_COMPANION_PER_HOUR);
+        long[] base = new long[1];
+        List<Stage> stages = new ArrayList<>();
+        stages.add(act(() -> base[0] = companion().getModelRequestCount()));
+        for (int i = 1; i <= 3; i++) {
+            int turn = i;
+            stages.add(act(() -> say(STRANGER_ID, STRANGER_NAME, "how are you, turn " + turn)));
+            stages.add(waitFor(() -> companion().getModelRequestCount() >= base[0] + turn
+                            ? (turn == 3 ? "turns 1-3 each called the model" : "") : null,
+                    REFUSAL_WINDOW_SEC, () -> "turn " + turn + " never reached the model ("
+                            + (companion().getModelRequestCount() - base[0]) + " calls)"));
+        }
+        stages.add(act(() -> say(STRANGER_ID, STRANGER_NAME, "how are you, turn 4")));
+        stages.add(window(() -> companion().getModelRequestCount() > base[0] + 3
+                        ? "!turn 4 over the cap called the model" : null,
+                8, () -> "turn 4 over the cap made no model call"));
+        stages.add(act(() -> com.player2.playerengine.player2api.TurnCaps.SHARED.resetForSmoke(
+                com.player2.playerengine.player2api.TurnCaps.PER_PLAYER_PER_HOUR,
+                com.player2.playerengine.player2api.TurnCaps.PER_COMPANION_PER_HOUR)));
+        return stages;
     }
 
     /** Checklist 5: a waterlogged block in the shell makes the excavate refuse. */

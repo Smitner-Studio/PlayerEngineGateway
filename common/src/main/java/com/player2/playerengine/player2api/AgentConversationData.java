@@ -228,6 +228,9 @@ public class AgentConversationData {
     private final java.util.concurrent.ConcurrentLinkedQueue<Runnable> pendingPlanDispatch =
             new java.util.concurrent.ConcurrentLinkedQueue<>();
     private volatile boolean planLoaded;
+    /** Said instead of calling the model when a turn cap is reached ({@link TurnCaps}). */
+    static final String TIRED_LINE = "I'm worn out. Give me a little while before the next thing.";
+    private final java.util.concurrent.atomic.AtomicLong modelRequests = new java.util.concurrent.atomic.AtomicLong();
     /** The authenticated player (UUID, never name) whose chat started the chain in progress, or null. */
     private volatile UUID chainInitiator;
 
@@ -532,6 +535,16 @@ public class AgentConversationData {
                 releaseProcessing(turnTicket);
                 return;
             }
+        }
+
+        // A batch with a player's line is that player's turn; a feedback turn is the chain's.
+        UUID turnPlayer = lastUserInBatch != null ? lastUserUuid : chainInitiator;
+        if (!TurnCaps.SHARED.tryCharge(turnPlayer, mod.getPlayer().getUUID())) {
+            LOGGER.info("Turn cap reached for player={} or bot={}; no model call", turnPlayer, getName());
+            eventQueue.clear();
+            releaseProcessing(turnTicket);
+            onCharacterEvent.accept(new Event.CharacterMessage(TIRED_LINE, null, this, relayInitiator));
+            return;
         }
 
         Player2PayerResolution.ApiBillingContext billing = Player2PayerResolution.resolve(mod, chainInitiatorUsername,
@@ -914,7 +927,13 @@ public class AgentConversationData {
         }
         activeLlmCompleter = completer;
         activeLlmSubmission = submission;
+        modelRequests.incrementAndGet();
         return true;
+    }
+
+    /** Decision requests this companion has sent to the model since it was created. */
+    public long getModelRequestCount() {
+        return modelRequests.get();
     }
 
     /**
