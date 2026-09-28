@@ -60,8 +60,9 @@ import org.apache.logging.log4j.Logger;
  * ({@link SmokeGate}). The pack's {@code task companion-eval} drives it and pools the results.
  *
  * <p>{@code mode} is {@code real} (natural-language asks, answered by whatever model
- * {@code PLAYERENGINE_GATEWAY_URL} serves) or {@code mock} (the {@code SMOKE-CMD:} marker the
- * loopback mock echoes, for red witnesses that must not depend on the model's judgement), plus
+ * {@code PLAYERENGINE_GATEWAY_URL} serves) or {@code mock} (the marker the loopback mock echoes: a
+ * {@code SMOKE-CMD:} command line on a command build, the same order as a {@code SMOKE-PROGRAM:}
+ * program on a program build; for red witnesses that must not depend on the model's judgement), plus
  * {@code +noseed} to skip seeding the player-placed store ({@code grief-bounds}' witness).
  *
  * <p>Each run stamps its arena from a structure template (the pack's
@@ -503,7 +504,7 @@ public final class EvalHarness {
         MinecraftServer server = mod().getPlayer().getServer();
         return new Stage(() -> startTick[0] = server.getTickCount(), () -> {
             long secs = (server.getTickCount() - startTick[0]) / 20;
-            acted[0] |= mod().getCommandDispatchSeq() > seq[0] || !mod().getPlanStatusLine().isEmpty();
+            acted[0] |= mod().getCommandDispatchSeq() > seq[0] || !statusLine().isEmpty();
             if (!acted[0]) {
                 return secs >= ACT_WINDOW_SEC ? "no command within " + ACT_WINDOW_SEC + " s" : null;
             }
@@ -515,7 +516,7 @@ public final class EvalHarness {
     private static boolean busy() {
         com.player2.playerengine.tasks.base.Task t = mod().getUserTaskChain().getCurrentTask();
         boolean task = t != null && !t.isFinished() && !t.getClass().getSimpleName().matches("IdleTask|FollowPlayerTask");
-        return task || !mod().getPlanStatusLine().isEmpty() || mod().getBaritone().getBuilderProcess().isActive()
+        return task || !statusLine().isEmpty() || mod().getBaritone().getBuilderProcess().isActive()
                 || modelPending();
     }
 
@@ -639,7 +640,7 @@ public final class EvalHarness {
     private static String botState() {
         com.player2.playerengine.tasks.base.Task task = mod().getUserTaskChain().getCurrentTask();
         return "task=" + (task == null ? "none" : task.getClass().getSimpleName()) + " plan='"
-                + mod().getPlanStatusLine() + "' at " + bot().blockPosition().toShortString();
+                + statusLine() + "' at " + bot().blockPosition().toShortString();
     }
 
     /**
@@ -647,13 +648,53 @@ public final class EvalHarness {
      * check the mock answered it), else the natural-language line. The pack runs call-by-name chat.
      */
     private static void order(Ask ask, UUID id, String name, String real, String mockCommand) {
-        String text = ask.mock() ? "SMOKE-CMD: " + mockCommand : real;
+        String text = !ask.mock() ? real : PROGRAMS ? "SMOKE-PROGRAM: " + asProgram(mockCommand)
+                : "SMOKE-CMD: " + mockCommand;
         if (ask.mock()) {
             LOGGER.info("[smoke] marker {}", text);
         } else {
             LOGGER.info("[eval] ask {}: {}", name, text);
         }
         ConversationManager.onUserChatMessage(new Event.UserMessage(character.shortName() + ", " + text, name, false, id));
+    }
+
+    /**
+     * Whether this build runs programs (companion stage 4) rather than command lines. Read reflectively,
+     * like everything newer than gateway.7 here, so {@code task witness-jar} still builds this class.
+     */
+    private static final boolean PROGRAMS = method(PlayerEngineController.class, "getJobStatusLine") != null;
+
+    private static java.lang.reflect.Method method(Class<?> c, String name) {
+        try {
+            return c.getMethod(name);
+        } catch (NoSuchMethodException e) {
+            return null;
+        }
+    }
+
+    /** The job line on a program build, the plan line on a command build. */
+    private static String statusLine() {
+        java.lang.reflect.Method m = method(PlayerEngineController.class, PROGRAMS ? "getJobStatusLine" : "getPlanStatusLine");
+        try {
+            return m == null ? "" : String.valueOf(m.invoke(mod()));
+        } catch (ReflectiveOperationException e) {
+            return "";
+        }
+    }
+
+    /** A mock command line as the program that gives the same order (single quotes: the mock reads JSON text). */
+    static String asProgram(String line) {
+        String[] t = line.trim().split("\\s+", 2);
+        String rest = t.length > 1 ? t[1] : "";
+        String[] a = rest.split("\\s+");
+        return switch (t[0]) {
+            case "excavate" -> "api.excavate(box(pos(" + a[0] + ", " + a[1] + ", " + a[2] + "), pos(" + a[3] + ", "
+                    + a[4] + ", " + a[5] + ")));";
+            case "deposit_to_storage" -> "api.store(pos(" + a[0] + ", " + a[1] + ", " + a[2] + "), '"
+                    + rest.split("\\s+", 4)[3] + "');";
+            case "mine" -> "api.mine('" + a[0] + "', " + a[1] + ");";
+            default -> "api." + t[0] + "('" + rest + "');";
+        };
     }
 
     /** Model turns are capped per player and per companion from gateway.8 on; a sweep would hit them. */

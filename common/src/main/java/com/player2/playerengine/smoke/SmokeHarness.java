@@ -670,8 +670,9 @@ public final class SmokeHarness {
 
     /**
      * F1: a sponge (breaks by hand, never natural here) sealed in dirt three blocks from the companion
-     * is not a target: {@code mine sponge} leaves it alone. With the dirt above it gone, the same
-     * command mines it, so the filter hides only what a player could not see.
+     * is not a target: {@code api.mine('sponge', 1)} leaves it alone. With the dirt above it gone, the
+     * same program mines it, so the filter hides only what a player could not see. Grief bounds: a
+     * player-placed sponge, nearer and exposed, is never the one taken, so mining leaves builds alone.
      */
     private static List<Stage> xray(ServerLevel level) {
         requireCompanion();
@@ -683,6 +684,10 @@ public final class SmokeHarness {
         long[] seq = new long[1];
         Supplier<String> taken = () -> level.getBlockState(hidden).is(Blocks.SPONGE) ? null
                 : "!the sealed sponge at " + hidden.toShortString() + " was mined";
+        BlockPos built = site.offset(1, 1, -2);
+        String dim = level.dimension().location().toString();
+        Supplier<String> griefed = () -> level.getBlockState(built).is(Blocks.SPONGE) ? null
+                : "!the player-placed sponge at " + built.toShortString() + " was mined";
         return List.of(
                 act(() -> {
                     seq[0] = mod().getCommandDispatchSeq();
@@ -693,14 +698,23 @@ public final class SmokeHarness {
                 act(() -> {
                     mod().stop();
                     level.setBlockAndUpdate(hidden.above(), Blocks.AIR.defaultBlockState());
+                    level.setBlockAndUpdate(built, Blocks.SPONGE.defaultBlockState());
+                    PlayerPlacedBlockStore.get().add(dim, built);
                 }),
                 act(() -> say(OWNER_ID, OWNER_NAME, "SMOKE-PROGRAM: api.mine('sponge', 1);")),
-                waitFor(() -> level.getBlockState(hidden).is(Blocks.SPONGE) ? null : "exposed sponge mined",
-                        90, () -> "the exposed sponge was not mined: " + botState()),
+                waitFor(() -> {
+                    String hit = griefed.get();
+                    return hit != null ? hit : level.getBlockState(hidden).is(Blocks.SPONGE) ? null
+                            : "exposed sponge mined, the nearer player-placed one left alone";
+                }, 90, () -> "the exposed sponge was not mined: " + botState()),
+                window(griefed, 3, () -> ""),
                 waitFor(() -> mod().getJobStatusLine().contains("| running") ? null
                                 : "job " + (mod().getJobStatusLine().isEmpty() ? "done" : mod().getJobStatusLine()),
                         60, () -> "the mine job is still running: " + mod().getJobStatusLine()),
-                act(() -> say(OWNER_ID, OWNER_NAME, "stop")),
+                act(() -> {
+                    say(OWNER_ID, OWNER_NAME, "stop");
+                    PlayerPlacedBlockStore.get().remove(dim, built);
+                }),
                 waitFor(() -> mod().getJobStatusLine().isEmpty() ? "" : null, 10,
                         () -> "the stop left job '" + mod().getJobStatusLine() + "'"));
     }
