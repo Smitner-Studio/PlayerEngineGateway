@@ -624,6 +624,18 @@ plan 116 planner + 67 area checks), and so is `task build`.
 | liquid in the box or shell refuses the scan | `liquidsRefuseIncludingWaterlogged` | liquid check in `AreaScan.scan` → `if (false)`: NPE on the null refusal at the waterlogged-shell check (`AreaSelfTest.java:175`) | 3c1ca2d | Proven |
 | the fluid state marks waterlogged blocks as water | `fluidStateMarksWaterloggedBlocksAsWater` via `AreaCommand.liquidName` on real block states | decide by `LiquidBlock` type: "a waterlogged slab is water" | 8ccf34e | Proven |
 | an error or chat line for an offline owner is skipped, not thrown on the tick (**bug, fixed**; found on a boot-gate server) | `OfflineOwnerChatSelfTest` in `:common:companionSelfTest`, calling `AgentSideEffects.onError` / `broadcastChatToPlayer` with a null player | the shipped unguarded helper: NPE "because \"player\" is null" → "an error with no online owner is logged, not thrown"; green after, companion 598 → 601 | 4b7ff21 | Proven |
+| a working companion away from players never steps into a chunk that does not tick it (**bug, fixed**; found by the live smoke gate) | `ChunkHoldSelfTest` in `:common:companionSelfTest` via `ChunkLoadingTracker.chunksToHold`; live: `task companion-smoke ONLY=stop,plan` | the shipped floor/ceil 2x2 set: "at 366.97,32.5 the companion can step into chunk 21,1, so it is held"; green after, companion 601 → 673. Live, before: `plan FAIL: timeout after 240 s: boxes 16 and 18 left ... builder=active runner=on chain=User Tasks` on 4 of 4 `stop,plan` runs, with the companion's tick count frozen in an unforced chunk; after: `plan ok: ... continue resumed it; both boxes cleared` | fb48bd4 | Proven |
+
+Found by the same gate and **not fixed** (INFERRED production reach, each needs an owner decision):
+
+- `ChunkController.unload` calls `setChunkForced(false)` on a chunk that something else forced
+  first (an operator's `/forceload`, the smoke arena). That shared flag is what released the chunk
+  in the hang above. A refcount cannot tell the cases apart after a restart, because forced chunks
+  persist in the save; a non-persistent ticket would, but changes what stays loaded across a restart.
+- The first model turn of a fresh `AgentConversationData` is forced to `bodylang greeting` and skips
+  the plan and owner handling. When Player2NPC reattaches a companion that was saved in the world, no
+  greeting event is queued, so the owner's first line ("continue", a plan) is spent on the greeting.
+  The live restart scenario hit this before its fake owner quit at shutdown.
 
 Before 8ccf34e, the shared-budget wiring and the fluid-state mapping could not go red: the budget test built
 its own shared `PlanBudget`, and the map-backed scan test was handed `liquid="water"`, so it never
