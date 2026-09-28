@@ -459,6 +459,47 @@ public class PlayerEngineController {
       this.userTaskChain.cancel(this);
    }
 
+   // Incremented by every command line CommandExecutor runs, whatever sent it. A plan step that
+   // finishes after a later dispatch was superseded, even though it reports Finished.
+   private final java.util.concurrent.atomic.AtomicLong commandDispatchSeq = new java.util.concurrent.atomic.AtomicLong();
+   private volatile com.player2.playerengine.tasks.construction.area.AreaSpec.Box lastArea;
+   private volatile String planStatusLine = "";
+   private volatile long lastOwnerMessageMillis;
+
+   public long bumpCommandDispatchSeq() {
+      return this.commandDispatchSeq.incrementAndGet();
+   }
+
+   public long getCommandDispatchSeq() {
+      return this.commandDispatchSeq.get();
+   }
+
+   /** The last box an area command finished, for {@code anchor=last} and the model's status. */
+   public com.player2.playerengine.tasks.construction.area.AreaSpec.Box getLastArea() {
+      return this.lastArea;
+   }
+
+   public void setLastArea(com.player2.playerengine.tasks.construction.area.AreaSpec.Box box) {
+      this.lastArea = box;
+   }
+
+   public String getPlanStatusLine() {
+      return this.planStatusLine;
+   }
+
+   public void setPlanStatusLine(String line) {
+      this.planStatusLine = line == null ? "" : line;
+   }
+
+   /** Wall-clock time of the last chat line from the authenticated owner. */
+   public long getLastOwnerMessageMillis() {
+      return this.lastOwnerMessageMillis;
+   }
+
+   public void markOwnerMessage(long millis) {
+      this.lastOwnerMessageMillis = millis;
+   }
+
    public CommandExecutor getCommandExecutor() {
       return this.commandExecutor;
    }

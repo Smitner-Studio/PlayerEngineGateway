@@ -2,7 +2,7 @@
 
 ## TLDR: Plan memory in the main chat loop, plus bounded, verified area commands (excavate, fill) on the embedded Baritone builder
 
-Status: reviewed (Fable, 2026-09-27); implementation WIP, see section 7. Section 6 records the resolutions and is binding: where it
+Status: reviewed (Fable, 2026-09-27); shipped as gateway.6, see section 7. Section 6 records the resolutions and is binding: where it
 differs from sections 3-5, section 6 wins. Implementation is on `feat/planner-area-commands`,
 branched from `gateway` at gateway.5 (d669af0).
 
@@ -599,6 +599,55 @@ runs on a multiplayer server.
 | the time-derived size cap | 9×4×9 stone with a stone pickaxe accepted; 16×8×16 with a wooden pickaxe refused, with a suggested size | drop the time cap → accepted |
 | fluid and falling-block pre-scan | map-backed fake: waterlogged cell in the shell → refused; a 3-high gravel column → folded in; a 7-high column → refused | skip the fluid-state check → accepted |
 
+### Red-witness runs (2026-09-28)
+
+Each row removes or breaks one property in the source, runs `:common:planSelfTest`, and restores
+the bytes. The quoted text is the assertion that failed. "Commit" is the code the mutation was
+applied to: 3c1ca2d for tests that existed at the WIP commit, otherwise the commit that added the
+test or fix. With every mutation restored, `task test` is green at 8ccf34e (gateway 27, companion 598,
+plan 116 planner + 67 area checks), and so is `task build`.
+
+| Criterion | Production-path test | Red witness (mutation → failing assertion) | Commit | Verdict |
+|---|---|---|---|---|
+| a superseded step (reported Finished) pauses the plan | `supersededStepReportedAsFinishedPausesThePlan` | seq check in `onStepStopped` → `if (false)`: "superseded step pauses the plan" | 3c1ca2d | Proven |
+| a line with a gesture and a command moves the seq (**bug, fixed**) | `everyLineThatRunsACommandMovesTheSeq` via `CommandExecutor.countsAsDispatch` | restore the shipped `startsWith("bodylang")` rule: "a gesture in front of a command still replaces the running step" | 5089771 | Proven |
+| `CommandExecutor.execute` bumps the seq | none | call site → `if (false)`: suite stays green | 5089771 | **Unproven**: needs a live controller; in-game smoke |
+| `;` in a plan step is refused | `parserShapes` | drop the `;` rule in `PlanParser`: "';' injection refused" | 3c1ca2d | Proven |
+| a non-owner turn cannot plan, resume or cancel | `nonOwnerCannotPlanOrResume` | `authorised = true`: "refusal told" | 3c1ca2d | Proven |
+| ownership is the authenticated UUID, never the name | `ownershipIsTheAuthenticatedUuid` via `OwnerGate.isOwner` / `OwnerGate.turn` | accept a message with no UUID: "the owner's name without an authenticated UUID is not the owner" | 6b679ff | Proven |
+| an owner-only command in any `;` part is refused (**bug, fixed**) | `ownerOnlyCommandsAreFoundInEverySemicolonPart` via `OwnerGate.ownerOnlyCommandIn` | check the first part only, as shipped: "an owner-only command after ';' is found" | 6b679ff | Proven |
+| a plan sent on the owner chain's feedback turn is charged to the owner (**bug, fixed**) | `feedbackTurnInOwnerChainCanStartAPlan` | feedback-turn initiator `null`, as shipped: "a feedback turn in the owner's chain is the owner's" | 6b679ff | Proven |
+| the budget is keyed per owner | `budgetIsPerOwnerAcrossCompanions` | one key for everyone in `PlanBudget`: "another owner's allowance is separate" | 3c1ca2d | Proven |
+| companions share the server-wide budget (the loop's wiring) | `companionsShareTheServerBudget` via `PlanCoordinator(Host)` | a fresh `PlanBudget` per coordinator: "a third companion cannot extend the owner's hour" | 8ccf34e | Proven |
+| a step running past 25 min is cancelled and repaired | `stepThatRunsTooLongIsStoppedAndRepaired` | timeout branch in `tick` → `if (false)`: "timed-out step stopped" | 3c1ca2d | Proven |
+| a dig estimated over 20 min is refused with a size that fits | `timeDerivedSizeCap` | drop the `MAX_STEP_SECONDS` refusal: "16x8x16 of stone with a wooden pickaxe is refused…: null" | 3c1ca2d | Proven |
+| liquid in the box or shell refuses the scan | `liquidsRefuseIncludingWaterlogged` | liquid check in `AreaScan.scan` → `if (false)`: NPE on the null refusal at the waterlogged-shell check (`AreaSelfTest.java:175`) | 3c1ca2d | Proven |
+| the fluid state marks waterlogged blocks as water | `fluidStateMarksWaterloggedBlocksAsWater` via `AreaCommand.liquidName` on real block states | decide by `LiquidBlock` type: "a waterlogged slab is water" | 8ccf34e | Proven |
+| an error or chat line for an offline owner is skipped, not thrown on the tick (**bug, fixed**; found on a boot-gate server) | `OfflineOwnerChatSelfTest` in `:common:companionSelfTest`, calling `AgentSideEffects.onError` / `broadcastChatToPlayer` with a null player | the shipped unguarded helper: NPE "because \"player\" is null" → "an error with no online owner is logged, not thrown"; green after, companion 598 → 601 | 4b7ff21 | Proven |
+| a working companion away from players never steps into a chunk that does not tick it (**bug, fixed**; found by the live smoke gate) | `ChunkHoldSelfTest` in `:common:companionSelfTest` via `ChunkLoadingTracker.chunksToHold`; live: `task companion-smoke ONLY=stop,plan` | the shipped floor/ceil 2x2 set: "at 366.97,32.5 the companion can step into chunk 21,1, so it is held"; green after, companion 601 → 673. Live, before: `plan FAIL: timeout after 240 s: boxes 16 and 18 left ... builder=active runner=on chain=User Tasks` on 4 of 4 `stop,plan` runs, with the companion's tick count frozen in an unforced chunk; after: `plan ok: ... continue resumed it; both boxes cleared` | fb48bd4 | Proven |
+
+Found by the same gate and **not fixed** (INFERRED production reach, each needs an owner decision):
+
+- `ChunkController.unload` calls `setChunkForced(false)` on a chunk that something else forced
+  first (an operator's `/forceload`, the smoke arena). That shared flag is what released the chunk
+  in the hang above. A refcount cannot tell the cases apart after a restart, because forced chunks
+  persist in the save; a non-persistent ticket would, but changes what stays loaded across a restart.
+- The first model turn of a fresh `AgentConversationData` is forced to `bodylang greeting` and skips
+  the plan and owner handling. When Player2NPC reattaches a companion that was saved in the world, no
+  greeting event is queued, so the owner's first line ("continue", a plan) is spent on the greeting.
+  The live restart scenario hit this before its fake owner quit at shutdown.
+
+Before 8ccf34e, the shared-budget wiring and the fluid-state mapping could not go red: the budget test built
+its own shared `PlanBudget`, and the map-backed scan test was handed `liquid="water"`, so it never
+exercised the adapter. The self-test has no datapack tags bound, so it asserts only that lava is a
+liquid, not that it is labelled "lava".
+
+Not witnessed (production wiring that has no test double; the in-game smoke covers it):
+
+- `AgentConversationData` calling `OwnerGate` (the gate's logic is witnessed; the call sites are not);
+- the tick-deferred dispatch's own seq check in `PlanHost.dispatch`;
+- the seq bump at the `CommandExecutor.execute` call site (row above).
+
 ### Decisions made while implementing
 
 - The box grammar's coordinate anchor is written `anchor=x,y,z`, so it cannot be confused with the
@@ -623,7 +672,11 @@ runs on a multiplayer server.
 - the ACTIVE-REPLACE ordering on a live `UserTaskChain`. The unit test drives the seq directly; the
   ordering claim rests on reading `UserTaskChain.java:472-560`.
 
-## 7. Status and next steps (2026-09-27, end of session)
+## 7. Status and next steps (shipped as gateway.6, 2026-09-28)
+
+**Shipped as gateway.6** on `feat/companion-smoke` (the release commit bumps `mod_version` and adds
+the NOTICE and README sections). The merge into `gateway` and the pack update are still to do. The
+text below is the state at the WIP commit.
 
 Branch `feat/planner-area-commands`, in worktree `../PlayerEngineGateway-planner`, cut from
 `gateway` at d669af0 (gateway.5). It is committed as WIP and is **not** merged into `gateway`. The
@@ -643,7 +696,7 @@ pack is untouched.
   - `activePlan` and `lastArea` in `AgentStatus`;
   - the system-prompt paragraph.
 - The dispatch seq: `PlayerEngineController.commandDispatchSeq`, incremented in
-  `CommandExecutor.execute` (not for `bodylang`), and an accepted-seq hook in
+  `CommandExecutor.execute` (not for a line of gestures only), and an accepted-seq hook in
   `AgentSideEffects.onCommandListGenerated`.
 - `Command.isIdempotent()`, true for `goto`, `excavate` and `fill`.
 - The area commands:
@@ -661,9 +714,12 @@ pack is untouched.
 
 **Next**
 
-1. **Red-witness runs.** Mutate each property and confirm its test fails, one per 🔴 row at least:
-   the seq check, the `;` rule, the owner check, the per-owner budget key, the time cap, and the
-   fluid-state liquid scan. Record the results in the table.
+1. **Red-witness runs: done (2026-09-28).** See "Red-witness runs" in section 6. They found three
+   bugs, each fixed with a witness: an owner-only command after `;` in a reply (6b679ff); a plan on
+   a feedback turn refused for want of an initiator (6b679ff); and a `bodylang …; <command>` line
+   that did not move the seq (5089771). Tests were added for the fluid-state mapping and the budget
+   wiring (8ccf34e). Gates at 8ccf34e: `task test` green (gateway 27, companion 598, plan 116
+   planner + 67 area checks), and `task build` green.
 2. **In-game smoke on a local instance, not the NAS server.**
    - Ask Ada for "a 7 by 3 by 7 room here" and a two-step plan.
    - Say "continue" after an interruption.
@@ -671,10 +727,13 @@ pack is untouched.
    - Place a block beside the box and check it is never broken.
    - Waterlogged refusal.
    - Restart with a paused plan.
+   - While a plan step runs, give Ada a direct `@goto` of your own; the plan must pause, not
+     advance (the seq bump at the `CommandExecutor.execute` call site has no unit witness).
+   - Have a second player ask Ada to dig; she must decline (the `OwnerGate` call sites).
 3. **Review points still open:**
    - the loop does not yet charge "continue" turns that the resume phrase handles when no plan
      exists (harmless);
    - `AreaBuildTask` relies on `onStart` being re-run after a chain interruption. Verify that in game.
 4. **Ship:** version `gateway.6`, NOTICE (files table, protection policy, Sable gap, drop despawn)
-   and README (plan field, area commands), merge into `gateway`, then in the pack
+   and README (plan field, area commands): done in the gateway.6 release commit. Still to do: merge into `gateway`, then in the pack
    `task companion-build` and `task check`, CHANGELOG, and a README companion section with examples.

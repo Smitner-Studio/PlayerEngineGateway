@@ -2,6 +2,7 @@ package com.player2.playerengine.trackers;
 
 import com.player2.playerengine.PlayerEngineController;
 import com.player2.playerengine.util.ChunkController;
+import net.minecraft.core.SectionPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.LivingEntity;
@@ -41,14 +42,7 @@ public class ChunkLoadingTracker {
 //            playerLastSeen = -1;
 //            return false;
 //        }
-        double x = entity.getX() / 16;
-        double z = entity.getZ() / 16;
-
-        List<ChunkPos> list = new ArrayList<ChunkPos>();
-        list.add(new ChunkPos(Mth.floor(x), Mth.floor(z)));
-        list.add(new ChunkPos(Mth.ceil(x), Mth.ceil(z)));
-        list.add(new ChunkPos(Mth.floor(x), Mth.ceil(z)));
-        list.add(new ChunkPos(Mth.ceil(x), Mth.floor(z)));
+        List<ChunkPos> list = chunksToHold(entity.getX(), entity.getZ());
 
         for(ChunkPos chunk : list){
             if(!chunks.contains(chunk)){
@@ -63,6 +57,23 @@ public class ChunkLoadingTracker {
 
         this.chunks = list;
         return false;
+    }
+
+    /**
+     * The companion's chunk and its eight neighbours. A forced chunk ticks entities only inside
+     * itself, and this tracker runs from the companion's own tick: a step into a chunk it does not
+     * hold would freeze it there for good, with nothing left to force that chunk.
+     */
+    static List<ChunkPos> chunksToHold(double blockX, double blockZ) {
+        int cx = SectionPos.blockToSectionCoord(Mth.floor(blockX));
+        int cz = SectionPos.blockToSectionCoord(Mth.floor(blockZ));
+        List<ChunkPos> list = new ArrayList<ChunkPos>(9);
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dz = -1; dz <= 1; dz++) {
+                list.add(new ChunkPos(cx + dx, cz + dz));
+            }
+        }
+        return list;
     }
 
     public void reset() {

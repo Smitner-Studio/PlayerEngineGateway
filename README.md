@@ -77,6 +77,27 @@
 > | `hunger` | unset | `true`/`false` overrides `hungerEnabled` in `playerengine/playerengine_settings.json` |
 > | `progressChat` | `off` | task progress in chat: `all`, `milestones` (outcomes and failures) or `off` |
 > | `peerReplies` | `1` | answers a companion may give other companions, only when named, before a human speaks again; `0` = never |
+>
+> **Long jobs (plans and area commands).** Ask your companion in chat; it turns the request into
+> commands itself. Only its owner can give it a plan or an area job; anyone else is declined.
+>
+> | You say | What the companion runs |
+> |---|---|
+> | "dig out a 7 by 3 by 7 room here" | `excavate 7 3 7 anchor=owner` (7 wide, 3 high, 7 deep, starting one block in front of you) |
+> | "make the room 5 longer to the north" | `excavate 7 3 5 anchor=last facing=north` (extends the last area) |
+> | "clear from 100 60 -20 to 108 63 -12" | `excavate 100 60 -20 108 63 -12` (two corners, inclusive) |
+> | "put a cobblestone floor in it" | `fill cobblestone <x1> <y1> <z1> <x2> <y2> <z2>` (corners from the last area) |
+> | "dig a room, floor it and pick up the drops" | a plan of 2 or 3 steps: `excavate …`, `fill …`, `pickup_drops` |
+>
+> One `excavate` is at most 32 wide, 8 high and about 20 minutes of digging; bigger jobs become
+> several plan steps. It leaves blocks people placed and containers standing, never breaks your
+> blocks next to the box, and refuses a box beside water or lava. `fill` needs the blocks in the
+> companion's inventory and says how many are missing. Drops left in a dug room despawn after 5
+> minutes unless the plan ends with `pickup_drops`.
+>
+> If a plan is interrupted (another command replaces a step, or the server restarts), it pauses. Say
+> **continue** (or "keep going", "carry on", "resume") to pick it up where it stopped. Say
+> **stop** to end the current job and drop the plan.
 
 [![Player2 AI Game Jam](https://img.shields.io/badge/Player2-AI_Game_Jam-blueviolet)](https://itch.io/jam/ai-npc-jam)
 [![Powered by Automatone](https://img.shields.io/badge/Powered%20by-Automatone-orange)](https://github.com/Ladysnake/Automatone/tree/1.20)

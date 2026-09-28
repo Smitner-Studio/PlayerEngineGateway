@@ -427,6 +427,15 @@ public class ConversationManager {
                 despwnCompanion(k);
             }
         });
+        queueData.forEach((k, v) -> {
+            if (v.getMod().getPlayer().getServer() == server) {
+                try {
+                    v.tickPlan();
+                } catch (RuntimeException e) {
+                    LOGGER.error("[Plan] tick failed for bot={}", v.getName(), e);
+                }
+            }
+        });
 
         Consumer<Event.CharacterMessage> onCharacterEvent = (data) -> {
             AgentSideEffects.onEntityMessage(server, data);
@@ -503,9 +512,14 @@ public class ConversationManager {
      * of the next dispatch.
      */
     public static QueueClearSummary clearPendingWork() {
+        return clearPendingWork(true);
+    }
+
+    /** As {@link #clearPendingWork()}; with {@code dropPlans} false each companion keeps its saved plan. */
+    public static QueueClearSummary clearPendingWork(boolean dropPlans) {
         int queuesCleared = 0;
         for (AgentConversationData data : queueData.values()) {
-            data.resetForClear();
+            data.resetForClear(dropPlans);
             queuesCleared++;
         }
         int bucketsShutdown = llmLanes.shutdownAll();

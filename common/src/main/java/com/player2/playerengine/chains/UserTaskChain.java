@@ -275,6 +275,11 @@ public class UserTaskChain extends SingleTaskChain {
       this.abandonAndFinishSuspended(incomingIdle, incomingOnFinish);
    }
 
+   /** True while {@link #runIdleCommand} runs the configured idle command. */
+   public boolean isInstallingIdleCommand() {
+      return this.installingIdleCommandTask;
+   }
+
    /**
     * Scopes a configurable idle command's synchronous task installation. Any task it submits is
     * routed through {@link #runIdleTask}, so a re-entrant/configured idle command cannot replace

@@ -25,6 +25,10 @@ import com.player2.playerengine.player2api.UserBlacklistPolicy;
 import com.player2.playerengine.player2api.AgentSideEffects.CommandExecutionStopReason;
 import com.player2.playerengine.player2api.Event.InfoMessage;
 import com.player2.playerengine.player2api.config.Player2ServerConfigHolder;
+import com.player2.playerengine.player2api.plan.OwnerGate;
+import com.player2.playerengine.player2api.plan.PlanCoordinator;
+import com.player2.playerengine.player2api.plan.PlanParser;
+import com.player2.playerengine.player2api.plan.PlanStore;
 import com.player2.playerengine.player2api.config.Player2ServerRuntimeConfig;
 import com.player2.playerengine.player2api.status.AgentStatus;
 import com.player2.playerengine.player2api.status.StatusUtils;
@@ -209,6 +213,15 @@ public class AgentConversationData {
      */
     private volatile Runnable fallbackTimerCancel = null;
 
+    /** Long-horizon work: plan memory for this companion (see PlanCoordinator). */
+    private final PlanCoordinator planCoordinator = new PlanCoordinator(new PlanHost());
+    /** Plan step dispatches wait for the next server tick, outside any task-chain callback. */
+    private final java.util.concurrent.ConcurrentLinkedQueue<Runnable> pendingPlanDispatch =
+            new java.util.concurrent.ConcurrentLinkedQueue<>();
+    private volatile boolean planLoaded;
+    /** Whether the chain in progress was started by the authenticated owner (UUID, never name). */
+    private volatile boolean chainInitiatorIsOwner;
+
     public AgentConversationData(PlayerEngineController mod) {
         this.mod = mod;
     }
@@ -351,11 +364,24 @@ public class AgentConversationData {
 
     /** Clear pending events and per-round flags without disturbing persisted history. */
     public void resetForClear() {
+        resetForClear(true);
+    }
+
+    /**
+     * As {@link #resetForClear()}; with {@code dropPlan} false the plan stays in memory and in
+     * plan.json, so a server stop keeps it for the next start (where it loads PAUSED).
+     */
+    public void resetForClear(boolean dropPlan) {
         invalidateProcessingTurnAndClearEvents();
         synchronized (deferredInfoQueue) {
             deferredInfoQueue.clear();
         }
         chainInitiatorUsername = null;
+        chainInitiatorIsOwner = false;
+        if (dropPlan) {
+            planCoordinator.cancel("reset");
+        }
+        pendingPlanDispatch.clear();
         clearTtsCooldown();
         cachedRetrievalHits = List.of();
         cachedPromptIdHash = 0;
@@ -450,13 +476,21 @@ public class AgentConversationData {
         resetB5TurnState();
 
         String lastUserInBatch = null;
+        Boolean lastUserIsOwner = null;
         for (Event e : eventQueue) {
             if (e instanceof Event.UserMessage um) {
                 lastUserInBatch = um.userName();
+                boolean owner = isAuthenticatedOwner(um);
+                lastUserIsOwner = owner;
+                if (owner) {
+                    mod.markOwnerMessage(System.currentTimeMillis());
+                }
+                planCoordinator.onUserMessage(um.message(), owner);
             }
         }
         if (lastUserInBatch != null) {
             chainInitiatorUsername = lastUserInBatch;
+            chainInitiatorIsOwner = Boolean.TRUE.equals(lastUserIsOwner);
         }
 
         final String relayInitiator = lastUserInBatch != null ? lastUserInBatch : chainInitiatorUsername;
@@ -784,6 +818,8 @@ public class AgentConversationData {
      */
     public boolean cancelPendingModelActionsForOperatorStop() {
         LLMCompleter.CancellationOutcome cancellation = invalidateProcessingTurnAndClearEvents();
+        planCoordinator.cancel("owner stop");
+        pendingPlanDispatch.clear();
         boolean requestStillDraining = cancellation == LLMCompleter.CancellationOutcome.RETIREMENT_LIMIT_REACHED;
         commandAwaitingFinishAck = null;
         repeatedCommandFailureGuard.reset();
@@ -1186,6 +1222,13 @@ public class AgentConversationData {
         // start-of-turn streak the model saw was already baked into the reminder back in process()
         // (getReminderStringFromLastEvent) BEFORE this point, so mutating the counter now is correct.
         boolean isPeerTurn = lastEvent instanceof Event.CharacterMessage;
+        if (!greetingResponse && !isPeerTurn && conversationTurnGate.accepts(turnTicket)) {
+            command = applyPlanAndOwnership(jsonResp, lastEvent, command, cmdId);
+            cmdId = resolveCommandId(command);
+        } else if (isPeerTurn && ownerOnlyCommandIn(command) != null) {
+            command = null;
+            cmdId = null;
+        }
         boolean substantiveReply = !strippedMessage.isEmpty()
                 || (cmdId != null && !"idle".equals(cmdId))   // a real, non-idle command counts
                 || !validBoundaries.isEmpty();                 // a valid gesture counts
@@ -1242,6 +1285,126 @@ public class AgentConversationData {
                 acknowledgeCommandFinishRoundIfComplete(lastEvent, command);
                 releaseProcessing(turnTicket);
             }
+        }
+    }
+
+    /**
+     * Applies the reply's {@code plan} field and the owner-only rules, and returns the command the
+     * reply may still dispatch (null when the plan took over or the command was refused).
+     */
+    private String applyPlanAndOwnership(JsonObject jsonResp, Event lastEvent, String command, String cmdId) {
+        PlanCoordinator.Turn turn = OwnerGate.turn(lastEvent, ownerUuid(), chainInitiatorIsOwner);
+        String ownerOnly = ownerOnlyCommandIn(command);
+        if (ownerOnly != null && !turn.ownerTurn()) {
+            LOGGER.info("[Plan] refused owner-only command {} on a non-owner turn for bot={}", ownerOnly, getName());
+            addEventToQueue(new InfoMessage("Only your owner can ask you to dig out or fill an area, so you did "
+                    + "not start it. Decline politely in one short line."));
+            command = null;
+            cmdId = null;
+        }
+        if ("stop".equals(cmdId)) {
+            planCoordinator.cancel("stop command");
+        }
+        PlanParser.Result plan = PlanParser.parse(jsonResp.get("plan"), this::registeredCommandId);
+        boolean planTook = planCoordinator.onModelDecision(plan, command, turn);
+        return planTook ? null : command;
+    }
+
+    private String ownerOnlyCommandIn(String command) {
+        return OwnerGate.ownerOnlyCommandIn(command, mod.getCommandExecutor().getCommandPrefix(),
+                this::registeredCommandId);
+    }
+
+    private UUID ownerUuid() {
+        return mod.getOwner() == null ? null : mod.getOwner().getUUID();
+    }
+
+    /** The registered command id a step's first word names (aliases resolved), or null. */
+    private String registeredCommandId(String name) {
+        com.player2.playerengine.commands.base.Command c = mod.getCommandExecutor().getRegisteredCommand(name);
+        return c == null ? null : c.getName();
+    }
+
+    private boolean isAuthenticatedOwner(Event.UserMessage um) {
+        return OwnerGate.isOwner(um, ownerUuid());
+    }
+
+    /** Server tick: loads a saved plan once, runs queued step dispatches, then the plan clocks. */
+    public void tickPlan() {
+        if (!planLoaded && mod.getOwner() != null) {
+            planLoaded = true;
+            java.nio.file.Path file = mod.getAIPersistantData().getPlanFileOrNull();
+            planCoordinator.restore(PlanStore.load(file));
+        }
+        Runnable r;
+        while ((r = pendingPlanDispatch.poll()) != null) {
+            r.run();
+        }
+        planCoordinator.tick();
+    }
+
+    private final class PlanHost implements PlanCoordinator.Host {
+        @Override
+        public void dispatch(String line, PlanCoordinator.StepListener listener) {
+            long seqAtSchedule = mod.getCommandDispatchSeq();
+            pendingPlanDispatch.add(() -> {
+                if (mod.getCommandDispatchSeq() != seqAtSchedule) {
+                    // Another command started between scheduling and this tick: it wins.
+                    listener.stopped(PlanCoordinator.StopKind.CANCELLED, "another command started first");
+                    return;
+                }
+                AgentSideEffects.onCommandListGenerated(mod, line, reason -> {
+                    if (reason instanceof CommandExecutionStopReason.Finished f) {
+                        String note = f.note();
+                        if (note != null && note.startsWith(INFO_RESULT_NOTE_PREFIX)) {
+                            note = note.substring(INFO_RESULT_NOTE_PREFIX.length());
+                        }
+                        listener.stopped(PlanCoordinator.StopKind.FINISHED, note);
+                    } else if (reason instanceof CommandExecutionStopReason.Error e) {
+                        listener.stopped(PlanCoordinator.StopKind.ERROR,
+                                RepeatedCommandFailureGuard.boundedFailureReason(e.errMsg()));
+                    } else {
+                        listener.stopped(PlanCoordinator.StopKind.CANCELLED, null);
+                    }
+                }, listener::accepted);
+            });
+        }
+
+        @Override
+        public long currentSeq() {
+            return mod.getCommandDispatchSeq();
+        }
+
+        @Override
+        public void enqueueModelTurn(String info) {
+            addEventToQueue(new InfoMessage(info));
+        }
+
+        @Override
+        public void cancelRunningTask() {
+            mod.cancelUserTask();
+        }
+
+        @Override
+        public void persist(JsonObject planOrNull) {
+            PlanStore.save(mod.getAIPersistantData().getPlanFileOrNull(), planOrNull);
+        }
+
+        @Override
+        public boolean isIdempotent(String line) {
+            String first = line.trim().split("\\s+")[0];
+            com.player2.playerengine.commands.base.Command c = mod.getCommandExecutor().getRegisteredCommand(first);
+            return c != null && c.isIdempotent();
+        }
+
+        @Override
+        public void publishStatus(String line) {
+            mod.setPlanStatusLine(line);
+        }
+
+        @Override
+        public long now() {
+            return System.currentTimeMillis();
         }
     }
 

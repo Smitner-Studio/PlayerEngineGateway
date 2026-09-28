@@ -46,4 +46,8 @@ public interface IBuilderProcess extends IBaritoneProcess {
    void clearArea(BlockPos var1, BlockPos var2);
 
    List<BlockState> getApproxPlaceable();
+
+   /** Positions that must not be broken while set; the empty set clears it. */
+   default void setHardNoBreak(it.unimi.dsi.fastutil.longs.LongSet positions) {
+   }
 }

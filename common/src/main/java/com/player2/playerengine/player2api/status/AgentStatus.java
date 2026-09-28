@@ -35,7 +35,9 @@ public class AgentStatus extends ObjectStatus {
             .add("gamemode", StatusUtils.getGamemodeString(mod))
             .add("isOnBoat", String.valueOf(isOnBoat))
             .add("vehicleType", vehicleType)
-            .add("vehicleId", vehicleId);
+            .add("vehicleId", vehicleId)
+            .add("activePlan", mod.getPlanStatusLine().isEmpty() ? "none" : mod.getPlanStatusLine())
+            .add("lastArea", mod.getLastArea() == null ? "none" : mod.getLastArea().corners());
       // .add("taskTree", StatusUtils.getTaskTree(mod));
    }
 

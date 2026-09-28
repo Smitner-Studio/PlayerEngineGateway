@@ -132,6 +132,15 @@ public abstract class Command {
             com.player2.playerengine.player2api.AgentConversationData.INFO_RESULT_NOTE_PREFIX + payload);
    }
 
+   /**
+    * True when running this command again after an interruption cannot do harm or double its work,
+    * because it works towards a state of the world rather than counting actions. A plan resumed after
+    * a restart re-runs such a step directly; any other step goes back to the model first.
+    */
+   public boolean isIdempotent() {
+      return false;
+   }
+
    public String getHelpRepresentation() {
       StringBuilder sb = new StringBuilder(this.name);
 

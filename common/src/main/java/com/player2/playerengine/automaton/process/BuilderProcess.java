@@ -47,6 +47,8 @@ import com.player2.playerengine.automaton.utils.PathingCommandContext;
 import com.player2.playerengine.automaton.utils.schematic.MapArtSchematic;
 import com.player2.playerengine.automaton.utils.schematic.SchematicSystem;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
+import it.unimi.dsi.fastutil.longs.LongSet;
+import it.unimi.dsi.fastutil.longs.LongSets;
 import java.io.File;
 import java.io.FileInputStream;
 import java.util.ArrayList;
@@ -90,6 +92,8 @@ public final class BuilderProcess extends BaritoneProcessHelper implements IBuil
    private int layer;
    private int numRepeats;
    private List<BlockState> approxPlaceable;
+   /** Positions no movement or build step may break while set (an area task's protected shell). */
+   private volatile LongSet hardNoBreak = LongSets.EMPTY_SET;
 
    public BuilderProcess(Baritone baritone) {
       super(baritone);
@@ -120,6 +124,11 @@ public final class BuilderProcess extends BaritoneProcessHelper implements IBuil
       this.layer = this.baritone.settings().startAtLayer.get();
       this.numRepeats = 0;
       this.observedCompleted = new LongOpenHashSet();
+   }
+
+   @Override
+   public void setHardNoBreak(LongSet positions) {
+      this.hardNoBreak = positions == null ? LongSets.EMPTY_SET : positions;
    }
 
    @Override
@@ -841,6 +850,9 @@ public final class BuilderProcess extends BaritoneProcessHelper implements IBuil
 
       @Override
       public double breakCostMultiplierAt(int x, int y, int z, BlockState current) {
+         if (BuilderProcess.this.hardNoBreak.contains(BlockPos.asLong(x, y, z))) {
+            return 1000000.0; // an area task's protected shell: never broken, unlike the finite protection cost
+         }
          if (!this.allowBreak) {
             return 1000000.0; // breaking disabled -> genuinely impossible (unrelated to protection)
          } else if (this.isProtected(x, y, z)) {

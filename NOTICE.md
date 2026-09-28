@@ -75,7 +75,7 @@ Files changed from upstream:
 | `common/src/main/java/com/player2/playerengine/player2api/Player2PayerResolution.java` | server-wide work is billable with no player online when the gateway is enabled |
 | `common/src/main/java/com/player2/playerengine/player2api/utils/AudioUtils.java` | text-to-speech skipped when the gateway is enabled |
 | `common/build.gradle` | `gatewaySelfTest` task |
-| `gradle.properties` | version `1.21.1-1.4.0-gateway.5` |
+| `gradle.properties` | version `1.21.1-1.4.0-gateway.6` |
 | `neoforge/src/main/resources/META-INF/neoforge.mods.toml` | display name "PlayerEngine (OpenAI-gateway fork)" |
 | `README.md`, `NOTICE.md`, `Taskfile.yml`, `.gitignore` | fork documentation and build entries |
 
@@ -161,3 +161,95 @@ players use for it (put, drop off, store, dump), so command retrieval finds it.
 | `common/src/main/java/com/player2/playerengine/chains/UserTaskChain.java` | skips a gesture that would drop a non-resumable task |
 | `common/src/main/java/com/player2/playerengine/automaton/utils/player/EntityContext.java` | slab check reads the feet's own chunk |
 | `common/src/main/java/com/player2/playerengine/{tasks/container/ContainerDeposit,player2api/PeerTalkPolicy,chains/GestureGuard,automaton/utils/player/FeetChunk}SelfTest.java` | new: self-tests run by `companionSelfTest` |
+
+## Companion plans and area commands (gateway.6)
+
+A companion's decision reply may carry a `plan`: a goal and up to 8 steps, one command line per
+step (a step containing `;` is refused). The first step starts at once and each later step is
+dispatched on the server tick after the previous one finishes. A step that another command
+replaced reports Finished upstream; here a dispatch counter (`commandDispatchSeq`, moved by every
+command line except a line of gestures only and the task chain's own idle fallback) marks it
+superseded, and the plan pauses instead of advancing. A failed step goes back to the model for a
+revised plan. Plans are budgeted per owner (24 model calls in a rolling hour across all their
+companions, 8 per plan), expire after 60 idle minutes, and cancel a step still running after 25
+minutes. A plan is saved to `plan.json` beside the companion's conversation files, survives a
+server stop, and loads paused; it resumes only when the owner says "continue" (or "keep going",
+"carry on", "resume" and a few similar whole-message phrases). `stop` drops the plan.
+
+Two area commands, `excavate` and `fill`, clear a box to air or fill it from the inventory through
+the embedded builder. A box is at most 32 per axis, 8 high, 2048 cells (512 for `fill`) and an
+estimated 20 minutes of survival digging, within 48 blocks of the companion, in the overworld,
+the nether or the end, inside the world border and outside spawn protection. A box with water
+(waterlogged blocks included) or lava in it or its shell is refused, as is a box under a column
+of more than 6 falling blocks. Success is judged from the world (every target cell cleared or
+filled), not from the builder going idle.
+
+**Owner only.** Creating, resuming or repairing a plan, and `excavate` or `fill` (sent directly,
+as a plan step, or in any `;` part of a line), are accepted only on a turn started by the
+companion's owner, decided by the authenticated sender UUID of the chat or voice packet, never by
+a name in the text. Anyone else is declined. Other commands keep upstream's rules.
+
+**Protection.** During an area job the companion does not break player-placed blocks inside the
+box or around it. Inside the box, player-placed blocks and block entities are left out of the
+targets and stay standing (more than 8 such cells refuse the box unless the owner repeats it with
+`confirm=yes`). In the box's shell (1 block on the sides and below, 2 above) player-placed blocks
+are a hard no-break for the builder (`BuilderProcess.setHardNoBreak`). Beyond the shell,
+upstream's finite break-cost penalty for player-placed blocks is unchanged.
+
+**Sable gap.** `AreaVetoes` is the hook where a "not on a Sable ship sub-level" refusal belongs,
+but this fork has no Sable dependency and no Sable API to ask, so the hook ships empty: an area
+command does not know whether a box lies on a Sable sub-level (`claude/planner-design.md` §6,
+"Where a box may be").
+
+**Drops.** `excavate` has no pickup sweep of its own. The companion collects what it walks
+through; anything left on the floor despawns after the vanilla 5 minutes unless a `pickup_drops`
+step follows the dig in the plan.
+
+**Smoke harness.** `/playerengine smoke <scenario>` (op-only; a fake owner and stranger drive a
+summoned companion against a mock model) exists only when the server JVM runs with
+`-Dplayerengine.smoke=true`. Without that property the command is not registered.
+
+Fixes in the same release: a chat or error line for an owner who is offline is logged and skipped
+instead of throwing on the server tick; a working companion holds its own chunk and all eight
+neighbours (upstream forced a floor/ceil 2x2 set that could miss the chunk it stepped into,
+freezing it there).
+
+| File | Change |
+|---|---|
+| `common/src/main/java/com/player2/playerengine/player2api/plan/PlanParser.java` | new: validates the `plan` field; one command per step; resume phrases |
+| `common/src/main/java/com/player2/playerengine/player2api/plan/CompanionPlan.java` | new: one companion's plan state |
+| `common/src/main/java/com/player2/playerengine/player2api/plan/PlanCoordinator.java` | new: plan lifecycle, supersession, clocks and repair under one monitor |
+| `common/src/main/java/com/player2/playerengine/player2api/plan/PlanBudget.java` | new: per-owner model-call budget for plans |
+| `common/src/main/java/com/player2/playerengine/player2api/plan/PlanStore.java` | new: `plan.json` load and save |
+| `common/src/main/java/com/player2/playerengine/player2api/plan/OwnerGate.java` | new: owner-only decision by authenticated UUID, across every `;` part |
+| `common/src/main/java/com/player2/playerengine/player2api/plan/PlanSelfTest.java` | new: planner and area-bound self-test with a mock model and host |
+| `common/src/main/java/com/player2/playerengine/tasks/construction/area/AreaSpec.java` | new: box grammar and bounds |
+| `common/src/main/java/com/player2/playerengine/tasks/construction/area/AreaScan.java` | new: pre-scan, time cap and verdict |
+| `common/src/main/java/com/player2/playerengine/tasks/construction/area/AreaBuildTask.java` | new: masked builder run, watchdog, settings save and restore |
+| `common/src/main/java/com/player2/playerengine/tasks/construction/area/AreaVetoes.java` | new: box veto hook, empty (Sable gap above) |
+| `common/src/main/java/com/player2/playerengine/tasks/construction/area/AreaSelfTest.java` | new: area self-test, run by `planSelfTest` |
+| `common/src/main/java/com/player2/playerengine/commands/AreaCommand.java` | new: shared `excavate`/`fill` command; world-border, spawn and dimension checks |
+| `common/src/main/java/com/player2/playerengine/commands/ExcavateCommand.java`, `commands/FillCommand.java` | new: the two area commands |
+| `common/src/main/java/com/player2/playerengine/PlayerEngineCommands.java` | registers `excavate` and `fill` |
+| `common/src/main/java/com/player2/playerengine/commands/base/Command.java` | `isIdempotent()`, default false |
+| `common/src/main/java/com/player2/playerengine/commands/GotoCommand.java` | idempotent, so "continue" re-dispatches it directly |
+| `common/src/main/java/com/player2/playerengine/commands/base/CommandExecutor.java` | moves the dispatch seq for each command line, not for gestures only or the idle fallback |
+| `common/src/main/java/com/player2/playerengine/PlayerEngineController.java` | dispatch seq, last area, plan status line, last owner message time |
+| `common/src/main/java/com/player2/playerengine/chains/UserTaskChain.java` | exposes whether the idle fallback is being installed |
+| `common/src/main/java/com/player2/playerengine/automaton/api/process/IBuilderProcess.java`, `automaton/process/BuilderProcess.java` | per-run hard no-break set for the shell |
+| `common/src/main/java/com/player2/playerengine/player2api/AgentConversationData.java` | `plan` field, owner gate, tick-deferred step dispatch, stop clears the plan, `plan.json` |
+| `common/src/main/java/com/player2/playerengine/player2api/AgentSideEffects.java` | reports the accepted dispatch seq; skips chat to an offline owner |
+| `common/src/main/java/com/player2/playerengine/player2api/OfflineOwnerChatSelfTest.java` | new: offline-owner chat self-test |
+| `common/src/main/java/com/player2/playerengine/player2api/AIPersistantData.java` | path of `plan.json` |
+| `common/src/main/java/com/player2/playerengine/player2api/manager/ConversationManager.java` | ticks plans; a server stop keeps saved plans |
+| `common/src/main/java/com/player2/playerengine/MCCommands.java` | keeps plans across a stop; registers the smoke command only under `-Dplayerengine.smoke=true` |
+| `common/src/main/java/com/player2/playerengine/player2api/Prompts.java` | `plan` field and long-jobs guidance in the system prompt |
+| `common/src/main/java/com/player2/playerengine/player2api/status/AgentStatus.java` | `activePlan` and `lastArea` in the model's status |
+| `common/src/main/java/com/player2/playerengine/retrieval/SeedToolMetadata.java` | retrieval documents for `excavate` and `fill`; removed from `mine` keywords |
+| `common/src/main/java/com/player2/playerengine/trackers/ChunkLoadingTracker.java` | holds the companion's chunk and its eight neighbours |
+| `common/src/main/java/com/player2/playerengine/trackers/ChunkHoldSelfTest.java` | new: chunk-hold self-test |
+| `common/src/main/java/com/player2/playerengine/companion/CompanionRulesSelfTest.java` | runs the offline-owner and chunk-hold self-tests |
+| `common/src/main/java/com/player2/playerengine/smoke/*` | new: op-only `/playerengine smoke <scenario>` live test harness (fake owner and stranger, mock-model scenarios) |
+| `common/src/main/resources/assets/playerengine/lang/en_us.json` | help text for the smoke command |
+| `common/build.gradle`, `Taskfile.yml` | `planSelfTest` and `smokeGateSelfTest` tasks, run by `task test` |
+| `gradle.properties` | version `1.21.1-1.4.0-gateway.6` |

@@ -34,6 +34,11 @@ public class CommandExecutor {
       this.mod = mod;
    }
 
+   /** The registered command a name or alias resolves to, or null. */
+   public Command getRegisteredCommand(String name) {
+      return name == null ? null : this.commandSheet.get(resolveName(name.toLowerCase(java.util.Locale.ROOT)));
+   }
+
    public void registerNewCommand(Command... commands) {
       for (Command command : commands) {
          if (this.commandSheet.containsKey(command.getName())) {
@@ -146,6 +151,11 @@ public class CommandExecutor {
          return;
       }
       line = line.substring(this.getCommandPrefix().length());
+      // The chain's own idle fallback after a task finishes is not a new order: bumping for it
+      // would make a plan's next step, scheduled in that same tick, look superseded.
+      if (countsAsDispatch(line) && !this.mod.getUserTaskChain().isInstallingIdleCommand()) {
+         this.mod.bumpCommandDispatchSeq();
+      }
       String[] parts = line.split(";");
       Command[] commands = new Command[parts.length];
 
@@ -162,6 +172,21 @@ public class CommandExecutor {
          onAccepted.run();
       }
       this.executeRecursive(commands, parts, 0, null, onFinish, onFinishWithNote, getException);
+   }
+
+   /**
+    * Whether a line (prefix removed) moves the command dispatch seq. Gestures suspend and resume the
+    * running task rather than replace it, so a line of gestures only does not count; any other part
+    * does, since every part runs.
+    */
+   public static boolean countsAsDispatch(String lineWithoutPrefix) {
+      for (String part : lineWithoutPrefix.split(";")) {
+         String p = part.trim();
+         if (!p.isEmpty() && !p.split("\\s+")[0].equalsIgnoreCase("bodylang")) {
+            return true;
+         }
+      }
+      return false;
    }
 
    public void execute(String line, Consumer<CommandException> getException) {

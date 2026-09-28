@@ -176,10 +176,10 @@ public class MCCommands {
         LifecycleEvent.SERVER_STOPPING.register(server -> {
             // On dedicated, drop queued AI work before tearing down executors so the next start
             // doesn't pick up a stuck queue. Integrated server keeps single-player conversation
-            // state for the next session.
+            // state for the next session. Plans are kept: plan.json loads PAUSED on the next start.
             if (server != null && server.isDedicatedServer()) {
                 try {
-                    ConversationManager.QueueClearSummary summary = ConversationManager.clearPendingWork();
+                    ConversationManager.QueueClearSummary summary = ConversationManager.clearPendingWork(false);
                     LOGGER.info("SERVER_STOPPING (dedicated): drained queues={} buckets={}",
                             summary.queuesCleared(), summary.bucketsShutdown());
                 } catch (Exception e) {
@@ -251,7 +251,7 @@ public class MCCommands {
 
     private static void registerFromDispatch(CommandDispatcher<CommandSourceStack> dispatcher) {
         contributeHelpEntries();
-        dispatcher.register(
+        dispatcher.register(com.player2.playerengine.smoke.SmokeGate.attach(
                 Commands.literal("playerengine")
                          .then(registerRelog())
                          .then(registerSummon())
@@ -261,7 +261,9 @@ public class MCCommands {
                          .then(registerCapability())
                          .then(registerResolve())
                          .then(registerMemory())
-                        .then(registerHelp()));
+                        .then(registerHelp()),
+                com.player2.playerengine.smoke.SmokeGate.enabled(),
+                com.player2.playerengine.smoke.SmokeHarness::register));
         // Coverage authority: walk the live merged dispatcher (both /playerengine and /player2npc
         // roots are already registered via their CommandRegistrationEvent paths before SERVER_STARTING)
         // and verify every counted leaf has a HelpEntry. One walk covers both mods.
