@@ -1,7 +1,5 @@
 package com.player2.playerengine.retrieval;
 
-import com.player2.playerengine.player2api.config.Player2ServerRuntimeConfig;
-
 /**
  * Config-shaped thresholds for {@link ToolRetriever#retrieveWithConfidence}.
  */
@@ -21,13 +19,5 @@ public record RetrievalConfidenceThresholds(
                 DEFAULT_WEAK_GAP_RATIO,
                 DEFAULT_WEAK_TOKEN_COVERAGE,
                 true);
-    }
-
-    public static RetrievalConfidenceThresholds fromConfig(Player2ServerRuntimeConfig config) {
-        return new RetrievalConfidenceThresholds(
-                config.getDeepCheckWeakBelowScoreClamped(),
-                config.getDeepCheckWeakGapRatioClamped(),
-                config.getDeepCheckWeakTokenCoverageClamped(),
-                config.isForceDeepCheckOnEmpty());
     }
 }

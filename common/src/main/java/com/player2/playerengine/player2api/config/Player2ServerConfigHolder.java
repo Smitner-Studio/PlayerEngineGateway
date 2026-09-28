@@ -206,14 +206,6 @@ public final class Player2ServerConfigHolder {
             c.setRagMinGoalChars(c.getRagMinGoalCharsClamped());
         }
 
-        // Phase B5: persist the same effective values that runtime consumers previously clamped on read.
-        c.setDeepCheckMaxAttemptsPerTurn(c.getDeepCheckMaxAttemptsPerTurnClamped());
-        c.setDeepCheckCallsPerWindow(c.getDeepCheckCallsPerWindowClamped());
-        c.setDeepCheckWindowMinutes(c.getDeepCheckWindowMinutesClamped());
-        c.setDeepCheckWeakBelowScore(normalizeUnitInterval(c.getDeepCheckWeakBelowScore(), 0.015));
-        c.setDeepCheckWeakGapRatio(normalizeUnitInterval(c.getDeepCheckWeakGapRatio(), 0.15));
-        c.setDeepCheckWeakTokenCoverage(normalizeUnitInterval(c.getDeepCheckWeakTokenCoverage(), 0.35));
-
         // Phase D: keep manual edits and GUI edits on one bounded, persisted contract.
         c.setMemoryWindowMinutes(c.getMemoryWindowMinutesClamped());
         int batchMin = clamp(c.getMemoryExtractionBatchMin(), 1, MEMORY_EXTRACTION_BATCH_MAX_VALUE);

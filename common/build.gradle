@@ -101,6 +101,8 @@ def checkCutover = tasks.register('checkCutover') {
             // The @ command grammar (R15) and the RAG learning layer the command path fed.
             ~/\bexecuteWithPrefix\b|\bisClientCommand\b|\bCommandLines\b|\bfromLine\b|\bLineArgs\b/,
             ~/retrieval\.learning|\bAliasLearning\w*|\bDeepCheck(?:Budget|Rephrase|Response|Prompt|JsonParser|Attempt)\w*/,
+            // Their settings keys: the @ prefix and the deep-check and alias-learning switches.
+            ~/"commandPrefix"|\bget(?:CommandPrefix|DeepCheck\w*)\b|\bisEnable(?:DeepCheck|AliasLearning)\w*|"deepCheck[A-Z]\w*"/,
         ]
         int files = 0
         dir.eachFileRecurse { File f ->

@@ -233,7 +233,6 @@ public final class PlayerEngineSettingsAdminService {
 
     private static Map<String, String> snapshotOf(PlayerEngineSettings settings) {
         LinkedHashMap<String, String> values = new LinkedHashMap<>();
-        values.put("commandPrefix", settings.getCommandPrefix());
         values.put("resourcePickupDropRange", whole(settings.getResourcePickupRange()));
         values.put("minimumFoodAllowed", String.valueOf(settings.getMinimumFoodAllowed()));
         values.put("foodUnitsToCollect", String.valueOf(settings.getFoodUnitsToCollect()));
@@ -341,8 +340,6 @@ public final class PlayerEngineSettingsAdminService {
         }
 
         return switch (key) {
-            case "commandPrefix" -> isValidCommandPrefix(value)
-                    ? settings -> settings.setAdminString(key, value) : null;
             case "idleCommand" -> isValidIdleCommand(value)
                     ? settings -> settings.setAdminString(key, value) : null;
             case "forceFieldStrategy" -> forceFieldMutation(value);
@@ -379,7 +376,7 @@ public final class PlayerEngineSettingsAdminService {
                 || wholeNumberRange(key) != null
                 || millisecondRange(key) != null
                 || switch (key) {
-                    case "commandPrefix", "idleCommand", "forceFieldStrategy",
+                    case "idleCommand", "forceFieldStrategy",
                             "overworldToNetherBehaviour", "homeBasePosition" -> true;
                     default -> false;
                 });
@@ -456,15 +453,6 @@ public final class PlayerEngineSettingsAdminService {
         } catch (NumberFormatException e) {
             return null;
         }
-    }
-
-    private static boolean isValidCommandPrefix(String value) {
-        if (value == null || value.isBlank() || value.codePointCount(0, value.length()) > 8) {
-            return false;
-        }
-        return value.codePoints().noneMatch(cp -> java.lang.Character.isWhitespace(cp)
-                || java.lang.Character.isSpaceChar(cp)
-                || java.lang.Character.isISOControl(cp));
     }
 
     private static boolean isValidIdleCommand(String value) {

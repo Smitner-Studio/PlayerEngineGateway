@@ -609,3 +609,20 @@ fixed and now fail on a retired name (red witness run).
 | `common/build.gradle` | `checkCutover` patterns fixed and extended |
 | `common/src/main/resources/playerengine/program/system-prompt.txt` | the new forms, the results loop, a query example |
 | `common/src/main/java/com/player2/playerengine/smoke/SmokeHarness.java` | `far-owner`: a goto outside the region still runs |
+
+**Dead settings keys removed.** `commandPrefix` (settings) and `enableDeepCheckRephrase`,
+`enableAliasLearning`, `enableDeepCheckMessage`, `deepCheck*` and `forceDeepCheckOnEmpty`
+(server config) had no reader after the `@` grammar and the learning layer went. They are gone
+from the config classes and both admin screens; a config file that still carries them loads
+as before, the keys ignored. The idle command still tolerates a leading `@`. `checkCutover`
+fails if their readers come back.
+
+| File | Change |
+|---|---|
+| `common/src/main/java/com/player2/playerengine/PlayerEngineSettings.java`, `PlayerEngineSettingsAdminService.java` | `commandPrefix` removed |
+| `common/src/main/java/com/player2/playerengine/commands/base/CommandExecutor.java` | `runIdle` strips a literal leading `@` |
+| `common/src/main/java/com/player2/playerengine/player2api/config/Player2ServerRuntimeConfig.java`, `Player2ServerConfigHolder.java`, `Player2ServerConfigAdminService.java` | the deep-check and alias-learning keys removed |
+| `common/src/main/java/com/player2/playerengine/retrieval/RetrievalConfidenceThresholds.java` | the unused `fromConfig` removed |
+| `common/src/main/resources/tool_overrides.README.md` | the deep-check section removed |
+| `common/build.gradle` | `checkCutover` names the removed keys' readers |
+| `common/src/main/java/com/player2/playerengine/smoke/SmokeHarness.java` | `mine-grief` sends a program and waits on the job line |

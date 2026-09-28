@@ -72,13 +72,6 @@ public final class Player2ServerConfigAdminService {
         fields.put("ragFallbackToFullList", bool(cfg.isRagFallbackToFullList()));
         fields.put("ragLiveEnabled", bool(cfg.isRagLiveEnabled()));
         fields.put("ragMinGoalChars", integer(cfg.getRagMinGoalCharsClamped()));
-        fields.put("deepCheckMaxAttemptsPerTurn", integer(cfg.getDeepCheckMaxAttemptsPerTurnClamped()));
-        fields.put("deepCheckCallsPerWindow", integer(cfg.getDeepCheckCallsPerWindowClamped()));
-        fields.put("deepCheckWindowMinutes", integer(cfg.getDeepCheckWindowMinutesClamped()));
-        fields.put("deepCheckWeakBelowScore", percent(cfg.getDeepCheckWeakBelowScoreClamped(), 0.015));
-        fields.put("deepCheckWeakGapRatio", percent(cfg.getDeepCheckWeakGapRatioClamped(), 0.15));
-        fields.put("deepCheckWeakTokenCoverage", percent(cfg.getDeepCheckWeakTokenCoverageClamped(), 0.35));
-        fields.put("forceDeepCheckOnEmpty", bool(cfg.isForceDeepCheckOnEmpty()));
 
         fields.put("memoryWindowMinutes", integer(cfg.getMemoryWindowMinutesClamped()));
         fields.put("memoryExtractionBatchMin", integer(cfg.getMemoryExtractionBatchMin()));
@@ -206,16 +199,6 @@ public final class Player2ServerConfigAdminService {
             case "ragFallbackToFullList" -> setBoolean(value, cfg::setRagFallbackToFullList);
             case "ragLiveEnabled" -> setBoolean(value, cfg::setRagLiveEnabled);
             case "ragMinGoalChars" -> setInteger(value, 1, 16, cfg::setRagMinGoalChars);
-            case "deepCheckMaxAttemptsPerTurn" -> setInteger(value, 0, 3,
-                    cfg::setDeepCheckMaxAttemptsPerTurn);
-            case "deepCheckCallsPerWindow" -> setInteger(value, 0, 100,
-                    cfg::setDeepCheckCallsPerWindow);
-            case "deepCheckWindowMinutes" -> setInteger(value, 1, 1_440,
-                    cfg::setDeepCheckWindowMinutes);
-            case "deepCheckWeakBelowScore" -> setPercent(value, cfg::setDeepCheckWeakBelowScore);
-            case "deepCheckWeakGapRatio" -> setPercent(value, cfg::setDeepCheckWeakGapRatio);
-            case "deepCheckWeakTokenCoverage" -> setPercent(value, cfg::setDeepCheckWeakTokenCoverage);
-            case "forceDeepCheckOnEmpty" -> setBoolean(value, cfg::setForceDeepCheckOnEmpty);
 
             case "memoryWindowMinutes" -> setInteger(value, 1, 1_440, cfg::setMemoryWindowMinutes);
             case "memoryExtractionBatchMin" -> setMemoryBatchMin(cfg, value);

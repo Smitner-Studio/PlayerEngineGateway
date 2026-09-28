@@ -113,15 +113,14 @@ public class CommandExecutor {
 
    /**
     * Runs the settings' idle command ({@code idleCommand}) as its registered command, with no command
-    * grammar: one command and its arguments, no prefix and no {@code ;} chaining (a leading prefix from
-    * an older settings file is tolerated). It runs for no player, under the same permission policy, and
+    * grammar: one command and its arguments, no prefix and no {@code ;} chaining (a leading {@code @},
+    * which older settings files wrote, is tolerated). It runs for no player, under the same permission policy, and
     * is not an order: it moves no dispatch seq.
     */
    public void runIdle(String line) {
       String text = line == null ? "" : line.trim();
-      String prefix = this.mod.getModSettings().getCommandPrefix();
-      if (prefix != null && !prefix.isEmpty() && text.startsWith(prefix)) {
-         text = text.substring(prefix.length()).trim();
+      if (text.startsWith("@")) {
+         text = text.substring(1).trim();
       }
       if (text.isEmpty()) {
          return;

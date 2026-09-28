@@ -55,19 +55,6 @@ public class Player2ServerRuntimeConfig implements BudgetThresholds {
     /** Minimum alphanumeric goal length before running retrieval (clamped 1–16 on read). */
     private int ragMinGoalChars = 3;
 
-    // --- Phase B5: Failure-driven alias learning ---
-
-    private boolean enableDeepCheckRephrase = false;
-    private boolean enableAliasLearning = false;
-    private boolean enableDeepCheckMessage = false;
-    private int deepCheckMaxAttemptsPerTurn = 2;
-    private int deepCheckCallsPerWindow = 3;
-    private int deepCheckWindowMinutes = 10;
-    private double deepCheckWeakBelowScore = 0.015;
-    private double deepCheckWeakGapRatio = 0.15;
-    private double deepCheckWeakTokenCoverage = 0.35;
-    private boolean forceDeepCheckOnEmpty = true;
-
     // --- Phase D: GraphRAG roleplay memory (W7 — master gate + memory-pipeline windowed cap) ---
 
     /**
@@ -469,81 +456,6 @@ public class Player2ServerRuntimeConfig implements BudgetThresholds {
     public void setBotKeepInventoryOverride(KeepInventoryOverride botKeepInventoryOverride) {
         this.botKeepInventoryOverride = botKeepInventoryOverride == null ? KeepInventoryOverride.FOLLOW_GAMERULE : botKeepInventoryOverride;
     }
-
-    // --- Phase B5 getters/setters ---
-
-    public boolean isEnableDeepCheckRephrase() { return enableDeepCheckRephrase; }
-    public void setEnableDeepCheckRephrase(boolean v) { this.enableDeepCheckRephrase = v; }
-
-    public boolean isEnableAliasLearning() { return enableAliasLearning; }
-    public void setEnableAliasLearning(boolean v) { this.enableAliasLearning = v; }
-
-    public boolean isEnableDeepCheckMessage() { return enableDeepCheckMessage; }
-    public void setEnableDeepCheckMessage(boolean v) { this.enableDeepCheckMessage = v; }
-
-    public int getDeepCheckMaxAttemptsPerTurn() { return deepCheckMaxAttemptsPerTurn; }
-    public void setDeepCheckMaxAttemptsPerTurn(int v) { this.deepCheckMaxAttemptsPerTurn = v; }
-
-    /** Clamped to [0, 3]. */
-    public int getDeepCheckMaxAttemptsPerTurnClamped() {
-        int n = deepCheckMaxAttemptsPerTurn;
-        if (n < 0) return 0;
-        if (n > 3) return 3;
-        return n;
-    }
-
-    public int getDeepCheckCallsPerWindow() { return deepCheckCallsPerWindow; }
-    public void setDeepCheckCallsPerWindow(int v) { this.deepCheckCallsPerWindow = v; }
-
-    public int getDeepCheckCallsPerWindowClamped() {
-        int n = deepCheckCallsPerWindow;
-        if (n < 0) return 0;
-        if (n > 100) return 100;
-        return n;
-    }
-
-    public int getDeepCheckWindowMinutes() { return deepCheckWindowMinutes; }
-    public void setDeepCheckWindowMinutes(int v) { this.deepCheckWindowMinutes = v; }
-
-    public int getDeepCheckWindowMinutesClamped() {
-        int m = deepCheckWindowMinutes;
-        if (m < 1) return 1;
-        if (m > 1440) return 1440;
-        return m;
-    }
-
-    public double getDeepCheckWeakBelowScore() { return deepCheckWeakBelowScore; }
-    public void setDeepCheckWeakBelowScore(double v) { this.deepCheckWeakBelowScore = v; }
-
-    public double getDeepCheckWeakBelowScoreClamped() {
-        double s = deepCheckWeakBelowScore;
-        if (s < 0.0) return 0.0;
-        if (s > 1.0) return 1.0;
-        return s;
-    }
-
-    public double getDeepCheckWeakGapRatio() { return deepCheckWeakGapRatio; }
-    public void setDeepCheckWeakGapRatio(double v) { this.deepCheckWeakGapRatio = v; }
-
-    public double getDeepCheckWeakGapRatioClamped() {
-        double g = deepCheckWeakGapRatio;
-        if (g < 0.0) return 0.0;
-        if (g > 1.0) return 1.0;
-        return g;
-    }
-
-    public double getDeepCheckWeakTokenCoverage() { return deepCheckWeakTokenCoverage; }
-    public void setDeepCheckWeakTokenCoverage(double v) { this.deepCheckWeakTokenCoverage = v; }
-
-    public double getDeepCheckWeakTokenCoverageClamped() {
-        double c = deepCheckWeakTokenCoverage;
-        if (c < 0.0) return 0.0;
-        if (c > 1.0) return 1.0;
-        return c;
-    }
-
-    public boolean isForceDeepCheckOnEmpty() { return forceDeepCheckOnEmpty; }
-    public void setForceDeepCheckOnEmpty(boolean v) { this.forceDeepCheckOnEmpty = v; }
 
     // --- Phase D getters/setters (W7) ---
 
