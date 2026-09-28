@@ -512,9 +512,14 @@ public class ConversationManager {
      * of the next dispatch.
      */
     public static QueueClearSummary clearPendingWork() {
+        return clearPendingWork(true);
+    }
+
+    /** As {@link #clearPendingWork()}; with {@code dropPlans} false each companion keeps its saved plan. */
+    public static QueueClearSummary clearPendingWork(boolean dropPlans) {
         int queuesCleared = 0;
         for (AgentConversationData data : queueData.values()) {
-            data.resetForClear();
+            data.resetForClear(dropPlans);
             queuesCleared++;
         }
         int bucketsShutdown = llmLanes.shutdownAll();

@@ -364,13 +364,23 @@ public class AgentConversationData {
 
     /** Clear pending events and per-round flags without disturbing persisted history. */
     public void resetForClear() {
+        resetForClear(true);
+    }
+
+    /**
+     * As {@link #resetForClear()}; with {@code dropPlan} false the plan stays in memory and in
+     * plan.json, so a server stop keeps it for the next start (where it loads PAUSED).
+     */
+    public void resetForClear(boolean dropPlan) {
         invalidateProcessingTurnAndClearEvents();
         synchronized (deferredInfoQueue) {
             deferredInfoQueue.clear();
         }
         chainInitiatorUsername = null;
         chainInitiatorIsOwner = false;
-        planCoordinator.cancel("reset");
+        if (dropPlan) {
+            planCoordinator.cancel("reset");
+        }
         pendingPlanDispatch.clear();
         clearTtsCooldown();
         cachedRetrievalHits = List.of();
