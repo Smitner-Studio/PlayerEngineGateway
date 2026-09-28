@@ -115,21 +115,22 @@ public final class SignatureTable {
 
         // Items.
         t.add(primitive("get", "get", null, List.of(Arg.of("item", Type.ITEM), Arg.of("n", Type.COUNT)), true,
-                "count(item) >= n", false, "gather or craft until it carries n"));
+                "count(item) >= n", true, "gather or craft until it carries n"));
         t.add(primitive("craft", null, PermissionClass.ITEMS, List.of(Arg.of("item", Type.ITEM), Arg.of("n", Type.COUNT)),
-                false, "output delta >= n", false, "craft n"));
+                false, "output delta >= n", true, "craft n more; gathers missing ingredients"));
         t.add(primitive("smelt", "smelt", null, List.of(Arg.of("output", Type.ITEM), Arg.of("n", Type.COUNT)), false,
-                "output delta >= n", false, "smelt to n of output; the input comes from the inventory"));
+                "output delta >= n", true, "smelt n of output; the input comes from the inventory"));
         t.add(primitive("store", "deposit_to_storage", null, List.of(Arg.optional("c", Type.CONTAINER),
                         Arg.of("items", Type.ITEMS)), false,
-                "container delta = inventory delta", false, "store items, or \"all_except_tools\""));
+                "container delta = inventory delta", true,
+                "store items, or \"all_except_tools\"; without c, the nearest container in sight"));
         t.add(primitive("withdraw", "withdraw_from_storage", null, List.of(Arg.of("c", Type.CONTAINER),
                         Arg.of("items", Type.ITEMS)), false,
-                "inventory delta = container delta", false, "take items out of a container"));
+                "inventory delta = container delta", true, "take items out of a container"));
         t.add(primitive("give_owner", "give", null, List.of(Arg.of("item", Type.ITEM), Arg.of("n", Type.COUNT)), false,
-                "the owner's inventory delta, or an item entity at the owner", false, "hand items to the owner"));
+                "the owner's inventory delta, or an item entity at the owner", true, "hand items to the owner"));
         t.add(primitive("equip", "equip", null, List.of(Arg.of("item", Type.ITEM)), true,
-                "the item is held or worn", false, "hold or wear item"));
+                "the item is held or worn", true, "hold or wear item"));
 
         // Talk.
         t.add(primitive("say", null, PermissionClass.SELF, List.of(Arg.bounded("text", Type.TEXT, 1, MAX_TEXT)), true,

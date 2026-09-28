@@ -7,6 +7,8 @@ import com.player2.playerengine.containeraccess.ContainerResolver;
 import com.player2.playerengine.containeraccess.StorageAccessCode;
 import com.player2.playerengine.containeraccess.StorageLocator;
 import com.player2.playerengine.tasks.construction.area.AreaScan;
+import com.player2.playerengine.tasks.cooking.resolver.CookingRecipeAccess;
+import com.player2.playerengine.tasks.cooking.resolver.CookingRecipeAccessImpl;
 import com.player2.playerengine.tasks.construction.area.AreaSpec;
 import java.util.ArrayList;
 import java.util.List;
@@ -43,6 +45,8 @@ import net.minecraft.world.phys.Vec3;
 public final class LiveWorld implements Primitive.World {
     private static final EquipmentSlot[] WORN = {EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS,
             EquipmentSlot.FEET};
+
+    private static final CookingRecipeAccess COOKING = new CookingRecipeAccessImpl();
 
     private final PlayerEngineController mod;
     private final Seam seam;
@@ -300,6 +304,16 @@ public final class LiveWorld implements Primitive.World {
             out.add(itemId(block.asItem()));
         }
         return List.copyOf(out);
+    }
+
+    @Override
+    public String smeltResult(String itemId) {
+        Item input = item(itemId);
+        if (input == null || input == Items.AIR) {
+            return null;
+        }
+        return COOKING.resolveAny(level.getRecipeManager(), input, level.registryAccess())
+                .map(r -> itemId(r.output().getItem())).orElse(null);
     }
 
     @Override

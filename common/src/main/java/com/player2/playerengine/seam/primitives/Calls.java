@@ -73,6 +73,9 @@ final class Calls {
         if (m.contains("not loaded")) {
             return FailureCode.NOT_LOADED;
         }
+        if (m.contains("disabled")) {
+            return FailureCode.DENIED;
+        }
         if (m.contains("protected") || m.contains("spawn area")) {
             return FailureCode.PROTECTED;
         }

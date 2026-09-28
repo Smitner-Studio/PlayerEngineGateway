@@ -22,6 +22,13 @@ public final class Primitives {
                 new FillPrimitive(),
                 new PlacePrimitive(),
                 new MinePrimitive(),
-                new PickupDropsPrimitive());
+                new PickupDropsPrimitive(),
+                new GetPrimitive(),
+                new CraftPrimitive(),
+                new SmeltPrimitive(),
+                new StorePrimitive(),
+                new WithdrawPrimitive(),
+                new GiveOwnerPrimitive(),
+                new EquipPrimitive());
     }
 }

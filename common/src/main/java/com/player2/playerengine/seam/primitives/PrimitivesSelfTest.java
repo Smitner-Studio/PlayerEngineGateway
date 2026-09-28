@@ -2,6 +2,8 @@ package com.player2.playerengine.seam.primitives;
 
 import com.player2.playerengine.seam.ActionError;
 import com.player2.playerengine.seam.Coercion;
+import com.player2.playerengine.seam.ContainerHandle;
+import com.player2.playerengine.tasks.construction.area.AreaSpec;
 import com.player2.playerengine.seam.FailureCode;
 import com.player2.playerengine.seam.Outcome;
 import com.player2.playerengine.seam.Primitive;
@@ -50,6 +52,7 @@ public final class PrimitivesSelfTest {
         cases.addAll(motion());
         cases.addAll(talk());
         cases.addAll(world());
+        cases.addAll(items());
         for (Case c : cases) {
             postconditionCatchesAFakedFinished(c);
         }
@@ -57,6 +60,9 @@ public final class PrimitivesSelfTest {
         waitUntilRefusesWhatItCannotRecheck();
         confirmAnswersOnlyYesOrNo();
         mineCountsTheDropsNotTheOrder();
+        noFalseDeposit();
+        smeltChoosesItsInput();
+        commandLineForms();
         return checks;
     }
 
@@ -154,6 +160,210 @@ public final class PrimitivesSelfTest {
                 Coercion.Ids.REGISTRIES);
         require(!ambiguous.ok() && ambiguous.error().code() == FailureCode.AMBIGUOUS,
                 "mine iron is ambiguous and lists candidates (E6): " + ambiguous.error());
+    }
+
+    // --- items -------------------------------------------------------------------------------------
+
+    private static final AreaSpec.Pos RIGHT = new AreaSpec.Pos(4, 64, 0);
+    private static final AreaSpec.Pos LEFT = new AreaSpec.Pos(3, 64, 0);
+
+    /** A double chest (canonical half at 4 64 0) with room, the companion beside it carrying stone and dirt. */
+    private static ContainerHandle doubleChest(SeamTestWorld w, int free) {
+        w.position = new Vec3(0.5, 64, 0.5);
+        w.carry("cobblestone", 30).carry("dirt", 5).carry("diamond_pickaxe", 1);
+        return w.chest(RIGHT, LEFT, free);
+    }
+
+    private static ContainerHandle chestOf(SeamTestWorld w) {
+        return w.containers.keySet().iterator().next();
+    }
+
+    private static List<Case> items() {
+        Consumer<SeamTestWorld> smelter = w -> {
+            w.smelts.put("raw_iron", "iron_ingot");
+            w.smelts.put("iron_ore", "iron_ingot");
+            w.carry("raw_iron", 5).carry("iron_ore", 2);
+        };
+        return List.of(
+                new Case("store into a double chest named by its other half", "store",
+                        m("c", "3 64 0", "items", "cobblestone 20, dirt"), w -> doubleChest(w, 50),
+                        w -> {
+                            w.move(chestOf(w), "cobblestone", 20);
+                            w.move(chestOf(w), "dirt", 5);
+                        }, FailureCode.UNREACHABLE),
+                new Case("store into a full chest", "store", m("c", "4 64 0", "items", "cobblestone 20"),
+                        w -> doubleChest(w, 0), w -> w.move(chestOf(w), "cobblestone", 20), FailureCode.CONTAINER_FULL),
+                new Case("store all_except_tools, nearest chest", "store", m("items", "all_except_tools"),
+                        w -> doubleChest(w, 50),
+                        w -> {
+                            w.move(chestOf(w), "cobblestone", 30);
+                            w.move(chestOf(w), "dirt", 5);
+                        }, FailureCode.UNREACHABLE),
+                new Case("withdraw", "withdraw", m("c", List.of(3, 64, 0), "items", m("iron_ingot", 4)),
+                        w -> {
+                            ContainerHandle h = doubleChest(w, 50);
+                            w.containers.get(h).put("iron_ingot", 10);
+                        },
+                        w -> w.move(chestOf(w), "iron_ingot", -4), FailureCode.UNREACHABLE),
+                new Case("withdraw all of an item", "withdraw", m("c", "4 64 0", "items", "iron_ingot"),
+                        w -> {
+                            ContainerHandle h = doubleChest(w, 50);
+                            w.containers.get(h).put("iron_ingot", 10);
+                            w.freeSlots = 0;
+                        },
+                        w -> w.move(chestOf(w), "iron_ingot", -10), FailureCode.CONTAINER_FULL),
+                new Case("give_owner", "give_owner", m("item", "bread", "n", 3),
+                        w -> {
+                            w.owner = new Vec3(5.5, 64, 0.5);
+                            w.carry("bread", 3);
+                        },
+                        w -> {
+                            w.carry("bread", -3);
+                            w.ownerInventory.merge("bread", 3, Integer::sum);
+                        }, FailureCode.UNREACHABLE),
+                new Case("give_owner, dropped at the owner's feet", "give_owner", m("item", "bread", "n", 3),
+                        w -> w.owner = new Vec3(5.5, 64, 0.5),
+                        w -> w.ground.add(new SeamTestWorld.Ground(new Vec3(6, 64, 1), "bread", 3)),
+                        FailureCode.MISSING_ITEM),
+                new Case("equip", "equip", m("item", "iron_sword"), w -> w.carry("iron_sword", 1),
+                        w -> w.equipped.add("iron_sword"), FailureCode.UNREACHABLE),
+                new Case("equip, none carried", "equip", m("item", "iron_helmet"), w -> { },
+                        w -> w.equipped.add("iron_helmet"), FailureCode.MISSING_ITEM),
+                new Case("get", "get", m("item", "torches", "n", 10), w -> w.carry("torch", 4),
+                        w -> w.carry("torch", 6), FailureCode.MISSING_ITEM),
+                new Case("craft", "craft", m("item", "oak_planks", "n", 4), w -> w.carry("oak_planks", 2),
+                        w -> w.carry("oak_planks", 4), FailureCode.MISSING_ITEM),
+                new Case("smelt by output", "smelt", m("output", "iron ingot", "n", 3), smelter,
+                        w -> w.carry("raw_iron", -3).carry("iron_ingot", 3), FailureCode.UNREACHABLE),
+                new Case("smelt naming the input", "smelt", m("output", "raw_iron", "n", 2), smelter,
+                        w -> w.carry("raw_iron", -2).carry("iron_ingot", 2), FailureCode.UNREACHABLE));
+    }
+
+    /** E9: items that left the inventory but did not reach the container are not "deposited". */
+    private static void noFalseDeposit() {
+        Primitive p = Seam.primitive("store");
+        Map<String, Object> args = coerce("store", m("c", "3 64 0", "items", "cobblestone 20"));
+        SeamTestWorld w = new SeamTestWorld();
+        ContainerHandle h = doubleChest(w, 50);
+        Map<String, Object> pre = snapshot(p, args, w);
+        require(pre.get("container").equals(h.toState()), "the snapshot holds the whole double chest (E8): " + pre);
+        w.carry("cobblestone", -20);
+        Outcome dropped = Seam.verify(p, args, pre, Primitive.TaskEnd.finished("deposited 20 cobblestone"), w, List.of());
+        require(!dropped.ok() && dropped.error().code() == FailureCode.UNREACHABLE
+                        && dropped.error().message().contains("container gained 0"),
+                "a deposit whose items never reached the container fails (E9): " + dropped);
+        SeamTestWorld half = new SeamTestWorld();
+        ContainerHandle hh = doubleChest(half, 50);
+        Map<String, Object> halfPre = snapshot(p, args, half);
+        half.move(hh, "cobblestone", 12);
+        Outcome partial = Seam.verify(p, args, halfPre, Primitive.TaskEnd.finished(null), half, List.of());
+        require(!partial.ok() && ((Map<?, ?>) partial.error().state().get("short")).get("cobblestone").equals(8),
+                "a partial deposit says what is short: " + partial);
+        try {
+            p.snapshot(coerce("store", m("c", "4 64 0", "items", "cobblestone 99")), doubleWorld());
+            require(false, "storing more than it carries is refused before it moves");
+        } catch (Coercion.Failure f) {
+            require(f.error.code() == FailureCode.MISSING_ITEM, "storing 99 of 30 is missing_item: " + f.error);
+        }
+        try {
+            p.snapshot(coerce("store", m("c", "9 64 9", "items", "dirt")), doubleWorld());
+            require(false, "a position with no container is refused");
+        } catch (Coercion.Failure f) {
+            require(f.error.code() == FailureCode.NO_CONTAINER, "no container there: " + f.error);
+        }
+        SeamTestWorld far = doubleWorld();
+        far.position = new Vec3(60, 64, 0);
+        try {
+            p.snapshot(coerce("store", m("items", "dirt")), far);
+            require(false, "store without c and nothing in reach is refused");
+        } catch (Coercion.Failure f) {
+            require(f.error.code() == FailureCode.NO_CONTAINER, "no container within 16: " + f.error);
+        }
+        Primitive take = Seam.primitive("withdraw");
+        Map<String, Object> ask = coerce("withdraw", m("c", "4 64 0", "items", "iron_ingot 4"));
+        SeamTestWorld few = doubleWorld();
+        few.containers.get(chestOf(few)).put("iron_ingot", 2);
+        Map<String, Object> fewPre = snapshot(take, ask, few);
+        few.move(chestOf(few), "iron_ingot", -2);
+        Outcome shortTake = Seam.verify(take, ask, fewPre, Primitive.TaskEnd.finished(null), few, List.of());
+        require(!shortTake.ok() && shortTake.error().code() == FailureCode.MISSING_ITEM,
+                "withdrawing 4 from a chest holding 2 is missing_item: " + shortTake);
+    }
+
+    private static SeamTestWorld doubleWorld() {
+        SeamTestWorld w = new SeamTestWorld();
+        doubleChest(w, 50);
+        return w;
+    }
+
+    /** E7: smelt picks its input from the inventory by the output asked for. */
+    private static void smeltChoosesItsInput() {
+        Primitive p = Seam.primitive("smelt");
+        SeamTestWorld w = new SeamTestWorld();
+        w.smelts.put("raw_iron", "iron_ingot");
+        w.smelts.put("iron_ore", "iron_ingot");
+        w.smelts.put("raw_gold", "gold_ingot");
+        w.carry("raw_iron", 5).carry("iron_ore", 9).carry("raw_gold", 3);
+        Map<String, Object> pre = snapshot(p, coerce("smelt", m("output", "iron_ingot", "n", 4)), w);
+        require("iron_ore".equals(pre.get("input")) && "iron_ingot".equals(pre.get("output")),
+                "smelt(iron_ingot) uses the input it holds most of: " + pre);
+        Map<String, Object> named = snapshot(p, coerce("smelt", m("output", "raw_gold", "n", 2)), w);
+        require("raw_gold".equals(named.get("input")) && "gold_ingot".equals(named.get("output"))
+                        && String.valueOf(named.get("note")).contains("gold_ingot"),
+                "naming the input smelts it into its output, with a note: " + named);
+        SeamTestWorld empty = new SeamTestWorld();
+        empty.smelts.put("raw_iron", "iron_ingot");
+        try {
+            p.snapshot(coerce("smelt", m("output", "iron_ingot", "n", 1)), empty);
+            require(false, "smelting with nothing to smelt is refused");
+        } catch (Coercion.Failure f) {
+            require(f.error.code() == FailureCode.MISSING_ITEM
+                            && ((List<?>) f.error.state().get("inputs")).contains("raw_iron"),
+                    "missing_item lists what would smelt into it: " + f.error);
+        }
+        try {
+            p.snapshot(coerce("smelt", m("output", "diamond", "n", 1)), empty);
+            require(false, "an output nothing smelts into is refused");
+        } catch (Coercion.Failure f) {
+            require(f.error.code() == FailureCode.BAD_ARGS, "nothing smelts into diamond: " + f.error);
+        }
+        try {
+            p.snapshot(coerce("smelt", m("output", "iron_ingot", "n", 7)), w.carry("iron_ore", -9));
+            require(false, "smelting more than the input allows is refused");
+        } catch (Coercion.Failure f) {
+            require(f.error.code() == FailureCode.MISSING_ITEM, "5 raw iron cannot make 7: " + f.error);
+        }
+    }
+
+    /** E6 on the command path: the storage and item lines' loose forms land on canonical arguments. */
+    private static void commandLineForms() {
+        Primitive store = Seam.primitiveFor("deposit_to_storage");
+        Primitive.LineArgs dep = store.fromLine("3 64 0 Cobblestone 20,dirt", null);
+        Coercion.Result c = Coercion.coerce(store.signature(), dep.raw(), Coercion.Ids.REGISTRIES);
+        Map<String, Integer> want = new LinkedHashMap<>();
+        want.put("cobblestone", 20);
+        want.put("dirt", null);
+        require(c.ok() && c.args().get("items").equals(want)
+                        && c.args().get("c").equals(ContainerHandle.at(new AreaSpec.Pos(3, 64, 0))),
+                "deposit_to_storage's line coerces to store(c, items): " + (c.ok() ? c.args() : c.error()));
+        Coercion.Result none = Coercion.coerce(store.signature(), store.fromLine("3 64 0", null).raw(),
+                Coercion.Ids.REGISTRIES);
+        require(!none.ok() && none.error().code() == FailureCode.BAD_ARGS, "a deposit with no items is bad_args (E6)");
+        require(store.fromLine("chest dirt", null) == null, "a line without coordinates stays with the command");
+        Primitive give = Seam.primitiveFor("give");
+        require(give.fromLine("bread 3", null).raw().equals(m("item", "bread", "n", "3")), "give <item> <n>");
+        require(give.fromLine("Ellie diamond 3", null) == null, "a give to someone else stays the give command");
+        Primitive equip = Seam.primitiveFor("equip");
+        require(equip.fromLine("iron", null) == null && equip.fromLine("iron_sword", null) != null,
+                "equip iron (a set) stays the command; equip iron_sword is the primitive");
+        Primitive get = Seam.primitiveFor("get");
+        require(get.fromLine("planks 4", null) == null && get.fromLine("log 20", null) == null,
+                "get with a catalogue group stays the command");
+        require(get.fromLine("Torches 5", null).raw().equals(m("item", "Torches", "n", 5)),
+                "get <item> <n> with nothing carried is get(item, n)");
+        Primitive smelt = Seam.primitiveFor("smelt");
+        require(smelt.fromLine("raw_iron 32", null).raw().equals(m("output", "raw_iron", "n", "32")),
+                "smelt's line is read as smelt(output, n); the snapshot turns an input into its output");
     }
 
     // --- talk --------------------------------------------------------------------------------------

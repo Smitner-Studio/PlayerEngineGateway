@@ -209,6 +209,11 @@ public interface Primitive {
             throw unsupported("drops");
         }
 
+        /** What smelting, blasting or smoking {@code itemId} makes, by canonical id; null when nothing. */
+        default String smeltResult(String itemId) {
+            throw unsupported("smeltResult");
+        }
+
         /** The server's game time in ticks. */
         default long gameTime() {
             throw unsupported("gameTime");

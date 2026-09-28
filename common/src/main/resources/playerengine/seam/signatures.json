@@ -436,7 +436,7 @@
       "returns": "void",
       "idempotent": true,
       "postcondition": "count(item) >= n",
-      "bound": false,
+      "bound": true,
       "doc": "gather or craft until it carries n",
       "reference": "api.get(item: ItemId, n: Count): void"
     },
@@ -459,8 +459,8 @@
       "returns": "void",
       "idempotent": false,
       "postcondition": "output delta >= n",
-      "bound": false,
-      "doc": "craft n",
+      "bound": true,
+      "doc": "craft n more; gathers missing ingredients",
       "reference": "api.craft(item: ItemId, n: Count): void"
     },
     {
@@ -483,8 +483,8 @@
       "returns": "void",
       "idempotent": false,
       "postcondition": "output delta >= n",
-      "bound": false,
-      "doc": "smelt to n of output; the input comes from the inventory",
+      "bound": true,
+      "doc": "smelt n of output; the input comes from the inventory",
       "reference": "api.smelt(output: ItemId, n: Count): void"
     },
     {
@@ -507,8 +507,8 @@
       "returns": "void",
       "idempotent": false,
       "postcondition": "container delta = inventory delta",
-      "bound": false,
-      "doc": "store items, or \"all_except_tools\"",
+      "bound": true,
+      "doc": "store items, or \"all_except_tools\"; without c, the nearest container in sight",
       "reference": "api.store(c?: Container, items: ItemSet): void"
     },
     {
@@ -531,7 +531,7 @@
       "returns": "void",
       "idempotent": false,
       "postcondition": "inventory delta = container delta",
-      "bound": false,
+      "bound": true,
       "doc": "take items out of a container",
       "reference": "api.withdraw(c: Container, items: ItemSet): void"
     },
@@ -555,7 +555,7 @@
       "returns": "void",
       "idempotent": false,
       "postcondition": "the owner's inventory delta, or an item entity at the owner",
-      "bound": false,
+      "bound": true,
       "doc": "hand items to the owner",
       "reference": "api.give_owner(item: ItemId, n: Count): void"
     },
@@ -574,7 +574,7 @@
       "returns": "void",
       "idempotent": true,
       "postcondition": "the item is held or worn",
-      "bound": false,
+      "bound": true,
       "doc": "hold or wear item",
       "reference": "api.equip(item: ItemId): void"
     },

@@ -42,6 +42,8 @@ public final class SeamTestWorld implements Primitive.World {
     public Seam.Spoken spoken = new Seam.Spoken(List.of(), 0);
     public Seam.Confirmation confirmation;
     public final Map<String, List<String>> drops = new HashMap<>();
+    /** What smelting an item makes, by input id. */
+    public final Map<String, String> smelts = new HashMap<>();
 
     /** An item entity: where it lies, what and how many. */
     public record Ground(Vec3 at, String item, int count) {
@@ -209,6 +211,11 @@ public final class SeamTestWorld implements Primitive.World {
     @Override
     public List<String> drops(String blockId) {
         return drops.getOrDefault(blockId, List.of(blockId));
+    }
+
+    @Override
+    public String smeltResult(String itemId) {
+        return smelts.get(itemId);
     }
 
     @Override
