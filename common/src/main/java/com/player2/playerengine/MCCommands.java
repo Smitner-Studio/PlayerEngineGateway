@@ -173,14 +173,20 @@ public class MCCommands {
                 LOGGER.warn("Memory tick-end flush failed: {}", e.getClass().getSimpleName());
             }
         });
-        LifecycleEvent.SERVER_STOPPING.register(server -> {
-            // Before the world saves: companion holds live in memory only, so a chunk still forced
-            // at save would look foreign on the next start and never be released.
+        LifecycleEvent.SERVER_STARTED.register(server -> {
             try {
-                int released = com.player2.playerengine.util.ChunkController.instance.releaseEverything();
-                LOGGER.info("SERVER_STOPPING: released {} companion-forced chunk(s)", released);
+                com.player2.playerengine.util.ChunkHolds.get().serverStarted(server);
             } catch (Exception e) {
-                LOGGER.warn("SERVER_STOPPING chunk release failed: {}", e.getMessage());
+                LOGGER.warn("SERVER_STARTED chunk-hold sweep failed: {}", e.getMessage());
+            }
+        });
+        LifecycleEvent.SERVER_STOPPING.register(server -> {
+            // Before players are disconnected and the world saves: ticket holds are kept for the
+            // next start (R9); the vanilla fallback releases its in-memory holds here instead.
+            try {
+                com.player2.playerengine.util.ChunkHolds.get().serverStopping(server);
+            } catch (Exception e) {
+                LOGGER.warn("SERVER_STOPPING chunk holds failed: {}", e.getMessage());
             }
             // On dedicated, drop queued AI work before tearing down executors so the next start
             // doesn't pick up a stuck queue. Integrated server keeps single-player conversation

@@ -13,6 +13,8 @@ import com.player2.playerengine.player2api.Event;
 import com.player2.playerengine.player2api.manager.ConversationManager;
 import com.player2.playerengine.player2api.utils.CharacterUtils;
 import com.player2.playerengine.structureprotection.PlayerPlacedBlockStore;
+import com.player2.playerengine.util.ChunkHolds;
+import com.player2.playerengine.util.TicketChunkHolds;
 import dev.architectury.event.events.common.LifecycleEvent;
 import dev.architectury.event.events.common.TickEvent;
 import java.nio.charset.StandardCharsets;
@@ -29,6 +31,8 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.storage.LevelResource;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.level.block.Blocks;
@@ -65,8 +69,8 @@ public final class SmokeHarness {
     /** A refusal is decided on the first model turn; the loopback mock answers in milliseconds. */
     private static final int REFUSAL_WINDOW_SEC = 20;
     private static final int DIG_TIMEOUT_SEC = 240;
-    /** The highest arena slot a scenario uses. */
-    private static final int MAX_SLOT = 10;
+    /** What {@code chunk-hold} leaves for {@code chunk-hold-restart} to check, in the world folder. */
+    private static final String CHUNK_HOLD_MARKER = "playerengine-smoke-chunk-hold.txt";
 
     private static boolean tickRegistered;
     private static Run active;
@@ -147,6 +151,8 @@ public final class SmokeHarness {
             case "chunks" -> chunksSurvive(level);
             case "resume" -> planWithInterruption(level, 8, Resume.REATTACH);
             case "despawn" -> despawnReleases(level);
+            case "chunk-hold" -> chunkHold(level);
+            case "chunk-hold-restart" -> chunkHoldAfterRestart(level);
             case "goto" -> planWithInterruption(level, 6, Resume.NONE);
             case "restart" -> restart(level);
             default -> {
@@ -369,46 +375,27 @@ public final class SmokeHarness {
     }
 
     /**
-     * The companion forces the chunks of its 3x3 hold that no arena forces; when Player2NPC dismisses
-     * it, all of them are released and the arena's own chunks are not. It is then summoned again for
-     * the scenarios that follow.
+     * The companion holds its whole 3x3 in the platform's store; when Player2NPC dismisses it, all 9
+     * are released and the arena's own forced chunks are not. It is then summoned again for the
+     * scenarios that follow.
      */
     private static List<Stage> despawnReleases(ServerLevel level) {
         requireCompanion();
         BlockPos site = arena(level, 9);
         ServerPlayer owner = (ServerPlayer) mod().getOwner();
         List<ChunkPos> arenaChunks = arenaChunks(site);
-        List<ChunkPos> own = new ArrayList<>();
+        UUID id = bot().getUUID();
         return List.of(
                 act(() -> place(site, 0, -6, 0.5, 0.5)),
-                waitFor(() -> {
-                    own.clear();
-                    ChunkPos at = bot().chunkPosition();
-                    for (int dx = -1; dx <= 1; dx++) {
-                        for (int dz = -1; dz <= 1; dz++) {
-                            ChunkPos c = new ChunkPos(at.x + dx, at.z + dz);
-                            if (!harnessForced(level, c)) {
-                                own.add(c);
-                            }
-                        }
-                    }
-                    if (own.isEmpty()) {
-                        return "!every chunk of the hold is an arena's; the check would be vacuous";
-                    }
-                    for (ChunkPos c : own) {
-                        if (!level.getForcedChunks().contains(c.toLong())) {
-                            return null;
-                        }
-                    }
-                    return "companion forced its own " + own.size() + " chunk(s)";
-                }, 20, () -> "the companion never forced its own chunks around " + bot().chunkPosition()),
+                waitFor(() -> holdsAround(level, id, bot().chunkPosition()) ? "companion holds its 9 chunks" : null,
+                        20, () -> "the companion never held its 3x3 around " + bot().chunkPosition() + ": held "
+                                + ChunkHolds.get().held(level, id).size()),
                 act(() -> invoke(companionManager(owner), "dismissCompanion", Character.class, character)),
                 waitFor(() -> companion() == null ? "dismissed" : null, 20, "companion still registered after dismiss"),
                 window(() -> {
-                    for (ChunkPos c : own) {
-                        if (level.getForcedChunks().contains(c.toLong())) {
-                            return "!chunk " + c.x + "," + c.z + " still forced after the companion was dismissed";
-                        }
+                    int left = ChunkHolds.get().held(level, id).size();
+                    if (left > 0) {
+                        return "!" + left + " chunk(s) still held after the companion was dismissed";
                     }
                     for (ChunkPos c : arenaChunks) {
                         if (!level.getForcedChunks().contains(c.toLong())) {
@@ -416,9 +403,153 @@ public final class SmokeHarness {
                         }
                     }
                     return null;
-                }, 3, () -> "all " + own.size() + " released, arena kept"),
+                }, 3, () -> "all 9 released, arena kept"),
                 act(() -> invoke(companionManager(owner), "spawnCompanion", Character.class, character)),
                 waitFor(() -> companion() == null ? null : "summoned again", 60, "no companion after summoning it again"));
+    }
+
+    /**
+     * R9, first boot. The hold is the platform's owner-tagged tickets: 9 around the companion; a
+     * {@code /forceload}ed chunk (the arena's) survives the companion leaving it; the same chunk
+     * coordinates held in the nether are a separate hold; and a hold with no recorded owner (a
+     * deleted companion's) is left for {@code chunk-hold-restart} to see swept at the next start.
+     */
+    private static List<Stage> chunkHold(ServerLevel level) {
+        requireCompanion();
+        if (!(ChunkHolds.get() instanceof TicketChunkHolds)) {
+            throw new IllegalStateException("chunk holds are not tickets on this platform: " + ChunkHolds.get());
+        }
+        BlockPos site = arena(level, 11);
+        BlockPos away = arena(level, 12);
+        List<ChunkPos> arenaChunks = arenaChunks(site);
+        UUID id = bot().getUUID();
+        ChunkPos[] first = new ChunkPos[1];
+        ServerLevel nether = level.getServer().getLevel(Level.NETHER);
+        UUID netherGhost = UUID.nameUUIDFromBytes("smoke-nether-ghost".getBytes(StandardCharsets.UTF_8));
+        UUID staleGhost = UUID.nameUUIDFromBytes("smoke-stale-ghost".getBytes(StandardCharsets.UTF_8));
+        ChunkPos staleAt = new ChunkPos(site(level, 13));
+        return List.of(
+                act(() -> place(site, 0, -6, 0.5, 0.5)),
+                waitFor(() -> {
+                    first[0] = bot().chunkPosition();
+                    return holdsAround(level, id, first[0]) ? "9 tickets around " + first[0] : null;
+                }, 20, () -> "no 9-ticket hold around " + bot().chunkPosition() + ": held "
+                        + ChunkHolds.get().held(level, id).size()),
+                act(() -> place(away, 0, -6, 0.5, 0.5)),
+                waitFor(() -> {
+                    if (!holdsAround(level, id, bot().chunkPosition())) {
+                        return null;
+                    }
+                    for (ChunkPos c : arenaChunks) {
+                        if (!level.getForcedChunks().contains(c.toLong())) {
+                            return "!forceloaded chunk " + c.x + "," + c.z + " un-forced when the companion left";
+                        }
+                    }
+                    return "moved from " + first[0] + " to " + bot().chunkPosition() + ": hold is the new 3x3 only, "
+                            + arenaChunks.size() + " forceloaded chunks kept";
+                }, 20, () -> "hold did not follow the companion: held " + ChunkHolds.get().held(level, id).size()),
+                act(() -> {
+                    if (nether == null) {
+                        throw new IllegalStateException("no nether level");
+                    }
+                    ChunkHolds.get().holdExactly(nether, netherGhost, OWNER_ID, around(bot().chunkPosition()));
+                }),
+                waitFor(() -> {
+                    ChunkPos here = bot().chunkPosition();
+                    if (!holdsAround(nether, netherGhost, here)) {
+                        return "!the nether hold at " + here + " is " + ChunkHolds.get().held(nether, netherGhost).size()
+                                + " tickets";
+                    }
+                    ChunkHolds.get().releaseAll(netherGhost);
+                    int netherLeft = ChunkHolds.get().held(nether, netherGhost).size();
+                    return netherLeft == 0 && holdsAround(level, id, here)
+                            ? "nether hold at the same x,z released, overworld hold kept"
+                            : "!after the nether release: nether " + netherLeft + ", overworld "
+                                    + ChunkHolds.get().held(level, id).size();
+                }, 5, "nether hold never checked"),
+                act(() -> {
+                    ChunkHolds.get().holdExactly(level, staleGhost, null, around(staleAt));
+                    writeMarker(level, staleGhost + " " + staleAt.x + " " + staleAt.z);
+                }),
+                waitFor(() -> ChunkHolds.get().held(level, staleGhost).size() == 9
+                                ? "ownerless hold " + staleGhost + " left for the restart" : null,
+                        5, "the ownerless hold was never taken"));
+    }
+
+    /**
+     * R9, second boot, before the owner logs in: the companion's hold from the first boot is back,
+     * and the ownerless one {@code chunk-hold} left was released by the start sweep.
+     */
+    private static List<Stage> chunkHoldAfterRestart(ServerLevel level) {
+        if (!(ChunkHolds.get() instanceof TicketChunkHolds tickets)) {
+            throw new IllegalStateException("chunk holds are not tickets on this platform: " + ChunkHolds.get());
+        }
+        String[] marker = readMarker(level).trim().split(" ");
+        UUID staleGhost = UUID.fromString(marker[0]);
+        UUID[] mine = new UUID[1];
+        return List.of(
+                waitFor(() -> {
+                    List<UUID> owned = new ArrayList<>();
+                    tickets.holders().forEach((c, o) -> {
+                        if (OWNER_ID.equals(o)) {
+                            owned.add(c);
+                        }
+                    });
+                    if (owned.size() != 1) {
+                        return "!" + owned.size() + " companion hold(s) recorded for the owner after the restart";
+                    }
+                    mine[0] = owned.get(0);
+                    int n = ChunkHolds.get().held(level, mine[0]).size();
+                    if (n != 9) {
+                        return "!the companion's hold is " + n + " tickets after the restart";
+                    }
+                    for (long c : ChunkHolds.get().held(level, mine[0])) {
+                        if (!level.isPositionEntityTicking(new ChunkPos(c).getMiddleBlockPosition(FLOOR_Y))) {
+                            return null;
+                        }
+                    }
+                    return "companion " + mine[0] + " holds its 9 chunks again, entity-ticking, owner offline";
+                }, 30, "the held chunks never became entity-ticking"),
+                waitFor(() -> {
+                    int n = ChunkHolds.get().held(level, staleGhost).size();
+                    return n == 0 ? "ownerless hold released at start" : null;
+                }, 15, () -> "ownerless hold " + staleGhost + " still " + ChunkHolds.get().held(level, staleGhost).size()
+                        + " tickets after the start sweep"));
+    }
+
+    private static List<ChunkPos> around(ChunkPos c) {
+        List<ChunkPos> list = new ArrayList<>(9);
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dz = -1; dz <= 1; dz++) {
+                list.add(new ChunkPos(c.x + dx, c.z + dz));
+            }
+        }
+        return list;
+    }
+
+    /** Whether the platform's store holds exactly the 3x3 around {@code at} for {@code id}. */
+    private static boolean holdsAround(ServerLevel level, UUID id, ChunkPos at) {
+        java.util.Set<Long> want = new java.util.HashSet<>();
+        for (ChunkPos c : around(at)) {
+            want.add(c.toLong());
+        }
+        return ChunkHolds.get().held(level, id).equals(want);
+    }
+
+    private static void writeMarker(ServerLevel level, String text) {
+        try {
+            java.nio.file.Files.writeString(level.getServer().getWorldPath(LevelResource.ROOT).resolve(CHUNK_HOLD_MARKER), text);
+        } catch (java.io.IOException e) {
+            throw new IllegalStateException("cannot write " + CHUNK_HOLD_MARKER + ": " + e, e);
+        }
+    }
+
+    private static String readMarker(ServerLevel level) {
+        try {
+            return java.nio.file.Files.readString(level.getServer().getWorldPath(LevelResource.ROOT).resolve(CHUNK_HOLD_MARKER));
+        } catch (java.io.IOException e) {
+            throw new IllegalStateException("no " + CHUNK_HOLD_MARKER + "; run chunk-hold on the first boot", e);
+        }
     }
 
     /** Checklist 5: a waterlogged block in the shell makes the excavate refuse. */
@@ -688,16 +819,6 @@ public final class SmokeHarness {
             }
         }
         return list;
-    }
-
-    /** Whether any arena slot's forcing covers {@code c}, used in this run or not. */
-    private static boolean harnessForced(ServerLevel level, ChunkPos c) {
-        for (int slot = 0; slot <= MAX_SLOT; slot++) {
-            if (arenaChunks(site(level, slot)).contains(c)) {
-                return true;
-            }
-        }
-        return false;
     }
 
     private static void forceChunks(ServerLevel level, BlockPos c) {

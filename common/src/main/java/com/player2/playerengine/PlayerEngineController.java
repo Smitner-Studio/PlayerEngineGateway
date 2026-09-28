@@ -59,7 +59,7 @@ import com.player2.playerengine.executor.RollbackPolicy;
 import com.player2.playerengine.executor.StepExecution;
 import com.player2.playerengine.executor.StopReason;
 import com.player2.playerengine.executor.TaskStepExecutorAdapter;
-import com.player2.playerengine.util.ChunkController;
+import com.player2.playerengine.util.ChunkHolds;
 import com.player2.playerengine.util.Debug;
 import com.player2.playerengine.util.Playground;
 import org.apache.logging.log4j.LogManager;
@@ -226,6 +226,7 @@ public class PlayerEngineController {
       ConversationManager.injectOnTick(server);
       if (server != null && server.getTickCount() % 200 == 0) {
          pruneStaleControllers(server);
+         ChunkHolds.get().tick(server);
       }
    }
 
@@ -248,7 +249,7 @@ public class PlayerEngineController {
       staticControllers.remove(entityUuid);
       staticAPIServices.remove(entityUuid);
       AgenticRunRegistry.clear(entityUuid);
-      ChunkController.instance.releaseAll(entityUuid);
+      ChunkHolds.get().releaseAll(entityUuid);
    }
 
    /**
@@ -270,7 +271,7 @@ public class PlayerEngineController {
             it.remove();
             staticAPIServices.remove(uuid);
             AgenticRunRegistry.clear(uuid);
-            ChunkController.instance.releaseAll(uuid);
+            ChunkHolds.get().releaseAll(uuid);
             removed++;
          }
       }

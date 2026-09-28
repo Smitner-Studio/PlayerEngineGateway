@@ -308,3 +308,34 @@ direction, without coordinates.
 | `common/src/main/java/com/player2/playerengine/commands/BlockScanner.java` | nearest-block and any-found queries consider exposed blocks only |
 | `common/src/main/java/com/player2/playerengine/player2api/status/StatusUtils.java` | nearby blocks exposed only; hostiles in line of sight, no coordinates |
 | `common/src/main/java/com/player2/playerengine/companion/CompanionRulesSelfTest.java` | runs the perception self-test |
+
+**Companion chunk holds are owner-tagged, persistent tickets (NeoForge).** The 3x3 hold is now a
+set of entity tickets from a registered `TicketController` (`playerengine:companion_holds`), one per
+(dimension, chunk, companion). A companion adds and removes only its own tickets, so an operator's
+`/forceload`, another mod's ticket or another companion's hold is never touched, and a chunk forced
+by someone else after the companion arrived now stays forced when it leaves. Despawn and dismissal
+release all 9. Holds survive a restart: nothing is released while the server stops, NeoForge saves
+the tickets with the level and reinstates them at load, and the companion claims its hold when it
+next ticks. Liveness cannot be judged when NeoForge's load callback runs (entities are not loaded
+yet), so a sweep after start releases a loaded hold that records no owner, and one whose owner has
+been online for three sweeps (about 30 s) without the companion returning. A hold whose owner stays
+offline is kept. The companion-to-owner record is `data/playerengine_companion_holds.dat` in the
+overworld. The sweep never touches vanilla forced chunks, including any a gateway.7 crash left
+behind. On Fabric, which has no ticket API here, holds fall back to gateway.7's vanilla forced
+flags: in memory, and released at server stop.
+
+| File | Change |
+|---|---|
+| `common/src/main/java/com/player2/playerengine/util/ChunkHolds.java` | new: where holds live; NeoForge installs tickets, Fabric keeps the vanilla fallback |
+| `common/src/main/java/com/player2/playerengine/util/TicketBook.java` | new: ticket bookkeeping keyed by dimension, chunk and companion; stop keeps holds; stale sweep |
+| `common/src/main/java/com/player2/playerengine/util/TicketBookSelfTest.java` | new: all 9 released, dimension in the key, others' tickets kept, holds kept through stop, stale sweep |
+| `common/src/main/java/com/player2/playerengine/util/TicketChunkHolds.java` | new: tickets through a platform seam, the owner record, sweep on start and every 200 ticks |
+| `common/src/main/java/com/player2/playerengine/util/VanillaChunkHolds.java` | new: the Fabric fallback over `ChunkController` |
+| `neoforge/src/main/java/com/player2/playerengine/forge/NeoForgeChunkTickets.java` | new: the `TicketController`, its load callback, and the saved tickets read back for the smoke gate |
+| `neoforge/src/main/java/com/player2/playerengine/forge/PlayerEngineForge.java` | registers the ticket controller on the mod bus |
+| `common/src/main/java/com/player2/playerengine/trackers/ChunkLoadingTracker.java` | holds exactly the companion's 3x3 through `ChunkHolds`, once a second |
+| `common/src/main/java/com/player2/playerengine/PlayerEngineController.java` | removal, pruning and the 200-tick sweep go through `ChunkHolds` |
+| `common/src/main/java/com/player2/playerengine/MCCommands.java` | start sweep; at stop, tickets are kept and the Fabric fallback releases |
+| `common/src/main/java/com/player2/playerengine/companion/CompanionRulesSelfTest.java` | runs the ticket self-test |
+| `common/src/main/java/com/player2/playerengine/smoke/SmokeHarness.java` | `despawn` reads the ticket store; `chunk-hold` and `chunk-hold-restart` scenarios |
+| `common/src/main/resources/assets/playerengine/lang/en_us.json` | smoke scenario list |

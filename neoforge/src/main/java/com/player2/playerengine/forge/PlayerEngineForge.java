@@ -13,6 +13,7 @@ import net.neoforged.fml.common.Mod;
 public final class PlayerEngineForge {
     public PlayerEngineForge(IEventBus modEventBus, ModContainer modContainer) {
         PlayerEngine.onInitialize();
+        NeoForgeChunkTickets.install(modEventBus);
         if (Platform.getEnvironment() == Env.CLIENT) {
             PlayerEngineClient.onInitializeClient();
         }
