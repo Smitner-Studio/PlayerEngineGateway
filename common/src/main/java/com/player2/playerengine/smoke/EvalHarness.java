@@ -208,7 +208,8 @@ public final class EvalHarness {
         BlockPos site = stamp(level, 1, "room");
         List<BlockPos> hill = find(level, site, s -> s.is(Blocks.DIRT));
         Map<BlockPos, BlockState> before = snapshotStates(level, site);
-        placeBot(site, 0, -1, 0f);
+        // At the hill's face: excavate starts one block ahead of the companion.
+        placeBot(site, 0, 0, 0f);
         placeOwner(site, 0, -4);
         BlockPos a = site.offset(-2, 1, 1);
         BlockPos b = site.offset(2, 3, 5);
@@ -514,7 +515,29 @@ public final class EvalHarness {
     private static boolean busy() {
         com.player2.playerengine.tasks.base.Task t = mod().getUserTaskChain().getCurrentTask();
         boolean task = t != null && !t.isFinished() && !t.getClass().getSimpleName().matches("IdleTask|FollowPlayerTask");
-        return task || !mod().getPlanStatusLine().isEmpty() || mod().getBaritone().getBuilderProcess().isActive();
+        return task || !mod().getPlanStatusLine().isEmpty() || mod().getBaritone().getBuilderProcess().isActive()
+                || modelPending();
+    }
+
+    /**
+     * Whether a model turn is in flight or queued (command feedback waiting for its turn). Without
+     * this a run would be scored between a failed command and the model's retry. Read reflectively
+     * because the conversation keeps both private; gateway.7 and .8 name them alike.
+     */
+    private static boolean modelPending() {
+        AgentConversationData d = companion();
+        try {
+            Field processing = AgentConversationData.class.getDeclaredField("isProcessing");
+            processing.setAccessible(true);
+            Field queue = AgentConversationData.class.getDeclaredField("eventQueue");
+            queue.setAccessible(true);
+            java.lang.reflect.Method dispatchable = AgentConversationData.class
+                    .getDeclaredMethod("hasDispatchableEvents", Deque.class);
+            dispatchable.setAccessible(true);
+            return processing.getBoolean(d) || (Boolean) dispatchable.invoke(null, queue.get(d));
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException("cannot tell whether a model turn is pending: " + e, e);
+        }
     }
 
     private static void tick(MinecraftServer server) {
