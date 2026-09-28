@@ -87,14 +87,19 @@ public interface Primitive {
      *
      * @param error set when the Task itself failed or refused
      * @param note  a success detail for the model, or null
+     * @param value what the call returns to a program, when it returns something ({@code confirm})
      */
-    record TaskEnd(ActionError error, String note) {
+    record TaskEnd(ActionError error, String note, Object value) {
         public static TaskEnd finished(String note) {
-            return new TaskEnd(null, note);
+            return new TaskEnd(null, note, null);
+        }
+
+        public static TaskEnd returned(Object value) {
+            return new TaskEnd(null, null, value);
         }
 
         public static TaskEnd failed(ActionError error) {
-            return new TaskEnd(error, null);
+            return new TaskEnd(error, null, null);
         }
     }
 
@@ -194,6 +199,26 @@ public interface Primitive {
         /** The last box an area primitive finished, or null. */
         default AreaSpec.Box lastArea() {
             throw unsupported("lastArea");
+        }
+
+        /** The server's game time in ticks. */
+        default long gameTime() {
+            throw unsupported("gameTime");
+        }
+
+        /** The block reads a query makes; only for a re-check that fits one tick's read budget. */
+        default WorldReader reader() {
+            throw unsupported("reader");
+        }
+
+        /** The lines this companion has said through {@code say}, oldest first, and how many in all. */
+        default Seam.Spoken spoken() {
+            throw unsupported("spoken");
+        }
+
+        /** The last {@code confirm} this companion asked, and the owner's answer so far. */
+        default Seam.Confirmation confirmation() {
+            throw unsupported("confirmation");
         }
 
         private static UnsupportedOperationException unsupported(String what) {

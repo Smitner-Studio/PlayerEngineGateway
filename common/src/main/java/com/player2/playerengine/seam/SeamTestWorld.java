@@ -37,6 +37,10 @@ public final class SeamTestWorld implements Primitive.World {
     public final Set<ContainerHandle> inSight = new HashSet<>();
     public AreaSpec.Box lastArea;
     public int raycasts;
+    public long gameTime;
+    public WorldReader reader;
+    public Seam.Spoken spoken = new Seam.Spoken(List.of(), 0);
+    public Seam.Confirmation confirmation;
 
     /** An item entity: where it lies, what and how many. */
     public record Ground(Vec3 at, String item, int count) {
@@ -199,5 +203,28 @@ public final class SeamTestWorld implements Primitive.World {
     @Override
     public AreaSpec.Box lastArea() {
         return lastArea;
+    }
+
+    @Override
+    public long gameTime() {
+        return gameTime;
+    }
+
+    @Override
+    public WorldReader reader() {
+        if (reader == null) {
+            throw new UnsupportedOperationException("this test world has no block reader");
+        }
+        return reader;
+    }
+
+    @Override
+    public Seam.Spoken spoken() {
+        return spoken;
+    }
+
+    @Override
+    public Seam.Confirmation confirmation() {
+        return confirmation;
     }
 }

@@ -13,6 +13,11 @@ public final class Primitives {
     public static List<Primitive> all() {
         return List.of(
                 new GotoPrimitive(),
+                new FollowOwnerPrimitive(),
+                new WaitPrimitive(),
+                new WaitUntilPrimitive(),
+                new SayPrimitive(),
+                new ConfirmPrimitive(),
                 new ExcavatePrimitive());
     }
 }

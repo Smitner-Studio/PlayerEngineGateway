@@ -271,4 +271,24 @@ public final class LiveWorld implements Primitive.World {
     public AreaSpec.Box lastArea() {
         return mod.getLastArea();
     }
+
+    @Override
+    public long gameTime() {
+        return level.getGameTime();
+    }
+
+    @Override
+    public WorldReader reader() {
+        return WorldReader.of(level);
+    }
+
+    @Override
+    public Seam.Spoken spoken() {
+        return seam.spoken();
+    }
+
+    @Override
+    public Seam.Confirmation confirmation() {
+        return seam.confirmation();
+    }
 }

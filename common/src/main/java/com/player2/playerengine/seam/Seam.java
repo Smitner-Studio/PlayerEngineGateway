@@ -96,6 +96,79 @@ public final class Seam {
         return false;
     }
 
+    /** What {@code say} has said: the last few lines, and a count that only grows. */
+    public record Spoken(List<String> recent, long total) {
+    }
+
+    /** The last {@code confirm}: its question, and the owner's answer (null until answered). */
+    public record Confirmation(long id, String question, Boolean answer, String text) {
+        public boolean answered() {
+            return text != null;
+        }
+    }
+
+    private final java.util.ArrayDeque<String> spokenLines = new java.util.ArrayDeque<>();
+    private long spokenTotal;
+    private long lastSayTick = Long.MIN_VALUE;
+    private Confirmation confirmation;
+    private long confirmations;
+
+    /** Records a line said through {@code say}. */
+    public synchronized void said(String line, long tick) {
+        spokenLines.addLast(line);
+        while (spokenLines.size() > 8) {
+            spokenLines.removeFirst();
+        }
+        spokenTotal++;
+        lastSayTick = tick;
+    }
+
+    public synchronized Spoken spoken() {
+        return new Spoken(List.copyOf(spokenLines), spokenTotal);
+    }
+
+    /** The game tick of the last {@code say}, for its rate limit. */
+    public synchronized long lastSayTick() {
+        return lastSayTick;
+    }
+
+    /** Opens a {@code confirm}; a newer one replaces an unanswered older one. */
+    public synchronized Confirmation ask(String question) {
+        confirmation = new Confirmation(++confirmations, question, null, null);
+        return confirmation;
+    }
+
+    public synchronized Confirmation confirmation() {
+        return confirmation;
+    }
+
+    /**
+     * The owner's reply to an open {@code confirm}: a yes or no phrase answers it, and anything else
+     * ends it unanswered (the reply goes on to the model).
+     *
+     * @return true when the reply was a yes or no and is consumed here
+     */
+    public synchronized boolean reply(String text) {
+        if (confirmation == null || confirmation.answered() || text == null) {
+            return false;
+        }
+        Boolean yes = YesNo.parse(text);
+        confirmation = new Confirmation(confirmation.id(), confirmation.question(), yes, text);
+        return yes != null;
+    }
+
+    /** Whether a {@code confirm} is waiting for the owner. */
+    public synchronized boolean awaitingReply() {
+        return confirmation != null && !confirmation.answered();
+    }
+
+    /** Drops an open {@code confirm}, as when the call is stopped. */
+    public synchronized void closeConfirmation(long id) {
+        if (confirmation != null && confirmation.id() == id && !confirmation.answered()) {
+            confirmation = null;
+        }
+    }
+
     /** The world this companion's calls read. */
     public Primitive.World world() {
         return new LiveWorld(mod, this);
@@ -251,13 +324,14 @@ public final class Seam {
      * A call's outcome from its Task's verdict and the world: a Task that says Finished succeeds
      * only when the postcondition holds (§6.5).
      */
-    static Outcome verify(Primitive p, Map<String, Object> args, Map<String, Object> pre, Primitive.TaskEnd end,
+    public static Outcome verify(Primitive p, Map<String, Object> args, Map<String, Object> pre, Primitive.TaskEnd end,
             Primitive.World world, List<String> notes) {
         if (end.error() != null) {
             return Outcome.failed(end.error(), notes);
         }
         ActionError post = p.postcondition(args, pre, world);
-        return post == null ? Outcome.ok(end.note(), notes) : Outcome.failed(post, notes);
+        return post == null ? Outcome.ok(end.value() != null ? end.value() : end.note(), notes)
+                : Outcome.failed(post, notes);
     }
 
     private static ActionError withCoercions(ActionError e, List<String> notes) {

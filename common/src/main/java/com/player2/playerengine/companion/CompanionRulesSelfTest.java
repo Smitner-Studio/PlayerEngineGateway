@@ -61,6 +61,7 @@ public final class CompanionRulesSelfTest {
         checks += com.player2.playerengine.PermissionClassSelfTest.runAll();
         checks += com.player2.playerengine.seam.SeamSelfTest.runAll();
         checks += com.player2.playerengine.seam.QueriesSelfTest.runAll();
+        checks += com.player2.playerengine.seam.primitives.PrimitivesSelfTest.runAll();
         System.out.println("companion self-test: " + checks + " checks passed");
     }
 

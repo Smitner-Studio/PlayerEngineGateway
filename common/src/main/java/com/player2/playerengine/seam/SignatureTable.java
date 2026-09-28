@@ -92,13 +92,13 @@ public final class SignatureTable {
                 "within 2 blocks of p", true, "walk to p"));
         t.add(primitive("follow_owner", "follow", null, List.of(Arg.bounded("until_near_blocks", Type.INT, 1, 64),
                         Arg.bounded("timeout_s", Type.INT, 1, MAX_WAIT_SECONDS)), true,
-                "within the range, or timeout", false, "follow the owner until near"));
+                "within the range, or timeout", true, "follow the owner until near"));
         t.add(primitive("wait", null, PermissionClass.MOVE, List.of(Arg.bounded("ticks", Type.INT, 1, MAX_WAIT_TICKS)),
-                true, "none", false, "stand still for ticks"));
+                true, "that many ticks have passed", true, "stand still for ticks"));
         t.add(primitive("wait_until", null, PermissionClass.MOVE, List.of(Arg.of("query_name", Type.QUERY_NAME),
                         Arg.of("args", Type.ANY), Arg.of("predicate", Type.PREDICATE),
                         Arg.bounded("timeout_s", Type.INT, 1, MAX_WAIT_SECONDS)), true,
-                "the predicate holds; re-queries at most every 20 ticks", false, "wait for a query to satisfy predicate"));
+                "the predicate holds; re-queries at most every 20 ticks", true, "wait for a query to satisfy predicate"));
 
         // World.
         t.add(primitive("excavate", "excavate", null, List.of(Arg.of("box", Type.BOX)), true,
@@ -133,9 +133,10 @@ public final class SignatureTable {
 
         // Talk.
         t.add(primitive("say", null, PermissionClass.SELF, List.of(Arg.bounded("text", Type.TEXT, 1, MAX_TEXT)), true,
-                "none; at most 1 per 10 s per job", false, "say a line"));
+                "the line is in the companion's spoken log; at most 1 per 10 s, a sooner one waits", true,
+                "say a line"));
         t.add(primitive("confirm", null, PermissionClass.SELF, List.of(Arg.bounded("question", Type.TEXT, 1, MAX_TEXT)),
-                true, "the owner answered yes or no", false, "ask the owner and wait for yes or no"));
+                true, "the owner answered yes or no", true, "ask the owner and wait for yes or no"));
         return t;
     }
 
