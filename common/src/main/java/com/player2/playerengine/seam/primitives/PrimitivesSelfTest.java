@@ -62,7 +62,6 @@ public final class PrimitivesSelfTest {
         mineCountsTheDropsNotTheOrder();
         noFalseDeposit();
         smeltChoosesItsInput();
-        commandLineForms();
         return checks;
     }
 
@@ -153,10 +152,7 @@ public final class PrimitivesSelfTest {
         } catch (Coercion.Failure f) {
             require(f.error.code() == FailureCode.BAD_ARGS, "mining glass is bad_args: " + f.error);
         }
-        Primitive.LineArgs line = p.fromLine("Iron Ore 8", null);
-        require(line != null && line.raw().equals(m("block", "Iron Ore", "n", "8")), "mine's line form: " + line);
-        require(p.fromLine("#minecraft:logs 3", null) == null, "a tag stays with the mine command");
-        Coercion.Result ambiguous = Coercion.coerce(SignatureTable.get("mine"), p.fromLine("iron 3", null).raw(),
+        Coercion.Result ambiguous = Coercion.coerce(SignatureTable.get("mine"), m("block", "iron", "n", 3),
                 Coercion.Ids.REGISTRIES);
         require(!ambiguous.ok() && ambiguous.error().code() == FailureCode.AMBIGUOUS,
                 "mine iron is ambiguous and lists candidates (E6): " + ambiguous.error());
@@ -335,37 +331,6 @@ public final class PrimitivesSelfTest {
         }
     }
 
-    /** E6 on the command path: the storage and item lines' loose forms land on canonical arguments. */
-    private static void commandLineForms() {
-        Primitive store = Seam.primitiveFor("deposit_to_storage");
-        Primitive.LineArgs dep = store.fromLine("3 64 0 Cobblestone 20,dirt", null);
-        Coercion.Result c = Coercion.coerce(store.signature(), dep.raw(), Coercion.Ids.REGISTRIES);
-        Map<String, Integer> want = new LinkedHashMap<>();
-        want.put("cobblestone", 20);
-        want.put("dirt", null);
-        require(c.ok() && c.args().get("items").equals(want)
-                        && c.args().get("c").equals(ContainerHandle.at(new AreaSpec.Pos(3, 64, 0))),
-                "deposit_to_storage's line coerces to store(c, items): " + (c.ok() ? c.args() : c.error()));
-        Coercion.Result none = Coercion.coerce(store.signature(), store.fromLine("3 64 0", null).raw(),
-                Coercion.Ids.REGISTRIES);
-        require(!none.ok() && none.error().code() == FailureCode.BAD_ARGS, "a deposit with no items is bad_args (E6)");
-        require(store.fromLine("chest dirt", null) == null, "a line without coordinates stays with the command");
-        Primitive give = Seam.primitiveFor("give");
-        require(give.fromLine("bread 3", null).raw().equals(m("item", "bread", "n", "3")), "give <item> <n>");
-        require(give.fromLine("Ellie diamond 3", null) == null, "a give to someone else stays the give command");
-        Primitive equip = Seam.primitiveFor("equip");
-        require(equip.fromLine("iron", null) == null && equip.fromLine("iron_sword", null) != null,
-                "equip iron (a set) stays the command; equip iron_sword is the primitive");
-        Primitive get = Seam.primitiveFor("get");
-        require(get.fromLine("planks 4", null) == null && get.fromLine("log 20", null) == null,
-                "get with a catalogue group stays the command");
-        require(get.fromLine("Torches 5", null).raw().equals(m("item", "Torches", "n", 5)),
-                "get <item> <n> with nothing carried is get(item, n)");
-        Primitive smelt = Seam.primitiveFor("smelt");
-        require(smelt.fromLine("raw_iron 32", null).raw().equals(m("output", "raw_iron", "n", "32")),
-                "smelt's line is read as smelt(output, n); the snapshot turns an input into its output");
-    }
-
     // --- talk --------------------------------------------------------------------------------------
 
     private static List<Case> talk() {
@@ -529,11 +494,6 @@ public final class PrimitivesSelfTest {
             @Override
             public Signature signature() {
                 return p.signature();
-            }
-
-            @Override
-            public LineArgs fromLine(String argsText, Context ctx) {
-                return p.fromLine(argsText, ctx);
             }
 
             @Override

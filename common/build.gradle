@@ -59,13 +59,67 @@ tasks.register('seamSignatures', JavaExec) {
     args file('src/main/resources/playerengine/seam/signatures.json').absolutePath
 }
 
-tasks.register('planSelfTest', JavaExec) {
+tasks.register('areaSelfTest', JavaExec) {
     group = 'verification'
-    description = 'Checks the companion planner and the area-command bounds with a mock model and host.'
+    description = 'Checks the area-command bounds, grammar and dig-time arithmetic.'
     dependsOn tasks.named('classes')
     classpath = sourceSets.main.runtimeClasspath
-    mainClass.set('com.player2.playerengine.player2api.plan.PlanSelfTest')
+    mainClass.set('com.player2.playerengine.tasks.construction.area.AreaSelfTest')
     enableAssertions = true
+}
+
+tasks.register('lintPrograms', JavaExec) {
+    group = 'verification'
+    description = 'Lints a JSONL file of programs for the pack replay checker: -PlintIn=<in.jsonl> -PlintOut=<out.jsonl>.'
+    dependsOn tasks.named('classes')
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass.set('com.player2.playerengine.program.LintFile')
+    args = [project.findProperty('lintIn') ?: '', project.findProperty('lintOut') ?: '']
+}
+
+// The stage-4 cutover (companion-architecture §11, R10, R15): the reply's command and plan fields, the
+// plan path and the command-era consumers (🟡6) have no reader left. Each pattern is a name or read that
+// only the retired paths had; a hit anywhere in the sources fails the build's test gate.
+def checkCutover = tasks.register('checkCutover') {
+    group = 'verification'
+    description = 'Fails when a retired command-era reader, consumer, the @ grammar or the RAG learning layer is back in the sources.'
+    def dir = file('src/main/java')
+    inputs.dir(dir)
+    doLast {
+        def retired = [
+            ~/getStringJsonSafely\(\s*\w+\s*,\s*"(?:command|plan|reason|message)"\s*\)/,
+            ~/\.get\("(?:command|plan)"\)/,
+            ~/\bonCommandListGenerated\b/,
+            ~/\bRepeatedCommandFailureGuard\b/,
+            ~/\bisRedundantAssistantAfterInfo\b/,
+            ~/\bmaybePostDecisionRetry\b/,
+            ~/\bmaybeModelRequestedDeepSearch\b/,
+            ~/\bRagDeepSearchCommands\b/,
+            ~/\?\s*"bodylang greeting"|ONLY USE COMMAND/,
+            ~/\bPlanParser\b|\bPlanCoordinator\b|\bPlanStore\b/,
+            ~/\bvalidCommands\b/,
+            // The @ command grammar (R15) and the RAG learning layer the command path fed.
+            ~/\bexecuteWithPrefix\b|\bisClientCommand\b|\bCommandLines\b|\bfromLine\b|\bLineArgs\b/,
+            ~/retrieval\.learning|\bAliasLearning\w*|\bDeepCheck(?:Budget|Rephrase|Response|Prompt|JsonParser|Attempt)\w*/,
+            // Their settings keys: the @ prefix and the deep-check and alias-learning switches.
+            ~/"commandPrefix"|\bget(?:CommandPrefix|DeepCheck\w*)\b|\bisEnable(?:DeepCheck|AliasLearning)\w*|"deepCheck[A-Z]\w*"/,
+        ]
+        int files = 0
+        dir.eachFileRecurse { File f ->
+            if (!f.name.endsWith('.java')) {
+                return
+            }
+            files++
+            f.getText('UTF-8').eachLine(1) { String line, int n ->
+                retired.each { pattern ->
+                    if (line =~ pattern) {
+                        throw new GradleException("${f.name}:${n}: a retired command-era path is back (${pattern}): ${line.trim()}")
+                    }
+                }
+            }
+        }
+        println "cutover: ${files} files, no reader of the reply's command or plan and no command-era consumer"
+    }
 }
 
 // The program package stays pure (companion-architecture §11 stage 3): no Minecraft types, and from
@@ -99,7 +153,7 @@ def checkProgramPurity = tasks.register('checkProgramPurity') {
 tasks.register('programSelfTest', JavaExec) {
     group = 'verification'
     description = 'Checks the program interpreter over a stub world: lint, yield and restore, caps, reconcile, jobs.'
-    dependsOn tasks.named('classes'), checkProgramPurity
+    dependsOn tasks.named('classes'), checkProgramPurity, checkCutover
     classpath = sourceSets.main.runtimeClasspath
     mainClass.set('com.player2.playerengine.program.ProgramSelfTest')
     enableAssertions = true

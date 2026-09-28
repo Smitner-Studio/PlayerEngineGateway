@@ -102,29 +102,3 @@ to apply the changes without restarting Minecraft.
 
 Use `/playerengine rag inspect <toolId>` to see the current merged keyword list for a
 tool, with `[+]` marking overlay-added entries.
-
----
-
-## Deep-check and alias learning (Phase B5 / B5.1)
-
-When retrieval is weak or the DECISION model cannot find a fitting command, the server may
-run an extra **rephrase** HTTP call (Default model via `RERANKING`) and merge retry queries
-into the prompt. Learned keywords are written to the per-owner overlay **only after a
-successful world command execution**.
-
-Paths (all gated by `enableDeepCheckRephrase`):
-- **Heuristic** — weak retrieval confidence before the first DECISION.
-- **Model-triggered (`rag_deepsearch`)** — virtual command in the RAG prompt footer; not
-  registered in `CommandExecutor` and never executed in-world. The patron model may emit
-  `rag_deepsearch` when no listed command fits; the server refreshes the list and issues one
-  follow-up DECISION (loop blocked if it repeats).
-- **Post-decision** — chosen command id was not in the injected top-k set.
-
-Kill switches (`playerengine/playerengine_settings.json`):
-- `enableDeepCheckRephrase` (default `false`) — heuristic, model `rag_deepsearch`, and post-decision retries.
-- `enableAliasLearning` (default `false`) — write learned keywords to the overlay.
-- `enableDeepCheckMessage` (default `false`) — brief chat line before model-requested deep check.
-- `deepCheckMaxAttemptsPerTurn` (0–3) — shared cap across all deep-check paths per user turn.
-
-When `enableDeepCheckRephrase` is `false`, no `rag_deepsearch` footer appears and the system
-behaves as B3: one retrieval pass, no extra rephrase API calls.

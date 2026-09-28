@@ -28,12 +28,6 @@
   "help.playerengine.rag-retrieve.arg.category": "Необязательный тег категории для ограничения поиска; можно указывать несколько раз перед целью.",
   "help.playerengine.rag-reload.short": "Перезагрузить все оверлей-файлы RAG и перестроить индекс.",
   "help.playerengine.rag-reload.long": "Заново считывает все оверлей-файлы с диска, перестраивает глобальный модуль поиска и очищает все персональные кэши.",
-  "help.playerengine.rag-audit-tail.short": "Вывести последние N записей журнала аудита обучения псевдонимам RAG.",
-  "help.playerengine.rag-audit-tail.arg.n": "Сколько последних строк журнала аудита показать (по умолчанию 20).",
-  "help.playerengine.rag-reset-learned.short": "Очистить изученные псевдонимы RAG для одного инструмента или всех инструментов.",
-  "help.playerengine.rag-reset-learned.long": "Удаляет данные обучения псевдонимам для владельца, выполнившего команду (или для всех владельцев при использовании --all-owners), при необходимости — только для одного инструмента.",
-  "help.playerengine.rag-reset-learned.arg.toolId": "Ограничить сброс указанным идентификатором инструмента (не указывайте, чтобы сбросить для всех инструментов).",
-  "help.playerengine.rag-reset-learned-all-owners.short": "Очистить изученные псевдонимы RAG у всех владельцев.",
   "help.playerengine.rag-inspect.short": "Вывести объединённый документ инструмента по его идентификатору.",
   "help.playerengine.rag-inspect.long": "Показывает все поля объединённого документа инструмента для индекса игрока, выполнившего команду; ключевые слова и примеры, добавленные оверлеем, отмечены знаком [+].",
   "help.playerengine.rag-inspect.arg.toolId": "Идентификатор инструмента для просмотра.",
@@ -161,9 +155,6 @@
   "message.playerengine.rag.reload_failed": "Перезагрузка RAG завершена. Глобальный индекс: ОШИБКА",
   "message.playerengine.rag.not_initialized": "Индекс RAG не инициализирован.",
   "message.playerengine.rag.inspect_tool_not_found": "Инструмент с id «%s» не найден.",
-  "message.playerengine.rag.audit_no_rows": "(нет строк)",
-  "message.playerengine.rag.reset_learned_console_error": "Консоль должна использовать reset_learned --all-owners либо указать контекст владельца через player.",
-  "message.playerengine.rag.reset_learned_success": "Обучаемые оверлеи сброшены для %1$s%2$s (затронуто каталогов владельцев: %3$d).",
 
   "message.playerengine.routing.unknown_task_class": "Неизвестный класс задачи: %s. Используйте RETRIEVAL, RERANKING, SUMMARIZATION, PLANNING или DECISION.",
 

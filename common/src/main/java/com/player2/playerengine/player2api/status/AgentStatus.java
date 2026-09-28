@@ -36,7 +36,7 @@ public class AgentStatus extends ObjectStatus {
             .add("isOnBoat", String.valueOf(isOnBoat))
             .add("vehicleType", vehicleType)
             .add("vehicleId", vehicleId)
-            .add("activePlan", mod.getPlanStatusLine().isEmpty() ? "none" : mod.getPlanStatusLine())
+            .add("job", mod.getJobStatusLine().isEmpty() ? "none" : mod.getJobStatusLine())
             .add("lastArea", mod.getLastArea() == null ? "none" : mod.getLastArea().corners());
       // .add("taskTree", StatusUtils.getTaskTree(mod));
    }

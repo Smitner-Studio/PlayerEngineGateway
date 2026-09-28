@@ -79,7 +79,6 @@ import com.player2.playerengine.player2api.manager.ConversationManager;
 import com.player2.playerengine.retrieval.RagIndex;
 import com.player2.playerengine.retrieval.RetrievalHit;
 import com.player2.playerengine.retrieval.SeedToolMetadata;
-import com.player2.playerengine.retrieval.learning.AliasLearningService;
 import com.player2.playerengine.retrieval.ToolDocument;
 import com.player2.playerengine.retrieval.ToolRetriever;
 import com.player2.playerengine.modintelligence.ModIntelligenceService;
@@ -195,7 +194,7 @@ public class MCCommands {
             }
             // On dedicated, drop queued AI work before tearing down executors so the next start
             // doesn't pick up a stuck queue. Integrated server keeps single-player conversation
-            // state for the next session. Plans are kept: plan.json loads PAUSED on the next start.
+            // state for the next session. Jobs are kept: job.json loads PAUSED on the next start.
             if (server != null && server.isDedicatedServer()) {
                 try {
                     ConversationManager.QueueClearSummary summary = ConversationManager.clearPendingWork(false);
@@ -275,6 +274,7 @@ public class MCCommands {
                          .then(registerRelog())
                          .then(registerSummon())
                          .then(registerQueueClear())
+                         .then(registerStop())
                          .then(registerRag())
                          .then(registerRouting())
                          .then(registerCapability())
@@ -441,6 +441,9 @@ public class MCCommands {
                         new ArgNote("page", "help.playerengine.help.arg.page")), 0, null, "general"));
 
         // diagnostics
+        HelpRegistry.register(new HelpEntry("playerengine", "stop", "stop <companion|all>",
+                "help.playerengine.stop.short", "help.playerengine.stop.long",
+                List.of(new ArgNote("companion", "help.playerengine.stop.arg.companion")), 2, null, "diagnostics"));
         HelpRegistry.register(new HelpEntry("playerengine", "queue clear", "queue clear [player]",
                 "help.playerengine.queue-clear.short", "help.playerengine.queue-clear.long",
                 List.of(new ArgNote("player", "help.playerengine.queue-clear.arg.player")), 2, null, "diagnostics"));
@@ -460,17 +463,6 @@ public class MCCommands {
                         new ArgNote("category", "help.playerengine.rag-retrieve.arg.category")), 2, null, "rag"));
         HelpRegistry.register(new HelpEntry("playerengine", "rag reload", "rag reload",
                 "help.playerengine.rag-reload.short", "help.playerengine.rag-reload.long",
-                List.of(), 2, null, "rag"));
-        HelpRegistry.register(new HelpEntry("playerengine", "rag audit tail", "rag audit tail [n]",
-                "help.playerengine.rag-audit-tail.short", null,
-                List.of(new ArgNote("n", "help.playerengine.rag-audit-tail.arg.n")), 2, null, "rag"));
-        HelpRegistry.register(new HelpEntry("playerengine", "rag reset_learned",
-                "rag reset_learned [toolId] [--all-owners]",
-                "help.playerengine.rag-reset-learned.short", "help.playerengine.rag-reset-learned.long",
-                List.of(new ArgNote("toolId", "help.playerengine.rag-reset-learned.arg.toolId")), 2, null, "rag"));
-        HelpRegistry.register(new HelpEntry("playerengine", "rag reset_learned --all-owners",
-                "rag reset_learned [toolId] --all-owners",
-                "help.playerengine.rag-reset-learned-all-owners.short", null,
                 List.of(), 2, null, "rag"));
         HelpRegistry.register(new HelpEntry("playerengine", "rag inspect", "rag inspect <toolId>",
                 "help.playerengine.rag-inspect.short", "help.playerengine.rag-inspect.long",
@@ -539,6 +531,42 @@ public class MCCommands {
                                 })));
     }
 
+    /**
+     * {@code /playerengine stop <companion|all>}, OP-only: the last-resort stop that does not depend on
+     * chat routing (§13 ask 2). A unique name ("Arran's Ada") stops that companion; a bare name stops
+     * the one companion it names and never fans out (R16); {@code all} stops every companion. It is
+     * the chat stop lane's action, so the model is bypassed and the job is cancelled.
+     */
+    private static LiteralArgumentBuilder<CommandSourceStack> registerStop() {
+        return Commands.literal("stop")
+                .requires(src -> src.hasPermission(2))
+                .then(Commands.argument("companion", StringArgumentType.greedyString())
+                        .executes(ctx -> {
+                            String name = StringArgumentType.getString(ctx, "companion").trim();
+                            List<AgentConversationData> named = ConversationManager.companionsNamed(name);
+                            if (named.isEmpty()) {
+                                ctx.getSource().sendFailure(Component.translatable(
+                                        "message.playerengine.commands.stop_none", name));
+                                return 0;
+                            }
+                            if (named.size() > 1 && !"all".equalsIgnoreCase(name)) {
+                                List<String> which = new java.util.ArrayList<>();
+                                named.forEach(d -> which.add(ConversationManager.uniqueName(d)));
+                                ctx.getSource().sendFailure(Component.translatable(
+                                        "message.playerengine.commands.stop_which", String.join(", ", which)));
+                                return 0;
+                            }
+                            for (AgentConversationData d : named) {
+                                ConversationManager.stopCompanion(d);
+                                LOGGER.info("/playerengine stop by {} stopped {}", ctx.getSource().getTextName(),
+                                        ConversationManager.uniqueName(d));
+                            }
+                            ctx.getSource().sendSuccess(() -> Component.translatable(
+                                    "message.playerengine.commands.stop_done", named.size()), true);
+                            return named.size();
+                        }));
+    }
+
     private static void sendQueueClearFeedback(CommandSourceStack src,
             ConversationManager.QueueClearSummary summary, String targetName) {
         String label = targetName != null
@@ -588,13 +616,6 @@ public class MCCommands {
                             ctx.getSource().sendSuccess(() -> displayMsg, true);
                             return 1;
                         }))
-                .then(Commands.literal("audit")
-                        .then(Commands.literal("tail")
-                                .executes(ctx -> executeRagAuditTail(ctx, 20))
-                                .then(Commands.argument("n", IntegerArgumentType.integer(1, 100))
-                                        .executes(ctx -> executeRagAuditTail(
-                                                ctx, IntegerArgumentType.getInteger(ctx, "n"))))))
-                .then(buildRagResetLearnedCommand())
                 .then(Commands.literal("inspect")
                         .then(Commands.argument("toolId", StringArgumentType.word())
                                 .executes(ctx -> {
@@ -888,60 +909,6 @@ public class MCCommands {
 
         LOGGER.info(sb.toString());
         src.sendSuccess(() -> Component.literal(sb.toString()), false);
-        return 1;
-    }
-
-    private static int executeRagAuditTail(CommandContext<CommandSourceStack> ctx, int n) {
-        MinecraftServer server = ctx.getSource().getServer();
-        List<String> lines = AliasLearningService.auditTail(server, n);
-        String body = String.join("\n", lines);
-        ctx.getSource().sendSuccess(() -> body.isEmpty()
-                ? Component.translatable("message.playerengine.rag.audit_no_rows")
-                : Component.literal(body), false);
-        return 1;
-    }
-
-    private static LiteralArgumentBuilder<CommandSourceStack> buildRagResetLearnedCommand() {
-        return Commands.literal("reset_learned")
-                .executes(ctx -> executeRagResetLearned(ctx, null, false))
-                .then(Commands.literal("--all-owners")
-                        .executes(ctx -> executeRagResetLearned(ctx, null, true))
-                        .then(Commands.argument("toolId", StringArgumentType.word())
-                                .executes(ctx -> executeRagResetLearned(
-                                        ctx,
-                                        StringArgumentType.getString(ctx, "toolId"),
-                                        true))))
-                .then(Commands.argument("toolId", StringArgumentType.word())
-                        .executes(ctx -> executeRagResetLearned(
-                                ctx,
-                                StringArgumentType.getString(ctx, "toolId"),
-                                false))
-                        .then(Commands.literal("--all-owners")
-                                .executes(ctx -> executeRagResetLearned(
-                                        ctx,
-                                        StringArgumentType.getString(ctx, "toolId"),
-                                        true))));
-    }
-
-    private static int executeRagResetLearned(
-            CommandContext<CommandSourceStack> ctx, String toolId, boolean allOwners) {
-        CommandSourceStack src = ctx.getSource();
-        MinecraftServer server = src.getServer();
-        UUID ownerUuid = null;
-        if (!allOwners) {
-            try {
-                ServerPlayer player = src.getPlayerOrException();
-                ownerUuid = player.getUUID();
-            } catch (Exception e) {
-                src.sendFailure(Component.translatable("message.playerengine.rag.reset_learned_console_error"));
-                return 0;
-            }
-        }
-        int count = AliasLearningService.resetLearned(server, ownerUuid, toolId);
-        String scope = allOwners ? "all owners" : ("owner " + ownerUuid);
-        String tool = toolId != null ? (" tool=" + toolId) : " (all tools)";
-        src.sendSuccess(() -> Component.translatable("message.playerengine.rag.reset_learned_success",
-                scope, tool, count), true);
         return 1;
     }
 

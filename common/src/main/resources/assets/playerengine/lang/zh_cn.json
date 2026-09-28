@@ -28,12 +28,6 @@
   "help.playerengine.rag-retrieve.arg.category": "可选的分类标记，用于限定检索范围；可在目标之前重复指定。",
   "help.playerengine.rag-reload.short": "重新加载所有 RAG 覆盖文件并重建索引。",
   "help.playerengine.rag-reload.long": "从磁盘重新读取所有覆盖文件，重建全局检索器，并清除所有按所有者划分的缓存。",
-  "help.playerengine.rag-audit-tail.short": "输出 RAG 别名学习审计日志的最后 N 条记录。",
-  "help.playerengine.rag-audit-tail.arg.n": "要显示的末尾审计记录条数（默认 20）。",
-  "help.playerengine.rag-reset-learned.short": "清除某个工具或所有工具已学习的 RAG 别名。",
-  "help.playerengine.rag-reset-learned.long": "移除执行该命令的所有者的别名学习数据（使用 --all-owners 时移除所有所有者的数据），可选择将范围限定为单个工具。",
-  "help.playerengine.rag-reset-learned.arg.toolId": "将重置范围限定为该工具 ID（省略则重置所有工具）。",
-  "help.playerengine.rag-reset-learned-all-owners.short": "清除全部所有者已学习的 RAG 别名。",
   "help.playerengine.rag-inspect.short": "输出指定工具 ID 的合并工具文档。",
   "help.playerengine.rag-inspect.long": "显示执行该命令的玩家索引中该合并工具文档的所有字段；由覆盖文件添加的关键词和示例会以 [+] 标记。",
   "help.playerengine.rag-inspect.arg.toolId": "要查看的工具 ID。",
@@ -161,9 +155,6 @@
   "message.playerengine.rag.reload_failed": "RAG 重新加载完成。全局索引：FAILED",
   "message.playerengine.rag.not_initialized": "RAG 索引未初始化。",
   "message.playerengine.rag.inspect_tool_not_found": "未找到 ID 为 '%s' 的工具。",
-  "message.playerengine.rag.audit_no_rows": "（无记录）",
-  "message.playerengine.rag.reset_learned_console_error": "控制台必须使用 reset_learned --all-owners，或通过玩家身份指定所有者上下文。",
-  "message.playerengine.rag.reset_learned_success": "已重置 %1$s%2$s 的学习覆盖层（涉及 %3$d 个所有者目录）。",
 
   "message.playerengine.routing.unknown_task_class": "未知任务类别：%s。使用 RETRIEVAL、RERANKING、SUMMARIZATION、PLANNING 或 DECISION。",
 

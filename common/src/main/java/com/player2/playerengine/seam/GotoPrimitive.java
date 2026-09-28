@@ -18,24 +18,10 @@ public final class GotoPrimitive implements Primitive {
         return SignatureTable.get("goto");
     }
 
-    /** Takes {@code x y z} only; the dimension and partial forms stay with the {@code goto} command. */
-    @Override
-    public LineArgs fromLine(String argsText, Context ctx) {
-        String[] t = argsText.trim().split("\\s+");
-        if (t.length != 3) {
-            return null;
-        }
-        for (String s : t) {
-            if (!s.matches("-?\\d+(\\.\\d+)?")) {
-                return null;
-            }
-        }
-        return LineArgs.of(Map.of("p", String.join(" ", t)), Map.of());
-    }
-
+    /** Movement is not bounded by the job's region (§4.2 as ruled): nothing to refuse before it starts. */
     @Override
     public ActionError admit(Map<String, Object> args, Context ctx) {
-        return MotionBounds.check(ctx.region(), dimension(ctx), (AreaSpec.Pos) args.get("p"));
+        return null;
     }
 
     @Override
@@ -58,9 +44,5 @@ public final class GotoPrimitive implements Primitive {
                 "target", List.of(p.x(), p.y(), p.z()),
                 "at", List.of((int) Math.floor(at.x), (int) Math.floor(at.y), (int) Math.floor(at.z)),
                 "distance", Math.round(d)));
-    }
-
-    private static String dimension(Context ctx) {
-        return ctx.mod().getWorld().dimension().location().toString();
     }
 }

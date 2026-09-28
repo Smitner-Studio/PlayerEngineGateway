@@ -12,6 +12,9 @@
   "help.playerengine.help.arg.command": "A command path to show detailed help for.",
   "help.playerengine.help.arg.page": "The page number to show.",
 
+  "help.playerengine.stop.short": "Stop a companion at once, or every companion.",
+  "help.playerengine.stop.long": "OP-only. Stops a companion without the model: its job is cancelled and its task stops, as the chat stop does. Name it uniquely (Arran's Ada), by a name only one companion has, or use all.",
+  "help.playerengine.stop.arg.companion": "A companion's unique name, a name only one companion has, or all.",
   "help.playerengine.queue-clear.short": "Flush pending AI work and shut down LLM buckets.",
   "help.playerengine.queue-clear.long": "OP-only. Flushes pending AI events and shuts down per-billing LLM buckets so a stuck or runaway queue can be recovered without a server restart. With a player argument it is scoped to that player's companions.",
   "help.playerengine.queue-clear.arg.player": "Limit the clear to this player's companions.",
@@ -31,12 +34,6 @@
   "help.playerengine.rag-retrieve.arg.category": "Optional category tag to restrict retrieval; repeatable before the goal.",
   "help.playerengine.rag-reload.short": "Reload all RAG overlay files and rebuild the index.",
   "help.playerengine.rag-reload.long": "Re-reads all overlay files from disk, rebuilds the global retriever, and evicts all per-owner caches.",
-  "help.playerengine.rag-audit-tail.short": "Print the last N entries of the RAG alias-learning audit log.",
-  "help.playerengine.rag-audit-tail.arg.n": "How many trailing audit rows to show (default 20).",
-  "help.playerengine.rag-reset-learned.short": "Clear learned RAG aliases for a tool or all tools.",
-  "help.playerengine.rag-reset-learned.long": "Removes alias-learning data for the executing owner (or all owners with --all-owners), optionally scoped to a single tool.",
-  "help.playerengine.rag-reset-learned.arg.toolId": "Limit the reset to this tool id (omit for all tools).",
-  "help.playerengine.rag-reset-learned-all-owners.short": "Clear learned RAG aliases across all owners.",
   "help.playerengine.rag-inspect.short": "Print the merged tool document for a tool id.",
   "help.playerengine.rag-inspect.long": "Shows all fields of the merged tool document for the executing player's index; keywords and examples added by an overlay are marked with [+].",
   "help.playerengine.rag-inspect.arg.toolId": "The tool id to inspect.",
@@ -136,6 +133,9 @@
   "message.playerengine.budget.field.fallback_behavior_stop": "budgetFallbackBehavior=HARD_STOP",
 
   "message.playerengine.commands.queue_clear": "PlayerEngine queue clear: drained %1$d conversation queue(s), shut down %2$d LLM bucket(s).",
+  "message.playerengine.commands.stop_done": "Stopped %s companion(s).",
+  "message.playerengine.commands.stop_none": "No companion is named %s.",
+  "message.playerengine.commands.stop_which": "That names more than one companion; stop one of: %s.",
   "message.playerengine.commands.queue_clear_scoped": "PlayerEngine queue clear (%1$s): drained %2$d conversation queue(s), shut down %3$d LLM bucket(s).",
   "message.playerengine.commands.no_active_bots": "No Player2 API service registered (no active bots).",
   "message.playerengine.commands.echo_prefix": "> %s",
@@ -166,9 +166,6 @@
   "message.playerengine.rag.reload_failed": "RAG reload complete. Global index: FAILED",
   "message.playerengine.rag.not_initialized": "RAG index not initialized.",
   "message.playerengine.rag.inspect_tool_not_found": "No tool found with id '%s'.",
-  "message.playerengine.rag.audit_no_rows": "(no rows)",
-  "message.playerengine.rag.reset_learned_console_error": "Console must use reset_learned --all-owners or specify owner context via player.",
-  "message.playerengine.rag.reset_learned_success": "Reset learned overlays for %1$s%2$s (%3$d owner dir(s) touched).",
 
   "message.playerengine.routing.unknown_task_class": "Unknown task class: %s. Use RETRIEVAL, RERANKING, SUMMARIZATION, PLANNING, or DECISION.",
 

@@ -30,7 +30,7 @@ final class CraftPrimitive extends Base {
             return Calls.fail(FailureCode.BAD_ARGS, "nothing is crafted into " + Calls.human(id)
                     + "; get gathers it, smelt cooks it", "item", id);
         }
-        return null;
+        return Calls.standingInRegion(ctx);
     }
 
     @Override

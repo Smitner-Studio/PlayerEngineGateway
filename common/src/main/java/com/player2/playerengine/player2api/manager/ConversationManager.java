@@ -326,9 +326,7 @@ public class ConversationManager {
         } else {
             return false;
         }
-        boolean requestStillDraining = target.cancelPendingModelActionsForOperatorStop();
-        target.getMod().isStopping = true;
-        target.getMod().stop();
+        boolean requestStillDraining = stopCompanion(target);
         String name = uniqueName(target);
         notifyPlayer(msg.userName(), server, requestStillDraining
                 ? Component.translatable("message.playerengine.agent.owner_stop_ack_delayed", name)
@@ -363,6 +361,54 @@ public class ConversationManager {
             }
         }
         return consumed;
+    }
+
+    /**
+     * Stops one companion at once, bypassing the model: its turn in flight goes stale, its job is
+     * cancelled and its task stops. The chat stop lane and {@code /playerengine stop} both come here.
+     *
+     * @return true when a stuck model request is still draining
+     */
+    public static boolean stopCompanion(AgentConversationData target) {
+        boolean requestStillDraining = target.cancelPendingModelActionsForOperatorStop();
+        target.getMod().isStopping = true;
+        target.getMod().stop();
+        return requestStillDraining;
+    }
+
+    /**
+     * Every companion a {@code /playerengine stop} argument names: all of them for {@code all}, else
+     * those whose unique name ("Arran's Ada") or bare name matches. The caller stops a bare name only
+     * when it names exactly one companion (R16).
+     */
+    public static List<AgentConversationData> companionsNamed(String name) {
+        List<AgentConversationData> out = new ArrayList<>();
+        String want = CompanionAddress.key(name);
+        for (AgentConversationData data : queueData.values()) {
+            try {
+                if ("all".equalsIgnoreCase(name.trim()) || CompanionAddress.key(uniqueName(data)).equals(want)
+                        || CompanionAddress.key(displayName(data.getCharacter())).equals(want)) {
+                    out.add(data);
+                }
+            } catch (RuntimeException stale) {
+                LOGGER.warn("Skipping stale companion while resolving a stop: type={}", stale.getClass().getSimpleName());
+            }
+        }
+        return out;
+    }
+
+    /** A companion's line to one player, outside a model turn: a job notice (R19, §5.1). */
+    public static void noticeFromCompanion(AgentConversationData from, UUID player, String text) {
+        MinecraftServer server = from.getMod().getPlayer() == null ? null : from.getMod().getPlayer().getServer();
+        if (server == null || player == null) {
+            LOGGER.info("Notice from {} for an offline or unknown player: {}", from.getName(), text);
+            return;
+        }
+        ServerPlayer p = server.getPlayerList().getPlayer(player);
+        String name = p == null ? null : p.getGameProfile().getName();
+        LOGGER.info("Notice from {} to {}: {}", from.getName(), name == null ? player + " (offline)" : name, text);
+        notifyPlayer(name, server, Component.translatable("message.playerengine.chat.character_message",
+                from.getName(), text));
     }
 
     private static void notifyPlayer(String userName, MinecraftServer server, Component message) {
@@ -469,9 +515,9 @@ public class ConversationManager {
         queueData.forEach((k, v) -> {
             if (v.getMod().getPlayer().getServer() == server) {
                 try {
-                    v.tickPlan();
+                    v.tickJobs();
                 } catch (RuntimeException e) {
-                    LOGGER.error("[Plan] tick failed for bot={}", v.getName(), e);
+                    LOGGER.error("[Job] tick failed for bot={}", v.getName(), e);
                 }
             }
         });
@@ -549,11 +595,11 @@ public class ConversationManager {
         return clearPendingWork(true);
     }
 
-    /** As {@link #clearPendingWork()}; with {@code dropPlans} false each companion keeps its saved plan. */
-    public static QueueClearSummary clearPendingWork(boolean dropPlans) {
+    /** As {@link #clearPendingWork()}; with {@code dropJobs} false each companion keeps its saved job. */
+    public static QueueClearSummary clearPendingWork(boolean dropJobs) {
         int queuesCleared = 0;
         for (AgentConversationData data : queueData.values()) {
-            data.resetForClear(dropPlans);
+            data.resetForClear(dropJobs);
             queuesCleared++;
         }
         int bucketsShutdown = llmLanes.shutdownAll();

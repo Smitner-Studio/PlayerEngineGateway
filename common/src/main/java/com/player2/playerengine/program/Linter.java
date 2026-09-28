@@ -342,11 +342,16 @@ public final class Linter {
             } else if (b.right() instanceof Ident n && profile == Profile.FULL) {
                 Var v = lookup(n.name());
                 ok = v != null && v.isConst();
+            } else if (b.right() instanceof Member m && m.name().equals("length") && m.object() instanceof Ident
+                    && profile == Profile.FULL) {
+                // i < arr.length: bounded by the array cap, and the statement cap bounds the rest.
+                ok = true;
             }
         }
         if (!ok) {
             err(f, profile == Profile.FULL
-                    ? "the for condition must be " + var + " < N with N a number or a const; use while otherwise"
+                    ? "the for condition must be " + var + " < N with N a number, a const or arr.length; use while"
+                            + " otherwise"
                     : "the restricted profile's for condition must be " + var + " < N with N a number");
         }
         if (!(f.update().target() instanceof Ident t && t.name().equals(var))) {
@@ -395,7 +400,15 @@ public final class Linter {
                 a.items().forEach(x -> expr(x, null));
             }
             case ObjectLit o -> {
-                if (new HashSet<>(o.keys()).size() != o.keys().size()) {
+                List<String> plain = new ArrayList<>();
+                for (int i = 0; i < o.keys().size(); i++) {
+                    if (o.computed().get(i) == null) {
+                        plain.add(o.keys().get(i));
+                    } else {
+                        expr(o.computed().get(i), null);
+                    }
+                }
+                if (new HashSet<>(plain).size() != plain.size()) {
                     err(o, "an object names the same field twice");
                 }
                 o.values().forEach(x -> expr(x, null));
@@ -474,7 +487,9 @@ public final class Linter {
             c.args().forEach(a -> expr(a, null));
             return;
         }
-        err(c, "only api.*, skills.*, your functions, the built-ins and push, slice and includes can be called");
+        err(c, "only api.*, skills.*, your functions, the built-ins (" + String.join(", ",
+                new java.util.TreeSet<>(Builtins.ARITY.keySet())) + ") and the methods push, slice, includes and join"
+                + " can be called");
         c.args().forEach(a -> expr(a, null));
     }
 

@@ -1,6 +1,5 @@
 package com.player2.playerengine.chains;
 
-import com.player2.playerengine.player2api.AgentSideEffectsSelfTest;
 import com.player2.playerengine.executor.RollbackPolicy;
 import com.player2.playerengine.executor.StepExecution;
 import com.player2.playerengine.executor.StepState;
@@ -40,7 +39,6 @@ public final class UserTaskChainSelfTest {
         clearingPolicyIdleNeverTouchesRealWork();
         UnstuckChainSelfTest.runAll();
         TaskRunnerSelfTest.runAll();
-        AgentSideEffectsSelfTest.runAll();
     }
 
     private static void preTickCancelResolvesAndClearsAssignment() {

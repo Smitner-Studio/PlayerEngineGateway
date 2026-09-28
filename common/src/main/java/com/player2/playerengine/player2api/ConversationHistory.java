@@ -311,10 +311,10 @@ public class ConversationHistory {
    }
 
    /**
-    * Command-feedback (Info) turns often make the model repeat the previous assistant reply.
-    * When that happens, drop the duplicate wording for history and chat; commands still run.
+    * Info turns (a job's report, a failure) often make the model repeat its previous {@code say}.
+    * When that happens, drop the repeated wording for history and chat; a program still runs.
     */
-   public static boolean isRedundantAssistantAfterInfo(String previousAssistant, String newAssistant) {
+   public static boolean isRepeatedSay(String previousAssistant, String newAssistant) {
       String p = normalizeAssistantTextForComparison(previousAssistant);
       String n = normalizeAssistantTextForComparison(newAssistant);
       if (p.isEmpty() || n.isEmpty()) {
@@ -329,48 +329,13 @@ public class ConversationHistory {
       return tokenJaccard(previousAssistant, newAssistant) >= 0.45;
    }
 
-   // ReminderString adds a reminder to the latest user message if present.
-   // validCommandsBlock (when present) carries the per-turn RAG-retrieved command subset; it is injected
-   // ONLY into this throwaway copy (historyFile == null) and so is never persisted to conversation.jsonl.
+   // ReminderString adds a reminder to the latest user message if present. The memory, currentMood and
+   // additionalPrompt blocks are injected at the TAIL of this throwaway copy (historyFile == null), so
+   // they never reach conversation.jsonl and never enter message 0 (the prefix-cache invariant). An
+   // absent or blank block leaves its key out.
    public ConversationHistory copyThenWrapLatestWithStatus(String worldStatus, String agentStatus,
          String altoclefStatusMsgs, Player2APIService player2apiService, Optional<String> reminderString,
-         Optional<String> validCommandsBlock) {
-      // Existing-arity delegate: no memory block → behavior byte-identical to pre-Phase-D.
-      return copyThenWrapLatestWithStatus(worldStatus, agentStatus, altoclefStatusMsgs,
-            player2apiService, reminderString, validCommandsBlock, Optional.empty());
-   }
-
-   // Phase D (W5) overload: identical body PLUS the per-turn memory block injected at the TAIL of the
-   // throwaway copy, AFTER validCommands. The memory block lives ONLY in this never-persisted copy
-   // (historyFile == null), so it never reaches conversation.jsonl. An absent / blank block is dropped
-   // by the .filter guard, so the non-patron / empty path produces a byte-identical request.
-   public ConversationHistory copyThenWrapLatestWithStatus(String worldStatus, String agentStatus,
-         String altoclefStatusMsgs, Player2APIService player2apiService, Optional<String> reminderString,
-         Optional<String> validCommandsBlock, Optional<String> memoryBlock) {
-      // Mood overload delegate: no mood block → tail byte-identical to pre-mood-feature.
-      return copyThenWrapLatestWithStatus(worldStatus, agentStatus, altoclefStatusMsgs,
-            player2apiService, reminderString, validCommandsBlock, memoryBlock, Optional.empty());
-   }
-
-   // Mood overload: identical body PLUS the per-turn currentMood block injected at the TAIL of the
-   // throwaway copy, AFTER memory. Like memory/validCommands it lives ONLY in this never-persisted copy
-   // (historyFile == null), so it never reaches conversation.jsonl, and it must NEVER enter the static
-   // system block (prefix-cache invariant). An absent / blank block is dropped by the .filter guard so
-   // the flag-off / neutral path keeps the tail byte-identical.
-   public ConversationHistory copyThenWrapLatestWithStatus(String worldStatus, String agentStatus,
-         String altoclefStatusMsgs, Player2APIService player2apiService, Optional<String> reminderString,
-         Optional<String> validCommandsBlock, Optional<String> memoryBlock, Optional<String> moodBlock) {
-      return copyThenWrapLatestWithStatus(worldStatus, agentStatus, altoclefStatusMsgs,
-            player2apiService, reminderString, validCommandsBlock, memoryBlock, moodBlock, Optional.empty());
-   }
-
-   // Additional prompt overload: identical body PLUS the player-authored per-character prompt injected
-   // at the TAIL of the throwaway copy, AFTER currentMood. It never enters message 0 or persisted
-   // conversation.jsonl, preserving the prefix-cache invariant.
-   public ConversationHistory copyThenWrapLatestWithStatus(String worldStatus, String agentStatus,
-         String altoclefStatusMsgs, Player2APIService player2apiService, Optional<String> reminderString,
-         Optional<String> validCommandsBlock, Optional<String> memoryBlock, Optional<String> moodBlock,
-         Optional<String> additionalPromptBlock) {
+         Optional<String> memoryBlock, Optional<String> moodBlock, Optional<String> additionalPromptBlock) {
       ConversationHistory copy = new ConversationHistory(this.conversationHistory.get(0).get("content").getAsString());
 
       for (int i = 1; i < this.conversationHistory.size() - 1; i++) {
@@ -391,10 +356,7 @@ public class ConversationHistory {
             if (!altoclefStatusMsgs.isBlank()) {
                msgObj.add("gameDebugMessages", altoclefStatusMsgs);
             }
-            validCommandsBlock
-                  .filter(s -> !s.isBlank())
-                  .ifPresent(block -> msgObj.add("validCommands", block));
-            // W5: memory injected at the TAIL, after validCommands. Absent/blank → key omitted.
+            // W5: memory injected at the TAIL. Absent/blank → key omitted.
             memoryBlock
                   .filter(s -> !s.isBlank())
                   .ifPresent(block -> msgObj.add("memory", block));

@@ -12,15 +12,15 @@ public final class UtilsJsonSelfTest {
     }
 
     public static void main(String[] args) throws Exception {
-        JsonObject direct = Utils.parseCleanedJson("{\"reason\":\"ok\",\"command\":\"idle\",\"message\":\"hi\"}");
-        assert "idle".equals(direct.get("command").getAsString());
+        JsonObject direct = Utils.parseCleanedJson("{\"say\":\"hi\",\"program\":\"api.wait(20);\"}");
+        assert "api.wait(20);".equals(direct.get("program").getAsString());
 
         JsonObject doubleBraced = Utils.parseCleanedJson(
-                "{{\"reason\":\"wrapped\",\"command\":\"follow Bastien46\",\"message\":\"j'arrive\"}}");
-        assert "follow Bastien46".equals(doubleBraced.get("command").getAsString());
+                "{{\"say\":\"j'arrive\",\"program\":\"api.follow_owner(4, 60);\"}}");
+        assert "api.follow_owner(4, 60);".equals(doubleBraced.get("program").getAsString());
 
         JsonObject fencedDoubleBraced = Utils.parseCleanedJson(
-                "```json\n{{\"reason\":\"wrapped\",\"command\":\"idle\",\"message\":\"salut\"}}\n```");
-        assert "salut".equals(fencedDoubleBraced.get("message").getAsString());
+                "```json\n{{\"say\":\"salut\"}}\n```");
+        assert "salut".equals(fencedDoubleBraced.get("say").getAsString());
     }
 }

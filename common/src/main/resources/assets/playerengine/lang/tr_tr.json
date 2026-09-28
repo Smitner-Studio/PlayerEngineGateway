@@ -28,12 +28,6 @@
   "help.playerengine.rag-retrieve.arg.category": "Sorgulamayı kısıtlamak için isteğe bağlı kategori etiketi; hedeften önce tekrarlanabilir.",
   "help.playerengine.rag-reload.short": "Tüm RAG kaplama dosyalarını yeniden yükler ve dizini yeniden oluşturur.",
   "help.playerengine.rag-reload.long": "Diskten tüm kaplama dosyalarını yeniden okur, global sorgulayıcıyı yeniden oluşturur ve sahip başına tüm önbellekleri temizler.",
-  "help.playerengine.rag-audit-tail.short": "RAG takma ad öğrenme denetim günlüğünün son N girişini yazdırır.",
-  "help.playerengine.rag-audit-tail.arg.n": "Gösterilecek son denetim satırı sayısı (varsayılan 20).",
-  "help.playerengine.rag-reset-learned.short": "Bir araç veya tüm araçlar için öğrenilmiş RAG takma adlarını temizler.",
-  "help.playerengine.rag-reset-learned.long": "Yürüten sahip (veya --all-owners ile tüm sahipler) için takma ad öğrenme verilerini kaldırır; isteğe bağlı olarak tek bir araçla sınırlandırılabilir.",
-  "help.playerengine.rag-reset-learned.arg.toolId": "Sıfırlamayı bu araç kimliğiyle sınırlar (tüm araçlar için atlanabilir).",
-  "help.playerengine.rag-reset-learned-all-owners.short": "Tüm sahipler genelinde öğrenilmiş RAG takma adlarını temizler.",
   "help.playerengine.rag-inspect.short": "Bir araç kimliğine ait birleştirilmiş araç belgesini yazdırır.",
   "help.playerengine.rag-inspect.long": "Yürüten oyuncunun dizinindeki birleştirilmiş araç belgesinin tüm alanlarını gösterir; bir kaplama tarafından eklenen anahtar kelimeler ve örnekler [+] ile işaretlenir.",
   "help.playerengine.rag-inspect.arg.toolId": "İncelenecek araç kimliği.",
@@ -160,9 +154,6 @@
   "message.playerengine.rag.reload_failed": "RAG yeniden yükleme tamamlandı. Global dizin: BAŞARISIZ",
   "message.playerengine.rag.not_initialized": "RAG dizini başlatılmadı.",
   "message.playerengine.rag.inspect_tool_not_found": "'%s' kimliğine sahip araç bulunamadı.",
-  "message.playerengine.rag.audit_no_rows": "(satır yok)",
-  "message.playerengine.rag.reset_learned_console_error": "Konsol, reset_learned --all-owners kullanmalı veya oyuncu aracılığıyla sahip bağlamını belirtmelidir.",
-  "message.playerengine.rag.reset_learned_success": "%1$s%2$s için öğrenilmiş katmanlar sıfırlandı (%3$d sahip dizini etkilendi).",
 
   "message.playerengine.routing.unknown_task_class": "Bilinmeyen görev sınıfı: %s. RETRIEVAL, RERANKING, SUMMARIZATION, PLANNING veya DECISION kullanın.",
 

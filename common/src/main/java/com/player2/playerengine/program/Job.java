@@ -40,6 +40,13 @@ public final class Job {
 
     public static final int VERSION = 1;
 
+    /**
+     * Where the job may change the world (§4.2): a sphere around its initiator at creation, in plain
+     * values so it persists with the job. Fixed for the job's life: resuming never moves it.
+     */
+    public record Region(String dimension, int x, int y, int z, int radius) {
+    }
+
     final String id;
     final String goal;
     final String initiator;
@@ -64,6 +71,7 @@ public final class Job {
     private boolean restored;
     /** Done calls reconcile already checked since the restore. */
     private final Set<Long> checked = new HashSet<>();
+    private Region region;
     private transient ActionPort port;
     private transient Runnable onChange = () -> { };
 
@@ -85,6 +93,20 @@ public final class Job {
             throw new IllegalArgumentException("a job needs a program that lints clean: " + lint.repairMessage());
         }
         return new Job(id, goal, initiator, profile, api, new Machine(lint.program()), new CallLog());
+    }
+
+    /** Sets the region once, at creation; a second call is refused so a resume cannot re-centre it. */
+    public Job region(Region r) {
+        if (this.region != null) {
+            throw new IllegalStateException("a job's region is fixed at creation");
+        }
+        this.region = r;
+        return this;
+    }
+
+    /** The job's region, or null for a job that has none (outside the world, or saved before regions). */
+    public Region region() {
+        return region;
     }
 
     /** Binds the world this job acts on; required before {@link #tick} or {@link #resume}. */
@@ -482,6 +504,15 @@ public final class Job {
         o.addProperty("profile", profile.name());
         o.addProperty("source", machine.program.source);
         o.addProperty("state", state.name());
+        if (region != null) {
+            JsonObject r = new JsonObject();
+            r.addProperty("dimension", region.dimension());
+            r.addProperty("x", region.x());
+            r.addProperty("y", region.y());
+            r.addProperty("z", region.z());
+            r.addProperty("radius", region.radius());
+            o.add("region", r);
+        }
         o.addProperty("pause", pause.name());
         if (lastError != null) {
             o.add("lastError", CallLog.errorJson(lastError));
@@ -516,6 +547,11 @@ public final class Job {
                 profile, api, Machine.fromJson(program, o.getAsJsonObject("machine")),
                 CallLog.fromJson(o.getAsJsonArray("log")));
         j.state = State.valueOf(o.get("state").getAsString());
+        if (o.has("region")) {
+            JsonObject r = o.getAsJsonObject("region");
+            j.region = new Region(r.get("dimension").getAsString(), r.get("x").getAsInt(), r.get("y").getAsInt(),
+                    r.get("z").getAsInt(), r.get("radius").getAsInt());
+        }
         j.pause = Pause.valueOf(o.get("pause").getAsString());
         j.lastError = o.has("lastError") ? CallLog.errorFromJson(o.getAsJsonObject("lastError")) : null;
         if (o.has("question")) {

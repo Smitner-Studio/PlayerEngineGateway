@@ -2,13 +2,10 @@ package com.player2.playerengine.seam.primitives;
 
 import com.player2.playerengine.seam.ActionError;
 import com.player2.playerengine.seam.FailureCode;
-import com.player2.playerengine.seam.MotionBounds;
 import com.player2.playerengine.tasks.base.Task;
-import com.player2.playerengine.tasks.construction.area.AreaSpec;
 import com.player2.playerengine.tasks.movement.GetToEntityTask;
 import java.util.Map;
 import java.util.function.Consumer;
-import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.phys.Vec3;
 
@@ -28,8 +25,7 @@ final class FollowOwnerPrimitive extends Base {
         if (o == null || o.level() != ctx.mod().getWorld()) {
             return Calls.fail(FailureCode.NOT_FOUND, "my owner is not here");
         }
-        BlockPos b = o.blockPosition();
-        return MotionBounds.check(ctx.region(), Calls.dimension(ctx), new AreaSpec.Pos(b.getX(), b.getY(), b.getZ()));
+        return null;
     }
 
     @Override

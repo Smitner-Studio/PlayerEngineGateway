@@ -137,6 +137,20 @@ final class Calls {
                 ((Number) l.get(2)).doubleValue() + 0.5);
     }
 
+    /**
+     * The job region (§4.2) for a world-editing call that picks its own targets near the companion
+     * ({@code mine}, {@code get}, {@code craft}): the companion must stand inside it. Null outside a
+     * job.
+     */
+    static ActionError standingInRegion(Primitive.Context ctx) {
+        if (ctx.region() == null || ctx.mod().getPlayer() == null) {
+            return null;
+        }
+        net.minecraft.core.BlockPos b = ctx.mod().getPlayer().blockPosition();
+        return com.player2.playerengine.seam.MotionBounds.check(ctx.region(), dimension(ctx),
+                new com.player2.playerengine.tasks.construction.area.AreaSpec.Pos(b.getX(), b.getY(), b.getZ()));
+    }
+
     static String dimension(Primitive.Context ctx) {
         return ctx.mod().getWorld().dimension().location().toString();
     }

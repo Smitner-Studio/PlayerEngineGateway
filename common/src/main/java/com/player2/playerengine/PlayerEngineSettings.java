@@ -28,7 +28,6 @@ public class PlayerEngineSettings implements IFailableConfigFile {
    private boolean showDebugTickMs = false;
    private boolean showTaskChains = true;
    private boolean hideAllWarningLogs = false;
-   private String commandPrefix = "@";
    private String logLevel = "NORMAL";
    private String chatLogPrefix = "[Alto Clef] ";
    private boolean showTimer = true;
@@ -220,10 +219,6 @@ public class PlayerEngineSettings implements IFailableConfigFile {
 
    public String getLogLevel() {
       return this.logLevel;
-   }
-
-   public String getCommandPrefix() {
-      return this.commandPrefix;
    }
 
    public String getChatLogPrefix() {
@@ -634,7 +629,6 @@ public class PlayerEngineSettings implements IFailableConfigFile {
       copy.showDebugTickMs = this.showDebugTickMs;
       copy.showTaskChains = this.showTaskChains;
       copy.hideAllWarningLogs = this.hideAllWarningLogs;
-      copy.commandPrefix = this.commandPrefix;
       copy.logLevel = this.logLevel;
       copy.chatLogPrefix = this.chatLogPrefix;
       copy.showTimer = this.showTimer;
@@ -783,9 +777,6 @@ public class PlayerEngineSettings implements IFailableConfigFile {
    }
 
    void normalizeAdminSupportedValues() {
-      if (!isValidCommandPrefix(this.commandPrefix)) {
-         this.commandPrefix = "@";
-      }
       if (!isValidIdleCommand(this.idleCommand)) {
          this.idleCommand = "";
       }
@@ -848,7 +839,6 @@ public class PlayerEngineSettings implements IFailableConfigFile {
 
    void setAdminString(String key, String value) {
       switch (key) {
-         case "commandPrefix" -> this.commandPrefix = value;
          case "idleCommand" -> this.idleCommand = value;
          default -> throw new IllegalArgumentException("Unsupported string setting: " + key);
       }
@@ -974,15 +964,6 @@ public class PlayerEngineSettings implements IFailableConfigFile {
 
    List<Item> adminSupportedFuels() {
       return List.copyOf(this.supportedFuels);
-   }
-
-   private static boolean isValidCommandPrefix(String value) {
-      if (value == null || value.isBlank() || value.codePointCount(0, value.length()) > 8) {
-         return false;
-      }
-      return value.codePoints().noneMatch(cp -> java.lang.Character.isWhitespace(cp)
-            || java.lang.Character.isSpaceChar(cp)
-            || java.lang.Character.isISOControl(cp));
    }
 
    private static boolean isValidIdleCommand(String value) {

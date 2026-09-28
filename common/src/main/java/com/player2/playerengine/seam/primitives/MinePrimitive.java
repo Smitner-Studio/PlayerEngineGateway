@@ -22,27 +22,11 @@ final class MinePrimitive extends Base {
         super("mine");
     }
 
-    /** {@code mine <block> [count]}, the block in any loose form; a {@code #tag} stays with the command. */
-    @Override
-    public LineArgs fromLine(String argsText, Context ctx) {
-        String[] t = argsText.trim().split("\\s+");
-        if (t.length == 0 || t[0].isEmpty() || t[0].startsWith("#")) {
-            return null;
-        }
-        Object n = 1;
-        String[] name = t;
-        if (t.length >= 2 && t[t.length - 1].matches("-?\\d+")) {
-            n = t[t.length - 1];
-            name = Arrays.copyOf(t, t.length - 1);
-        }
-        return LineArgs.of(Map.of("block", String.join(" ", name), "n", n), Map.of());
-    }
-
     @Override
     public ActionError admit(Map<String, Object> args, Context ctx) {
         int n = (Integer) args.get("n");
         return n > MAX_BLOCKS ? Calls.fail(FailureCode.BAD_ARGS, "I mine at most " + MAX_BLOCKS
-                + " blocks per order; split it", "n", n) : null;
+                + " blocks per order; split it", "n", n) : Calls.standingInRegion(ctx);
     }
 
     @Override

@@ -22,13 +22,6 @@ final class PickupDropsPrimitive extends Base {
     }
 
     @Override
-    public LineArgs fromLine(String argsText, Context ctx) {
-        String a = argsText.trim();
-        Object radius = a.isEmpty() ? (Object) (int) Math.round(ctx.mod().getModSettings().getGatherLooseItemsRadius()) : a;
-        return LineArgs.of(Map.of("radius", radius), Map.of());
-    }
-
-    @Override
     public Map<String, Object> snapshot(Map<String, Object> args, World world) {
         return Map.of("centre", Calls.list(world.position()));
     }

@@ -1,6 +1,5 @@
 package com.player2.playerengine.seam;
 
-import com.google.gson.JsonElement;
 import com.player2.playerengine.PlayerEngineCommands;
 import com.player2.playerengine.tasks.construction.area.AreaScan;
 import com.player2.playerengine.tasks.construction.area.AreaSpec;
@@ -35,7 +34,6 @@ public final class SeamSelfTest {
         checks = 0;
         signatureTableIsTheSource();
         coercionTable();
-        commandLineForms();
         doubleChestIsOneHandle();
         perceptionAtTheSeam();
         radius32QuerySpansTicksUnderTheBudget();
@@ -164,33 +162,6 @@ public final class SeamSelfTest {
         List<String> candidates = (List<String>) iron.error().state().get("candidates");
         require(candidates.contains("iron_ingot") && candidates.contains("raw_iron"),
                 "an ambiguous id lists its candidates rather than guessing: " + candidates);
-    }
-
-    private static void commandLineForms() {
-        Coercion.Ids ids = Coercion.Ids.REGISTRIES;
-        CommandLines.Normalised light = CommandLines.normalise("scan_storage", "1 64 3", ids);
-        require(light.ok() && light.args().equals("1 64 3 light") && !light.notes().isEmpty(),
-                "scan_storage without a mode is a light scan, said: " + light);
-        CommandLines.Normalised targeted = CommandLines.normalise("scan_storage", "1 64 3 Iron Ingots 5", ids);
-        require(targeted.ok() && targeted.args().equals("1 64 3 targeted iron_ingot 5"),
-                "scan_storage with items is targeted: " + targeted);
-        CommandLines.Normalised list = CommandLines.normalise("withdraw_from_storage", "1 64 3 iron_ingot 5,coal", ids);
-        require(list.ok() && list.args().equals("1 64 3 iron_ingot 5, coal"), "a comma list without spaces: " + list);
-        CommandLines.Normalised same = CommandLines.normalise("withdraw_from_storage", "1 64 3 iron_ingot 5, coal", ids);
-        require(same.ok() && same.notes().isEmpty() && same.args().equals("1 64 3 iron_ingot 5, coal"),
-                "a canonical line passes unchanged: " + same);
-        CommandLines.Normalised ambiguous = CommandLines.normalise("deposit_to_storage", "1 64 3 iron", ids);
-        require(!ambiguous.ok() && ambiguous.error().code() == FailureCode.AMBIGUOUS, "an ambiguous item: " + ambiguous);
-        CommandLines.Normalised other = CommandLines.normalise("mine", "Iron Ores 3", ids);
-        require(other.ok() && other.args().equals("Iron Ores 3") && other.notes().isEmpty(),
-                "lines no rule covers pass unchanged");
-        JsonElement plan = CommandLines.liftPlan("plan {\"goal\": \"dig\", \"steps\": [\"goto 1 2 3\"]}", "@");
-        require(plan != null && plan.isJsonObject() && plan.getAsJsonObject().get("goal").getAsString().equals("dig"),
-                "a plan sent as a command is read as the plan field");
-        JsonElement bare = CommandLines.liftPlan("@plan [\"goto 1 2 3\", \"excavate 3 3 3\"]", "@");
-        require(bare != null && bare.getAsJsonObject().getAsJsonArray("steps").size() == 2, "a bare step list too");
-        require(CommandLines.liftPlan("place_sign 1 2 3 hi", "@") == null && CommandLines.liftPlan("planks", "@") == null
-                && CommandLines.liftPlan("plan resume", "@") == null, "other commands are not plans");
     }
 
     // --- containers -------------------------------------------------------------------------------
@@ -391,6 +362,9 @@ public final class SeamSelfTest {
                 "another dimension is out of the region");
         require(MotionBounds.check(null, "minecraft:overworld", new AreaSpec.Pos(9000, 64, 0)) == null,
                 "outside a job there is no region");
+        Map<String, Object> far9000 = Map.of("p", new AreaSpec.Pos(9000, 64, 0));
+        require(Seam.primitive("goto").admit(far9000, new Primitive.Context(null, region)) == null,
+                "movement is not bounded: a goto 9000 blocks out of the region is admitted");
     }
 
     // --- postconditions ---------------------------------------------------------------------------

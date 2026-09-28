@@ -20,14 +20,6 @@ import net.minecraft.world.phys.Vec3;
 public interface Primitive {
     Signature signature();
 
-    /**
-     * The raw arguments a command line's argument text gives, before coercion.
-     *
-     * @return null when this line form is not one the primitive takes, so the registered command
-     *         runs it as before (for example {@code goto} with a dimension)
-     */
-    LineArgs fromLine(String argsText, Context ctx);
-
     /** Region, protection and motion checks before anything moves; null when admitted. */
     ActionError admit(Map<String, Object> args, Context ctx);
 
@@ -66,20 +58,6 @@ public interface Primitive {
 
     /** The companion a call runs on, and the job region its motion is bound to (null outside a job). */
     record Context(PlayerEngineController mod, MotionBounds.Region region) {
-    }
-
-    /**
-     * A command line's arguments: the raw values by signature name, the line-only options the
-     * signature does not carry (such as {@code confirm=yes}), or why the line does not parse.
-     */
-    record LineArgs(Map<String, Object> raw, Map<String, Object> options, ActionError error) {
-        public static LineArgs of(Map<String, Object> raw, Map<String, Object> options) {
-            return new LineArgs(raw, options, null);
-        }
-
-        public static LineArgs failed(ActionError error) {
-            return new LineArgs(Map.of(), Map.of(), error);
-        }
     }
 
     /**

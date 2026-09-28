@@ -28,12 +28,6 @@
   "help.playerengine.rag-retrieve.arg.category": "Tanda kategori opsional untuk membatasi pengambilan; dapat diulang sebelum tujuan.",
   "help.playerengine.rag-reload.short": "Muat ulang semua berkas overlay RAG dan bangun ulang indeks.",
   "help.playerengine.rag-reload.long": "Membaca ulang semua berkas overlay dari disk, membangun ulang retriever global, dan menghapus semua cache per-pemilik.",
-  "help.playerengine.rag-audit-tail.short": "Tampilkan N entri terakhir dari log audit pembelajaran alias RAG.",
-  "help.playerengine.rag-audit-tail.arg.n": "Jumlah baris audit terakhir yang akan ditampilkan (default 20).",
-  "help.playerengine.rag-reset-learned.short": "Hapus alias RAG yang telah dipelajari untuk satu alat atau semua alat.",
-  "help.playerengine.rag-reset-learned.long": "Menghapus data pembelajaran alias untuk pemilik yang menjalankan perintah ini (atau semua pemilik jika menggunakan --all-owners), dan secara opsional dapat dibatasi pada satu alat saja.",
-  "help.playerengine.rag-reset-learned.arg.toolId": "Batasi penghapusan pada id alat ini (kosongkan untuk semua alat).",
-  "help.playerengine.rag-reset-learned-all-owners.short": "Hapus alias RAG yang telah dipelajari dari semua pemilik.",
   "help.playerengine.rag-inspect.short": "Tampilkan dokumen alat gabungan untuk suatu id alat.",
   "help.playerengine.rag-inspect.long": "Menampilkan semua kolom dokumen alat gabungan pada indeks milik pemain yang menjalankan perintah ini; kata kunci dan contoh yang ditambahkan oleh overlay ditandai dengan [+].",
   "help.playerengine.rag-inspect.arg.toolId": "Id alat yang akan diperiksa.",
@@ -161,9 +155,6 @@
   "message.playerengine.rag.reload_failed": "Pemuatan ulang RAG selesai. Indeks global: GAGAL",
   "message.playerengine.rag.not_initialized": "Indeks RAG belum diinisialisasi.",
   "message.playerengine.rag.inspect_tool_not_found": "Tidak ditemukan tool dengan id '%s'.",
-  "message.playerengine.rag.audit_no_rows": "(tidak ada baris)",
-  "message.playerengine.rag.reset_learned_console_error": "Konsol harus menggunakan reset_learned --all-owners atau menentukan konteks pemilik melalui pemain.",
-  "message.playerengine.rag.reset_learned_success": "Overlay yang dipelajari untuk %1$s%2$s telah direset (%3$d direktori pemilik disentuh).",
 
   "message.playerengine.routing.unknown_task_class": "Kelas tugas tidak dikenal: %s. Gunakan RETRIEVAL, RERANKING, SUMMARIZATION, PLANNING, atau DECISION.",
 

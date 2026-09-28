@@ -75,7 +75,7 @@ Files changed from upstream:
 | `common/src/main/java/com/player2/playerengine/player2api/Player2PayerResolution.java` | server-wide work is billable with no player online when the gateway is enabled |
 | `common/src/main/java/com/player2/playerengine/player2api/utils/AudioUtils.java` | text-to-speech skipped when the gateway is enabled |
 | `common/build.gradle` | `gatewaySelfTest` task |
-| `gradle.properties` | version `1.21.1-1.4.0-gateway.8.1` |
+| `gradle.properties` | version `1.21.1-1.4.0-gateway.9` |
 | `neoforge/src/main/resources/META-INF/neoforge.mods.toml` | display name "PlayerEngine (OpenAI-gateway fork)" |
 | `README.md`, `NOTICE.md`, `Taskfile.yml`, `.gitignore` | fork documentation and build entries |
 
@@ -522,3 +522,113 @@ keeps its large but finite cost for player-placed blocks in the way.
 | File | Change |
 |---|---|
 | `gradle.properties` | version `1.21.1-1.4.0-gateway.8.1` |
+
+## Programs replace commands (gateway.9, companion stage 4)
+
+**The reply is `{say, program?, save?, mood?}` (R4, R10, R15).** A companion acts by writing a
+short program in a JavaScript subset against the typed `api.*` of the seam, and the interpreter
+added before this runs it as a job. The reply's `command`, `plan`, `message` and `reason` fields
+are gone with no alias: a reply that carries `command` or `plan` is a format error, retried like
+unparseable JSON and never run. The command list, the per-turn `validCommands` and the RAG command
+documents left the prompt; the system prompt is now `playerengine/program/system-prompt.txt`
+filled with the character and the full API reference generated from `signatures.json`. The
+command-era consumers are replaced: the greeting's forced `bodylang` became a `[bl:greeting]`
+marker, the RAG deep-search meta-command and the post-decision retry are removed (a program that
+does not lint gets one repair turn instead), the command dispatcher is the job board, the repeated
+command-failure guard became a per-job repair limit (8 model turns, and the same failure twice
+ends it), and the repeated-reply check reads `say`. The `plan` package and `plan.json` are gone:
+jobs persist in `job.json` beside the conversation; a `plan.json` left by gateway.6 to gateway.8 is
+deleted on first load, with a line to its initiator. A job restored after a restart waits, paused,
+for the companion's owner, and its initiator is told (R19). A bare "continue" resumes the paused
+job and "resume X" a shelved one, without the model. A completion report built from the verified
+calls log is said when a job ends (R5). Gestures run the `bodylang` task directly. The model-free
+stop phrase stays (R16), and the op-only `/playerengine stop <companion|all>` is added. The
+`@` command line survives only for the settings' idle command. `task test` runs `checkCutover`,
+which fails when a retired reader or consumer is back in the sources.
+
+| File | Change |
+|---|---|
+| `common/src/main/java/com/player2/playerengine/player2api/Reply.java` | new: the v2 reply; `command` or `plan` is a format error |
+| `common/src/main/java/com/player2/playerengine/player2api/ReplySelfTest.java` | new: legacy fields rejected, v2 parses, job lines, repair limit, the prompt names every api call |
+| `common/src/main/java/com/player2/playerengine/player2api/ProgramJobs.java` | new: lint, start and run jobs through the seam; `job.json`; old `plan.json` discarded; R19 notice |
+| `common/src/main/java/com/player2/playerengine/player2api/RepairLimit.java` | new: model turns a job may spend on repairs |
+| `common/src/main/java/com/player2/playerengine/player2api/ResumeIntent.java` | new: "continue" and "resume X" |
+| `common/src/main/java/com/player2/playerengine/seam/ProgramPort.java` | new: the interpreter's `ActionPort` over `Seam.call`, with the job's region |
+| `common/src/main/java/com/player2/playerengine/program/ApiReference.java` | new: the prompt's API reference from the signature table |
+| `common/src/main/java/com/player2/playerengine/program/LintFile.java` | new: lints a file of programs for the pack's replay checker |
+| `common/src/main/resources/playerengine/program/system-prompt.txt` | new: the system prompt template |
+| `common/src/main/java/com/player2/playerengine/player2api/AgentConversationData.java` | v2 replies start jobs; command, plan, RAG, deep-search, retry and finish-prompt paths removed |
+| `common/src/main/java/com/player2/playerengine/player2api/AgentSideEffects.java` | speech only; the command dispatcher and idle handling removed |
+| `common/src/main/java/com/player2/playerengine/player2api/Prompts.java`, `AIPersistantData.java`, `ConversationHistory.java`, `Event.java` | program prompt; no command list or `validCommands`; `job.json`; a character line carries no command |
+| `common/src/main/java/com/player2/playerengine/player2api/manager/ConversationManager.java` | shared stop action, `/playerengine stop` lookup, companion notices, job tick |
+| `common/src/main/java/com/player2/playerengine/MCCommands.java` | `/playerengine stop <companion\|all>` |
+| `common/src/main/java/com/player2/playerengine/PlayerEngine.java` | gestures run the `bodylang` task directly |
+| `common/src/main/java/com/player2/playerengine/PlayerEngineController.java`, `player2api/status/AgentStatus.java` | the status's `job` line |
+| `common/src/main/java/com/player2/playerengine/player2api/plan/*`, `RepeatedCommandFailureGuard.java`, `AgentSideEffectsSelfTest.java` | removed |
+| `common/src/main/java/com/player2/playerengine/retrieval/RagPromptBuilder.java`, `RagDeepSearchCommands.java`, `learning/RagDeepCheckCoordinator.java`, `learning/RagDeepCheckPipeline.java`, `learning/DeepCheckRephraseService.java` | removed |
+| `common/src/main/java/com/player2/playerengine/seam/CommandLines.java`, `Seam.java` | the plan-as-a-command lift removed |
+| `common/src/main/java/com/player2/playerengine/smoke/SmokeHarness.java` | scenarios send `SMOKE-PROGRAM:` programs; `plan`, `resume`, `goto` and `restart` are jobs; `restart` checks the old `plan.json` discard and the R19 notice |
+| `common/build.gradle`, `Taskfile.yml` | `checkCutover`, `areaSelfTest` (was run by the plan self-test), `lintPrograms` / `task lint-programs` |
+| `common/src/main/resources/assets/playerengine/lang/en_us.json` | `/playerengine stop` help and replies |
+
+**Mining never takes a player-placed block.** `BlockScanner`'s candidates, which `mine` and the
+gather tasks choose their targets from, now skip every block in the player-placed store while
+structure protection is on, as the pathing rule already did for blocks a path would break. A
+program's `api.mine` and `api.get` run those same task bodies.
+
+| File | Change |
+|---|---|
+| `common/src/main/java/com/player2/playerengine/commands/BlockScanner.java` | player-placed blocks are never candidates |
+| `common/src/main/java/com/player2/playerengine/smoke/SmokeHarness.java` | `xray`: a nearer player-placed sponge is never the one mined; digs wait for their job to end |
+| `common/src/main/java/com/player2/playerengine/smoke/EvalHarness.java` | mock asks go to a program build as `SMOKE-PROGRAM:` programs; the status line is read either way |
+
+**Programs: habitual forms, a results loop, bounded edits (ruled 2026-09-28).** The language takes
+what models write by habit: `for (const k in obj)`, `Object.keys/values/entries`, `JSON.stringify`,
+`Math.*`, computed keys and `arr.join`, and `i < arr.length` as a loop bound; the whole-statement
+call rule and the caps are unchanged. When a job ends, its query values, return value, report and
+error come back to the model as the next turn, at most 2 per player line and charged to the turn
+caps, so a companion can answer from what it found. The 48-block job region is fixed when the job
+is created, persists in `job.json`, and bounds world edits only (`excavate`, `fill`, `place`, and
+`mine`, `get`, `craft` must start inside it); `goto` and `follow_owner` are unbounded. The `@`
+command-line grammar is gone: the settings' idle command runs its registered command directly, and
+`CommandLines`, `Seam.run` and the primitives' line forms are removed, as is the RAG alias-learning
+and deep-check layer (`retrieval/learning`, `/playerengine rag audit tail`, `rag reset_learned`).
+`checkCutover`'s word-boundary patterns held backspace characters and so never matched; they are
+fixed and now fail on a retired name (red witness run).
+
+| File | Change |
+|---|---|
+| `common/src/main/java/com/player2/playerengine/program/Parser.java`, `Ast.java`, `Builtins.java`, `Linter.java`, `Machine.java`, `Program.java` | for-in, `Object.*`, `JSON.stringify`, `Math.*`, computed keys, `join`, `.length` bounds |
+| `common/src/main/java/com/player2/playerengine/program/JobResults.java` | new: an ended job's results for the model |
+| `common/src/main/java/com/player2/playerengine/program/Job.java` | the region, fixed at creation and persisted |
+| `common/src/main/java/com/player2/playerengine/program/ProgramSelfTest.java` | habitual forms, region fixity, results text |
+| `common/src/main/java/com/player2/playerengine/player2api/AgentConversationData.java`, `ProgramJobs.java` | the results loop; the job's own region |
+| `common/src/main/java/com/player2/playerengine/seam/*Primitive*.java`, `MotionBounds.java`, `primitives/Calls.java` | edits bounded, movement not; line forms removed |
+| `common/src/main/java/com/player2/playerengine/seam/Seam.java`, `CommandLines.java`, `Primitive.java`, `commands/base/CommandExecutor.java`, `chains/UserTaskChain.java`, `PlayerEngineController.java` | the command-line grammar removed; `runIdle` |
+| `common/src/main/java/com/player2/playerengine/retrieval/learning/*`, `MCCommands.java`, `lang/*.json` | the learning layer and its op commands removed |
+| `common/build.gradle` | `checkCutover` patterns fixed and extended |
+| `common/src/main/resources/playerengine/program/system-prompt.txt` | the new forms, the results loop, a query example |
+| `common/src/main/java/com/player2/playerengine/smoke/SmokeHarness.java` | `far-owner`: a goto outside the region still runs |
+
+**Dead settings keys removed.** `commandPrefix` (settings) and `enableDeepCheckRephrase`,
+`enableAliasLearning`, `enableDeepCheckMessage`, `deepCheck*` and `forceDeepCheckOnEmpty`
+(server config) had no reader after the `@` grammar and the learning layer went. They are gone
+from the config classes and both admin screens; a config file that still carries them loads
+as before, the keys ignored. The idle command still tolerates a leading `@`. `checkCutover`
+fails if their readers come back.
+
+| File | Change |
+|---|---|
+| `common/src/main/java/com/player2/playerengine/PlayerEngineSettings.java`, `PlayerEngineSettingsAdminService.java` | `commandPrefix` removed |
+| `common/src/main/java/com/player2/playerengine/commands/base/CommandExecutor.java` | `runIdle` strips a literal leading `@` |
+| `common/src/main/java/com/player2/playerengine/player2api/config/Player2ServerRuntimeConfig.java`, `Player2ServerConfigHolder.java`, `Player2ServerConfigAdminService.java` | the deep-check and alias-learning keys removed |
+| `common/src/main/java/com/player2/playerengine/retrieval/RetrievalConfidenceThresholds.java` | the unused `fromConfig` removed |
+| `common/src/main/resources/tool_overrides.README.md` | the deep-check section removed |
+| `common/build.gradle` | `checkCutover` names the removed keys' readers |
+| `common/src/main/java/com/player2/playerengine/smoke/SmokeHarness.java` | `mine-grief` sends a program and waits on the job line |
+
+**Version.**
+
+| File | Change |
+|---|---|
+| `gradle.properties` | version `1.21.1-1.4.0-gateway.9` |

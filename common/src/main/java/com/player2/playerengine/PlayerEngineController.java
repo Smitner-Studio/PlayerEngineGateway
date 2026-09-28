@@ -186,7 +186,7 @@ public class PlayerEngineController {
                if ((!this.getUserTaskChain().isActive() || this.getUserTaskChain().isRunningIdleTask())
                       && this.getModSettings().shouldRunIdleCommandWhenNotActive()) {
                   this.getUserTaskChain().runIdleCommand(() -> this.getCommandExecutor()
-                        .executeWithPrefix(this.getModSettings().getIdleCommand()));
+                        .runIdle(this.getModSettings().getIdleCommand()));
                }
 
                this.getExtraBaritoneSettings().avoidBlockBreak(this.userBlockRangeTracker::isNearUserTrackedBlock);
@@ -469,11 +469,12 @@ public class PlayerEngineController {
       this.userTaskChain.cancel(this);
    }
 
-   // Incremented by every command line CommandExecutor runs, whatever sent it. A plan step that
-   // finishes after a later dispatch was superseded, even though it reports Finished.
+   // Incremented by every order: a command line CommandExecutor runs, and every primitive call a job
+   // begins. A call that finishes after a later order was superseded, even though its Task reports
+   // Finished.
    private final java.util.concurrent.atomic.AtomicLong commandDispatchSeq = new java.util.concurrent.atomic.AtomicLong();
    private volatile com.player2.playerengine.tasks.construction.area.AreaSpec.Box lastArea;
-   private volatile String planStatusLine = "";
+   private volatile String jobStatusLine = "";
    private volatile long lastOwnerMessageMillis;
 
    public long bumpCommandDispatchSeq() {
@@ -493,12 +494,13 @@ public class PlayerEngineController {
       this.lastArea = box;
    }
 
-   public String getPlanStatusLine() {
-      return this.planStatusLine;
+   /** The active job's prompt-tail line (§6.6), or empty with no live job. */
+   public String getJobStatusLine() {
+      return this.jobStatusLine;
    }
 
-   public void setPlanStatusLine(String line) {
-      this.planStatusLine = line == null ? "" : line;
+   public void setJobStatusLine(String line) {
+      this.jobStatusLine = line == null ? "" : line;
    }
 
    /** Wall-clock time of the last chat line from the authenticated owner. */

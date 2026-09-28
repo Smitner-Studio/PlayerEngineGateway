@@ -42,7 +42,7 @@ public class AIPersistantData {
     public AIPersistantData(PlayerEngineController mod, Character character) {
         this.character = character;
         this.mod = mod;
-        String systemPrompt = Prompts.getAINPCSystemPrompt(character, mod.getCommandExecutor().allCommands(), mod.getOwnerUsername());
+        String systemPrompt = Prompts.getAINPCSystemPrompt(character, mod.getOwnerUsername());
         this.characterId = character == null ? null : character.id();
         Path worldRoot = resolveWorldRootOrNull(mod);
         this.conversationHistoryFile = getConversationHistoryFileOrNull(mod, worldRoot, this.characterId);
@@ -63,10 +63,19 @@ public class AIPersistantData {
         loadAdditionalPromptFromDiskTolerant();
     }
 
-    /** {@code plan.json} beside this companion's mood and conversation files, or null when unresolved. */
+    /**
+     * {@code plan.json} beside this companion's mood and conversation files, or null when unresolved.
+     * Only gateway.6 to gateway.8 wrote it; programs discard it on load (§5.1).
+     */
     public Path getPlanFileOrNull() {
         Path mood = this.moodFile;
         return mood == null ? null : mood.resolveSibling("plan.json");
+    }
+
+    /** {@code job.json} beside this companion's mood and conversation files, or null when unresolved. */
+    public Path getJobFileOrNull() {
+        Path mood = this.moodFile;
+        return mood == null ? null : mood.resolveSibling("job.json");
     }
 
     /**
@@ -82,7 +91,7 @@ public class AIPersistantData {
             migrateLegacyHistoryIfPresent(this.character, this.characterId, worldRoot, targetHistoryFile, mod);
             copyFileIfTargetMissing(previousHistoryFile, targetHistoryFile);
             this.conversationHistoryFile = targetHistoryFile;
-            String systemPrompt = Prompts.getAINPCSystemPrompt(character, mod.getCommandExecutor().allCommands(), mod.getOwnerUsername());
+            String systemPrompt = Prompts.getAINPCSystemPrompt(character, mod.getOwnerUsername());
             this.conversationHistory = new ConversationHistory(withRelationshipSuffix(systemPrompt), this.conversationHistoryFile);
         }
 
@@ -120,9 +129,8 @@ public class AIPersistantData {
 
     /**
      * Phase D (W6) — the SINGLE combine point for "base prompt + optional {@code [Relationship]} suffix".
-     * EVERY system-prompt rebuild path ({@link #updateSystemPrompt}, {@link #updateSystemPromptWithBlock},
-     * {@link #updateSystemPromptStatic}, and the constructor) routes the freshly-built base prompt through
-     * here so the relationship-summary suffix is <b>byte-identical across all rebuild paths</b> for a given
+     * EVERY system-prompt rebuild path ({@link #updateSystemPrompt} and the constructor) routes the
+     * freshly-built base prompt through here so the relationship-summary suffix is <b>byte-identical across all rebuild paths</b> for a given
      * {@code summaryVersion} — the prefix-cache stability invariant (plan §W6). The summary changes only on
      * reflection; between reflections this suffix is constant, so two consecutive turns taking different
      * rebuild paths produce the same system block.
@@ -185,7 +193,7 @@ public class AIPersistantData {
     }
 
     public Event getGreetingEvent() {
-        String suffix = " IMPORTANT: SINCE THIS IS THE FIRST MESSAGE, ONLY USE COMMAND `bodylang greeting`";
+        String suffix = " IMPORTANT: SINCE THIS IS THE FIRST MESSAGE, ONLY GREET: start \"say\" with [bl:greeting] and send no program.";
         if (conversationHistory.isLoadedFromFile()) {
             return (new InfoMessage("You want to welcome user back." + suffix));
         } else {
@@ -245,32 +253,14 @@ public class AIPersistantData {
         com.player2.playerengine.memory.ingest.MemoryIngestionService.onCuratedTurnsReady(this.mod, committedTurns);
         return lastEvent;
     }
-    public ConversationHistory getConversationHistoryWrappedWithStatus(String worldStatus, String agentStatus, String altoClefDebugMsgs, Player2APIService player2apiService, Optional<String> reminderString, Optional<String> validCommandsBlock){
-        // Existing-arity delegate (no memory block) — byte-identical to pre-Phase-D.
-        return getConversationHistoryWrappedWithStatus(worldStatus, agentStatus, altoClefDebugMsgs,
-                player2apiService, reminderString, validCommandsBlock, Optional.empty());
-    }
-
     /**
-     * Phase D (W5) overload: threads the per-turn memory block into the throwaway wrapped copy so it
-     * is injected at the user-tail (after {@code validCommands}) and never persisted. Non-patron /
-     * empty → caller passes {@link Optional#empty()} → request byte-identical to today.
+     * The history with the latest user message wrapped in the per-turn status object. The memory,
+     * mood and additional-prompt blocks live only in this never-persisted copy, at its tail; an empty
+     * block leaves its key out.
      */
-    public ConversationHistory getConversationHistoryWrappedWithStatus(String worldStatus, String agentStatus, String altoClefDebugMsgs, Player2APIService player2apiService, Optional<String> reminderString, Optional<String> validCommandsBlock, Optional<String> memoryBlock){
-        // Mood overload delegate (no mood block) — tail byte-identical to pre-mood-feature.
-        return getConversationHistoryWrappedWithStatus(worldStatus, agentStatus, altoClefDebugMsgs,
-                player2apiService, reminderString, validCommandsBlock, memoryBlock, Optional.empty());
-    }
-
-    /**
-     * Mood overload: threads the per-turn {@code currentMood} block into the throwaway wrapped copy so it
-     * is injected at the user-tail (after {@code memory}) and never persisted. Flag-off / neutral →
-     * caller passes {@link Optional#empty()} → tail byte-identical to pre-mood-feature. Current mood must
-     * never enter the static system block (prefix-cache invariant).
-     */
-    public ConversationHistory getConversationHistoryWrappedWithStatus(String worldStatus, String agentStatus, String altoClefDebugMsgs, Player2APIService player2apiService, Optional<String> reminderString, Optional<String> validCommandsBlock, Optional<String> memoryBlock, Optional<String> moodBlock){
+    public ConversationHistory getConversationHistoryWrappedWithStatus(String worldStatus, String agentStatus, String altoClefDebugMsgs, Player2APIService player2apiService, Optional<String> reminderString, Optional<String> memoryBlock, Optional<String> moodBlock){
         return this.conversationHistory
-                .copyThenWrapLatestWithStatus(worldStatus, agentStatus, altoClefDebugMsgs, player2apiService, reminderString, validCommandsBlock, memoryBlock, moodBlock, additionalPromptBlock());
+                .copyThenWrapLatestWithStatus(worldStatus, agentStatus, altoClefDebugMsgs, player2apiService, reminderString, memoryBlock, moodBlock, additionalPromptBlock());
     }
     public void addAssistantMessage(String llmMessage, Player2APIService player2apiService){
         this.conversationHistory.addAssistantMessage(llmMessage, player2apiService);
@@ -285,31 +275,7 @@ public class AIPersistantData {
     }
 
     public void updateSystemPrompt(){
-        String systemPrompt = Prompts.getAINPCSystemPrompt(character, mod.getCommandExecutor().allCommands(), mod.getOwnerUsername());
-        conversationHistory.setBaseSystemPrompt(withRelationshipSuffix(systemPrompt));
-    }
-
-    /**
-     * Updates the system prompt using a pre-built valid-commands block from {@code RagPromptBuilder}
-     * rather than the full command list (Phase B3 live RAG path).
-     *
-     * @param validCommandsBlock formatted commands block from
-     *        {@link com.player2.playerengine.retrieval.RagPromptBuilder#buildValidCommandsBlock}
-     */
-    public void updateSystemPromptWithBlock(String validCommandsBlock) {
-        String block = validCommandsBlock != null ? validCommandsBlock : "";
-        String systemPrompt = Prompts.getAINPCSystemPromptWithValidCommandsBlock(character, block, mod.getOwnerUsername());
-        conversationHistory.setBaseSystemPrompt(withRelationshipSuffix(systemPrompt));
-    }
-
-    /**
-     * Live RAG path: sets message 0 to the byte-stable base prompt with NO command list/section, so the
-     * system message is byte-identical across turns. The per-turn retrieved command subset is delivered
-     * in the latest user turn under the {@code validCommands} key (see
-     * {@link ConversationHistory#copyThenWrapLatestWithStatus}), not in the system message.
-     */
-    public void updateSystemPromptStatic() {
-        String systemPrompt = Prompts.getAINPCSystemPromptNoCommandsBlock(character, mod.getOwnerUsername());
+        String systemPrompt = Prompts.getAINPCSystemPrompt(character, mod.getOwnerUsername());
         conversationHistory.setBaseSystemPrompt(withRelationshipSuffix(systemPrompt));
     }
 

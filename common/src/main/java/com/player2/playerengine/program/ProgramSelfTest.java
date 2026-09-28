@@ -43,6 +43,9 @@ public final class ProgramSelfTest {
         lifecycleAndShelving();
         boardPersistsAtomically();
         completionTemplate();
+        habitualForms();
+        regionIsFixedAndPersists();
+        resultsCarryWhatTheJobFound();
         System.out.println("program self-test: " + checks + " checks passed");
     }
 
@@ -86,7 +89,6 @@ public final class ProgramSelfTest {
                 {"let s = `a${b}`;", "template literals are not supported"},
                 {"let o = new Map();", "'new' is not supported"},
                 {"let r = /a+/;", "regular expressions are not supported"},
-                {"for (const k in o) { }", "'in' is not supported"},
                 {"switch (a) { }", "'switch' is not supported"},
                 {"try { } finally { }", "'finally' is not supported"},
                 {"let [a, b] = c;", "destructuring is not supported"},
@@ -158,7 +160,7 @@ public final class ProgramSelfTest {
                 {"const a = 1; a = 2;", "a is const"},
                 {"b = 1;", "unknown name b"},
                 {"let x = y + 1;", "unknown name y"},
-                {"let x = 1; for (let i = 0; i < x; i++) { }", "N a number or a const"},
+                {"let x = 1; for (let i = 0; i < x; i++) { }", "N a number, a const or arr.length"},
                 {"if (true) { function g() { } }", "only at the top level"},
                 {"break;", "break outside a loop"},
                 {"let x = foo(1);", "unknown function foo"},
@@ -564,6 +566,75 @@ public final class ProgramSelfTest {
                 "a corrupt job.json is moved aside");
     }
 
+    /** What models write by habit (stage-4 replays) lints and runs: for-in, Object.*, computed keys, join. */
+    private static void habitualForms() {
+        String src = "let inv = api.inventory();\n"
+                + "let names = [];\n"
+                + "for (const k in inv) { names.push(k); }\n"
+                + "let moved = {};\n"
+                + "for (const [k, v] of Object.entries(inv)) { }\n";
+        require(!lint(src).ok(), "destructuring stays out");
+        String ok = "let inv = api.inventory();\n"
+                + "let names = [];\n"
+                + "for (const k in inv) { names.push(k); }\n"
+                + "let moved = {};\n"
+                + "for (const k of Object.keys(inv)) { moved[k] = inv[k]; }\n"
+                + "let pick = {['sand']: 2, dirt: 1};\n"
+                + "for (let i = 0; i < names.length; i++) { }\n"
+                + "let pairs = Object.entries(pick);\n"
+                + "return {n: Object.keys(inv).length, names: names.join(', '), json: JSON.stringify(pick),"
+                + " vals: Object.values(pick), pair: pairs[0], m: Math.max(2, Math.floor(3.7))};";
+        Linter.Result r = lint(ok);
+        require(r.ok(), "the habitual forms lint: " + r.repairMessage());
+        require(!lint("let i = 0; for (let j = 0; j < i.foo; j++) { }").ok(), "only .length bounds a for");
+        require(!lint("let x = api.count('dirt') + Object.keys({}).length;").ok(),
+                "the whole-statement call rule still holds beside the built-ins");
+        StubWorld w = new StubWorld();
+        w.inv.put("sand", 3);
+        w.inv.put("dirt", 1);
+        Job j = job(ok, w);
+        drive(j, w, 200);
+        require(j.state() == Job.State.DONE, "runs: " + j.state() + " " + j.lastError());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> res = (Map<String, Object>) j.result();
+        require(res.get("n").equals(2.0) && res.get("names").equals("sand, dirt"), "for-in and keys: " + res);
+        require(res.get("json").equals("{\"sand\":2,\"dirt\":1}"), "computed key and stringify: " + res.get("json"));
+        require(res.get("vals").equals(List.of(2.0, 1.0)) && res.get("pair").equals(List.of("sand", 2.0))
+                && res.get("m").equals(3.0), "values, entries, Math: " + res);
+    }
+
+    /** Ruling 3b: a job's region is set once, at creation, and survives a restart unchanged. */
+    private static void regionIsFixedAndPersists() {
+        StubWorld w = new StubWorld();
+        Job j = job("api.wait(20);", w).region(new Job.Region("minecraft:overworld", 10, 64, -5, 48));
+        boolean refused = false;
+        try {
+            j.region(new Job.Region("minecraft:overworld", 900, 64, 900, 48));
+        } catch (IllegalStateException e) {
+            refused = true;
+        }
+        require(refused && j.region().x() == 10, "a second region is refused: " + j.region());
+        Job back = Job.fromJson(JsonParser.parseString(j.toJson().toString()).getAsJsonObject(), ApiTable.published());
+        require(back.region() != null && back.region().equals(j.region()), "the region survives a restart: " + back.region());
+        require(back.state() == Job.State.PAUSED && back.resume() && back.region().equals(j.region()),
+                "resuming does not move it");
+    }
+
+    /** The results loop's text: query values, the return value, and what the job did. */
+    private static void resultsCarryWhatTheJobFound() {
+        StubWorld w = new StubWorld();
+        w.inv.put("sand", 7);
+        Job q = job("let n = api.count('sand'); return {sand: n};", w);
+        drive(q, w, 100);
+        String r = JobResults.render(q);
+        require(JobResults.queryOnly(q) && r.contains("api.count(") && r.contains("= 7") && r.contains("Returned: ")
+                && r.contains("\"sand\":7") && !r.contains("Did:"), "a query-only job's results: " + r);
+        Job g = job("api.give_owner('sand', 2);", w);
+        drive(g, w, 100);
+        String rg = JobResults.render(g);
+        require(!JobResults.queryOnly(g) && rg.contains("Did: "), "a job that acted reports what it did: " + rg);
+    }
+
     private static void completionTemplate() {
         StubWorld w = new StubWorld();
         w.inv.put("cobblestone", 64);
@@ -584,7 +655,7 @@ public final class ProgramSelfTest {
 
     /** A world of three inventories and a chest; outcomes are delivered on {@link #flush}. */
     static final class StubWorld implements ActionPort {
-        final Map<String, Integer> inv = new HashMap<>();
+        final Map<String, Integer> inv = new LinkedHashMap<>();
         final Map<String, Integer> owner = new HashMap<>();
         final Map<String, Integer> chest = new HashMap<>();
         final List<Object[]> queue = new ArrayList<>();
@@ -641,6 +712,9 @@ public final class ProgramSelfTest {
             switch (name) {
                 case "count" -> {
                     return Outcome.ok(inv.getOrDefault((String) a.get("item"), 0), List.of());
+                }
+                case "inventory" -> {
+                    return Outcome.ok(new LinkedHashMap<>(inv), List.of());
                 }
                 case "position" -> {
                     return Outcome.ok(position, List.of());

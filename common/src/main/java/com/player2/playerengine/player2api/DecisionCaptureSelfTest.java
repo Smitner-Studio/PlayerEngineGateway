@@ -10,7 +10,7 @@ import java.util.UUID;
 
 /**
  * The tier A capture (its default, off, is checked with the other rules): a captured line holds the messages, the reply and the
- * dispatched command, and lines append one per turn.
+ * program the turn started, and lines append one per turn.
  */
 public final class DecisionCaptureSelfTest {
     private static int checks;
@@ -27,20 +27,21 @@ public final class DecisionCaptureSelfTest {
         user.addProperty("role", "user");
         user.addProperty("content", "Ada, dig out 1 2 3 4 5 6");
         JsonObject reply = JsonParser.parseString(
-                "{\"reason\":\"An area to clear.\",\"command\":\"excavate 1 2 3 4 5 6\",\"message\":\"On it.\"}")
+                "{\"say\":\"On it.\",\"program\":\"api.excavate(box(pos(1, 2, 3), pos(4, 5, 6)));\"}")
                 .getAsJsonObject();
         Event.UserMessage asked = new Event.UserMessage("dig out 1 2 3 4 5 6", "Bob", false,
                 UUID.nameUUIDFromBytes("bob".getBytes(StandardCharsets.UTF_8)));
+        String program = "api.excavate(box(pos(1, 2, 3), pos(4, 5, 6)));";
         JsonObject line = DecisionCapture.line(1L, "Ada", "foreman-ada", asked, List.of(system, user), reply,
-                "excavate 1 2 3 4 5 6");
+                program);
         require(line.getAsJsonArray("messages").size() == 2, "the messages the model saw");
-        require(line.getAsJsonObject("reply").get("command").getAsString().equals("excavate 1 2 3 4 5 6"), "the reply");
-        require(line.get("dispatched").getAsString().equals("excavate 1 2 3 4 5 6"), "the dispatched command");
+        require(line.getAsJsonObject("reply").get("program").getAsString().equals(program), "the reply");
+        require(line.get("dispatched").getAsString().equals(program), "the program the turn started");
         require(line.get("player").getAsString().equals("Bob") && line.get("trigger").getAsString().equals("UserMessage"),
                 "who asked, and what started the turn");
         JsonObject refused = DecisionCapture.line(2L, "Ada", "foreman-ada", new Event.InfoMessage("goto finished"),
                 List.of(system), reply, null);
-        require(refused.get("dispatched").isJsonNull() && !refused.has("player"), "a feedback turn that dispatched nothing");
+        require(refused.get("dispatched").isJsonNull() && !refused.has("player"), "a feedback turn that started nothing");
         try {
             Path dir = Files.createTempDirectory("capture");
             Path file = dir.resolve(DecisionCapture.FILE_NAME);

@@ -20,16 +20,6 @@ final class EquipPrimitive extends Base {
     }
 
     @Override
-    public LineArgs fromLine(String argsText, Context ctx) {
-        String a = argsText.trim();
-        if (a.isEmpty() || a.contains(" ") || a.contains(",") || a.contains("[")
-                || SETS.contains(a.toLowerCase(Locale.ROOT))) {
-            return null;
-        }
-        return LineArgs.of(Map.of("item", a), Map.of());
-    }
-
-    @Override
     public void start(Map<String, Object> args, Map<String, Object> options, Map<String, Object> pre, Context ctx,
             Consumer<TaskEnd> ended) {
         Calls.runCommand(ctx, "equip " + args.get("item"), ended);

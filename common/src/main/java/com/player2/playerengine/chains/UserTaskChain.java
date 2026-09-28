@@ -713,7 +713,7 @@ public class UserTaskChain extends SingleTaskChain {
                      mod.getModSettings().getIdleCommand());
             }
             this.runIdleCommand(() -> this.controller.getCommandExecutor()
-                  .executeWithPrefix(mod.getModSettings().getIdleCommand()));
+                  .runIdle(mod.getModSettings().getIdleCommand()));
             this.runningIdleTask = true;
          }
       }

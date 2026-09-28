@@ -19,6 +19,10 @@ public final class AreaSelfTest {
     private AreaSelfTest() {
     }
 
+    public static void main(String[] args) {
+        System.out.println("area self-test: " + runAll() + " area checks passed");
+    }
+
     public static int runAll() {
         checks = 0;
         breakTicksMatchTheDesignArithmetic();

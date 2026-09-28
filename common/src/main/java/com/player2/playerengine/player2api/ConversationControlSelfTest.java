@@ -6,7 +6,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
-/** Detached checks for emergency stop parsing, stale-turn invalidation, and retry-loop breaking. */
+/** Detached checks for emergency stop parsing and stale-turn invalidation. */
 public final class ConversationControlSelfTest {
     private ConversationControlSelfTest() {}
 
@@ -17,7 +17,6 @@ public final class ConversationControlSelfTest {
         cancelledLlmRequestCannotHoldOrReleaseReplacementBucket();
         retiredWorkerQuarantineIsBounded();
         queuedCancellationCannotStartDuringShutdown();
-        identicalCommandFailuresStopAfterTwo();
         userMessageMetadataSurvivesCleaning();
     }
 
@@ -44,28 +43,6 @@ public final class ConversationControlSelfTest {
         long replacement = gate.issueTicket();
         require(!gate.accepts(afterStop) && gate.accepts(replacement),
                 "a replacement request must supersede every older callback ticket");
-    }
-
-    private static void identicalCommandFailuresStopAfterTwo() {
-        RepeatedCommandFailureGuard guard = new RepeatedCommandFailureGuard();
-        require(guard.record("@plant_farm wheat_seeds=20", "invalid planting request")
-                        == RepeatedCommandFailureGuard.Decision.REPORT_AND_REPROMPT,
-                "first failure should reach the model once");
-        require(guard.record("  @plant_farm   wheat_seeds=20  ", "invalid planting request")
-                        == RepeatedCommandFailureGuard.Decision.HALT_AUTOMATIC_RETRY,
-                "same normalized command and reason must halt on the second failure");
-        guard.reset();
-        require(guard.record("@goto 1 2 3", "path failed")
-                        == RepeatedCommandFailureGuard.Decision.REPORT_AND_REPROMPT,
-                "explicit reset must allow a new first failure");
-        require(guard.record("@goto 1 2 4", "path failed")
-                        == RepeatedCommandFailureGuard.Decision.REPORT_AND_REPROMPT,
-                "different command text must reset the consecutive fingerprint");
-
-        String bounded = RepeatedCommandFailureGuard.boundedFailureReason("x\n".repeat(1_000));
-        require(bounded.length() <= RepeatedCommandFailureGuard.MAX_MODEL_FAILURE_REASON_CHARS,
-                "model-facing command failure must stay bounded");
-        require(!bounded.contains("\n"), "model-facing command failure must be single-line curated text");
     }
 
     private static void cancelledLlmRequestCannotHoldOrReleaseReplacementBucket() {

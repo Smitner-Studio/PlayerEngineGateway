@@ -18,21 +18,6 @@ public final class ExcavatePrimitive implements Primitive {
         return SignatureTable.get("excavate");
     }
 
-    /** Every form the {@code excavate} command takes: a size with anchor and facing, or two corners. */
-    @Override
-    public LineArgs fromLine(String argsText, Context ctx) {
-        String[] err = new String[1];
-        AreaSpec.Request req = AreaSpec.parse(argsText, false, err);
-        if (req == null) {
-            return LineArgs.failed(ActionError.of(FailureCode.BAD_ARGS, err[0]));
-        }
-        AreaSpec.Resolved resolved = AreaSpec.resolve(req, AreaCommand.anchors(ctx.mod()));
-        if (resolved.error() != null) {
-            return LineArgs.failed(ActionError.of(FailureCode.BAD_ARGS, resolved.error()));
-        }
-        return LineArgs.of(Map.of("box", resolved.box()), Map.of("confirm", req.confirm()));
-    }
-
     @Override
     public ActionError admit(Map<String, Object> args, Context ctx) {
         AreaSpec.Box b = (AreaSpec.Box) args.get("box");

@@ -22,26 +22,8 @@ final class GetPrimitive extends Base {
     }
 
     @Override
-    public LineArgs fromLine(String argsText, Context ctx) {
-        String a = argsText.trim();
-        if (a.isEmpty() || a.contains(",") || a.contains("[")) {
-            return null;
-        }
-        String[] t = a.split("\\s+");
-        int more = 1;
-        String[] name = t;
-        if (t.length >= 2 && t[t.length - 1].matches("\\d{1,6}")) {
-            more = Integer.parseInt(t[t.length - 1]);
-            name = Arrays.copyOf(t, t.length - 1);
-        }
-        String id;
-        try {
-            id = Coercion.id(String.join(" ", name), false, Coercion.Ids.REGISTRIES, new ArrayList<>());
-        } catch (Coercion.Failure f) {
-            return null;
-        }
-        int have = ctx == null ? 0 : Calls.count(ctx.mod().getCommandExecutor().seam().world().inventory(), id);
-        return LineArgs.of(Map.of("item", String.join(" ", name), "n", have + more), Map.of());
+    public ActionError admit(Map<String, Object> args, Context ctx) {
+        return Calls.standingInRegion(ctx);
     }
 
     @Override

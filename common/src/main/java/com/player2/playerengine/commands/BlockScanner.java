@@ -290,7 +290,7 @@ public class BlockScanner {
          if (this.trackedBlocks.containsKey(block)) {
             for (BlockPos pos : this.trackedBlocks.get(block)) {
                if (isValidTest.test(pos) && this.mod.getWorld().getBlockState(pos).getBlock().equals(block) && !this.isUnreachable(pos)
-                  && Perception.isExposed(Perception.of(this.mod.getWorld()), pos)) {
+                  && !this.isPlayerPlaced(pos) && Perception.isExposed(Perception.of(this.mod.getWorld()), pos)) {
                   return true;
                }
             }
@@ -334,16 +334,30 @@ public class BlockScanner {
       return this.getNearestBlock(block, pos -> true, fromPos);
    }
 
-   /** Only exposed blocks are candidates: a companion never targets ore it could not see (F1). */
+   /**
+    * Only exposed blocks are candidates: a companion never targets ore it could not see (F1). A block a
+    * player placed is never a candidate either, so mining or gathering never takes it from a build.
+    */
    public Optional<BlockPos> getNearestBlock(Block block, Predicate<BlockPos> isValidTest, Vec3 fromPos) {
       if (!this.trackedBlocks.containsKey(block)) {
          return Optional.empty();
       }
       Level world = this.mod.getWorld();
       BlockPos pos = Perception.nearestExposed(this.trackedBlocks.get(block), Perception.of(world),
-         p -> world.getBlockState(p).getBlock().equals(block) && isValidTest.test(p) && !this.isUnreachable(p),
+         p -> world.getBlockState(p).getBlock().equals(block) && isValidTest.test(p) && !this.isUnreachable(p)
+            && !this.isPlayerPlaced(p),
          p -> BaritoneHelper.calculateGenericHeuristic(fromPos, WorldHelper.toVec3d(p)));
       return Optional.ofNullable(pos);
+   }
+
+   /** A block in the player-placed store, while structure protection is on (the pathing rule's store). */
+   private boolean isPlayerPlaced(BlockPos pos) {
+      if (!this.mod.getBaritoneSettings().respectStructuresEnabled.get()) {
+         return false;
+      }
+      com.player2.playerengine.structureprotection.PlayerPlacedBlockStore store =
+         com.player2.playerengine.structureprotection.PlayerPlacedBlockStore.get();
+      return store != null && store.contains(this.mod.getWorld().dimension().location().toString(), pos);
    }
 
    public boolean anyFoundWithinDistance(double distance, Block... blocks) {

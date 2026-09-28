@@ -23,22 +23,6 @@ final class SmeltPrimitive extends Base {
         super("smelt");
     }
 
-    /** {@code smelt <item> [count]}. */
-    @Override
-    public LineArgs fromLine(String argsText, Context ctx) {
-        String[] t = argsText.trim().split("\\s+");
-        if (t.length == 0 || t[0].isEmpty() || argsText.contains(",") || argsText.contains("[")) {
-            return null;
-        }
-        Object n = 1;
-        String[] name = t;
-        if (t.length >= 2 && t[t.length - 1].matches("-?\\d+")) {
-            n = t[t.length - 1];
-            name = Arrays.copyOf(t, t.length - 1);
-        }
-        return LineArgs.of(Map.of("output", String.join(" ", name), "n", n), Map.of());
-    }
-
     @Override
     public Map<String, Object> snapshot(Map<String, Object> args, World world) throws Coercion.Failure {
         String asked = (String) args.get("output");

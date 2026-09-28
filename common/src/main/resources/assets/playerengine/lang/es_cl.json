@@ -28,12 +28,6 @@
   "help.playerengine.rag-retrieve.arg.category": "Etiqueta de categoría opcional para restringir la recuperación; se puede repetir antes del objetivo.",
   "help.playerengine.rag-reload.short": "Recarga todos los archivos overlay de RAG y reconstruye el índice.",
   "help.playerengine.rag-reload.long": "Vuelve a leer todos los archivos overlay desde el disco, reconstruye el retriever global y vacía todas las cachés por dueño.",
-  "help.playerengine.rag-audit-tail.short": "Muestra las últimas N entradas del registro de auditoría de aprendizaje de alias de RAG.",
-  "help.playerengine.rag-audit-tail.arg.n": "Cuántas filas finales del registro de auditoría mostrar (por defecto 20).",
-  "help.playerengine.rag-reset-learned.short": "Borra los alias de RAG aprendidos para una herramienta o para todas.",
-  "help.playerengine.rag-reset-learned.long": "Elimina los datos de aprendizaje de alias del dueño que ejecuta el comando (o de todos los dueños con --all-owners), opcionalmente limitado a una sola herramienta.",
-  "help.playerengine.rag-reset-learned.arg.toolId": "Limita el reinicio a este ID de herramienta (omitir para todas las herramientas).",
-  "help.playerengine.rag-reset-learned-all-owners.short": "Borra los alias de RAG aprendidos de todos los dueños.",
   "help.playerengine.rag-inspect.short": "Muestra el documento de herramienta combinado para un ID de herramienta.",
   "help.playerengine.rag-inspect.long": "Muestra todos los campos del documento de herramienta combinado para el índice del jugador que ejecuta el comando; las palabras clave y ejemplos agregados por un overlay se marcan con [+].",
   "help.playerengine.rag-inspect.arg.toolId": "El ID de herramienta a inspeccionar.",
@@ -161,9 +155,6 @@
   "message.playerengine.rag.reload_failed": "Recarga de RAG completa. Índice global: FALLÓ",
   "message.playerengine.rag.not_initialized": "Índice de RAG no inicializado.",
   "message.playerengine.rag.inspect_tool_not_found": "No se encontró ninguna herramienta con el id '%s'.",
-  "message.playerengine.rag.audit_no_rows": "(sin filas)",
-  "message.playerengine.rag.reset_learned_console_error": "La consola debe usar reset_learned --all-owners o especificar el contexto del propietario mediante un jugador.",
-  "message.playerengine.rag.reset_learned_success": "Se reiniciaron las superposiciones aprendidas para %1$s%2$s (%3$d directorio(s) de propietario modificado(s)).",
 
   "message.playerengine.routing.unknown_task_class": "Clase de tarea desconocida: %s. Debe ser una de: RETRIEVAL, RERANKING, SUMMARIZATION, PLANNING o DECISION.",
 
