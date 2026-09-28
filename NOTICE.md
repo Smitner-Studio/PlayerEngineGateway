@@ -75,7 +75,7 @@ Files changed from upstream:
 | `common/src/main/java/com/player2/playerengine/player2api/Player2PayerResolution.java` | server-wide work is billable with no player online when the gateway is enabled |
 | `common/src/main/java/com/player2/playerengine/player2api/utils/AudioUtils.java` | text-to-speech skipped when the gateway is enabled |
 | `common/build.gradle` | `gatewaySelfTest` task |
-| `gradle.properties` | version `1.21.1-1.4.0-gateway.7` |
+| `gradle.properties` | version `1.21.1-1.4.0-gateway.8` |
 | `neoforge/src/main/resources/META-INF/neoforge.mods.toml` | display name "PlayerEngine (OpenAI-gateway fork)" |
 | `README.md`, `NOTICE.md`, `Taskfile.yml`, `.gitignore` | fork documentation and build entries |
 
@@ -486,3 +486,9 @@ their own only.
 |---|---|
 | `common/src/main/java/com/player2/playerengine/smoke/SmokeHarness.java` | `two-ada` scenario |
 | `common/src/main/resources/assets/playerengine/lang/en_us.json` | smoke scenario list |
+
+**Version.**
+
+| File | Change |
+|---|---|
+| `gradle.properties` | version `1.21.1-1.4.0-gateway.8` |
