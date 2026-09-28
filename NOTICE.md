@@ -540,3 +540,14 @@ which fails when a retired reader or consumer is back in the sources.
 | `common/src/main/java/com/player2/playerengine/smoke/SmokeHarness.java` | scenarios send `SMOKE-PROGRAM:` programs; `plan`, `resume`, `goto` and `restart` are jobs; `restart` checks the old `plan.json` discard and the R19 notice |
 | `common/build.gradle`, `Taskfile.yml` | `checkCutover`, `areaSelfTest` (was run by the plan self-test), `lintPrograms` / `task lint-programs` |
 | `common/src/main/resources/assets/playerengine/lang/en_us.json` | `/playerengine stop` help and replies |
+
+**Mining never takes a player-placed block.** `BlockScanner`'s candidates, which `mine` and the
+gather tasks choose their targets from, now skip every block in the player-placed store while
+structure protection is on, as the pathing rule already did for blocks a path would break. A
+program's `api.mine` and `api.get` run those same task bodies.
+
+| File | Change |
+|---|---|
+| `common/src/main/java/com/player2/playerengine/commands/BlockScanner.java` | player-placed blocks are never candidates |
+| `common/src/main/java/com/player2/playerengine/smoke/SmokeHarness.java` | `xray`: a nearer player-placed sponge is never the one mined; digs wait for their job to end |
+| `common/src/main/java/com/player2/playerengine/smoke/EvalHarness.java` | mock asks go to a program build as `SMOKE-PROGRAM:` programs; the status line is read either way |
