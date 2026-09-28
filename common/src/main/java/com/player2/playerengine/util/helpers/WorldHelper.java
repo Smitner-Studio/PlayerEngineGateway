@@ -8,6 +8,7 @@ import com.player2.playerengine.automaton.pathing.movement.CalculationContext;
 import com.player2.playerengine.automaton.pathing.movement.MovementHelper;
 import com.player2.playerengine.automaton.process.MineProcess;
 import com.player2.playerengine.automaton.utils.BlockStateInterface;
+import com.player2.playerengine.structureprotection.PlayerPlacedBlockStore;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
@@ -193,10 +194,21 @@ public interface WorldHelper {
       return -1;
    }
 
+   /**
+    * Whether a real player placed the block at {@code pos}. Every target a task chooses for itself
+    * passes {@link #canBreak}, which refuses these, so mining and collecting never pick a player's
+    * build; excavate and fill apply the same rule to their boxes.
+    */
+   static boolean isPlayerPlaced(PlayerEngineController controller, BlockPos pos) {
+      return PlayerPlacedBlockStore.protects(controller.getBaritoneSettings().respectStructuresEnabled.get(),
+         PlayerPlacedBlockStore.get(), controller.getWorld().dimension().location().toString(), pos);
+   }
+
    static boolean canBreak(PlayerEngineController controller, BlockPos pos) {
       boolean prevInteractionPaused = controller.getExtraBaritoneSettings().isInteractionPaused();
       controller.getExtraBaritoneSettings().setInteractionPaused(false);
       boolean canBreak = controller.getWorld().getBlockState(pos).getDestroySpeed(controller.getWorld(), pos) >= 0.0F
+         && !isPlayerPlaced(controller, pos)
          && !controller.getExtraBaritoneSettings().shouldAvoidBreaking(pos)
          && MineProcess.plausibleToBreak(new CalculationContext(controller.getBaritone()), pos)
          && canReach(controller, pos);
