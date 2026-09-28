@@ -344,7 +344,7 @@
       "returns": "void",
       "idempotent": true,
       "postcondition": "every target cell is block",
-      "bound": false,
+      "bound": true,
       "doc": "fill a box with block",
       "reference": "api.fill(block: BlockId, box: Box): void"
     },
@@ -367,7 +367,7 @@
       "returns": "void",
       "idempotent": true,
       "postcondition": "block_at(p) == block",
-      "bound": false,
+      "bound": true,
       "doc": "place one block",
       "reference": "api.place(block: BlockId, p: Pos): void"
     },
@@ -391,7 +391,7 @@
       "returns": "void",
       "idempotent": false,
       "postcondition": "the drop item's inventory delta >= the expected drops for n",
-      "bound": false,
+      "bound": true,
       "doc": "mine n exposed blocks",
       "reference": "api.mine(block: BlockId, n: Count): void"
     },
@@ -412,7 +412,7 @@
       "returns": "void",
       "idempotent": true,
       "postcondition": "no item entities left in the radius",
-      "bound": false,
+      "bound": true,
       "doc": "pick up dropped items nearby",
       "reference": "api.pickup_drops(radius: int /* 1..16 */): void"
     },

@@ -12,6 +12,11 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
+import java.util.TreeSet;
+import net.minecraft.tags.BlockTags;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
@@ -270,6 +275,31 @@ public final class LiveWorld implements Primitive.World {
     @Override
     public AreaSpec.Box lastArea() {
         return mod.getLastArea();
+    }
+
+    @Override
+    public List<String> drops(String blockId) {
+        Block block = Queries.block(blockId);
+        if (block == null) {
+            return List.of();
+        }
+        BlockState state = block.defaultBlockState();
+        ItemStack tool = state.is(BlockTags.MINEABLE_WITH_PICKAXE) ? new ItemStack(Items.NETHERITE_PICKAXE)
+                : state.is(BlockTags.MINEABLE_WITH_AXE) ? new ItemStack(Items.NETHERITE_AXE)
+                : state.is(BlockTags.MINEABLE_WITH_SHOVEL) ? new ItemStack(Items.NETHERITE_SHOVEL)
+                : state.is(BlockTags.MINEABLE_WITH_HOE) ? new ItemStack(Items.NETHERITE_HOE) : ItemStack.EMPTY;
+        TreeSet<String> out = new TreeSet<>();
+        BlockPos at = mod.getPlayer().blockPosition();
+        // Loot rolls are random (gravel's flint, a leaf's sapling); a few rolls cover the usual yields.
+        for (int roll = 0; roll < 8; roll++) {
+            for (ItemStack s : Block.getDrops(state, level, at, null, mod.getPlayer(), tool)) {
+                out.add(itemId(s.getItem()));
+            }
+        }
+        if (block.asItem() != Items.AIR) {
+            out.add(itemId(block.asItem()));
+        }
+        return List.copyOf(out);
     }
 
     @Override

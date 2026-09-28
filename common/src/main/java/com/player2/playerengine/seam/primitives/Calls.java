@@ -138,6 +138,13 @@ final class Calls {
         return ctx.mod().getWorld().dimension().location().toString();
     }
 
+    /** The item a block is placed from, by canonical id; the id itself when the block has none. */
+    static String itemOf(String blockId) {
+        net.minecraft.world.level.block.Block b = com.player2.playerengine.seam.Queries.block(blockId);
+        return b == null || b.asItem() == net.minecraft.world.item.Items.AIR ? blockId
+                : com.player2.playerengine.seam.LiveWorld.itemId(b.asItem());
+    }
+
     static String human(String id) {
         return id.replace('_', ' ');
     }

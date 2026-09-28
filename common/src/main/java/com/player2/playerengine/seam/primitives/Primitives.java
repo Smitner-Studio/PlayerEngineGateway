@@ -18,6 +18,10 @@ public final class Primitives {
                 new WaitUntilPrimitive(),
                 new SayPrimitive(),
                 new ConfirmPrimitive(),
-                new ExcavatePrimitive());
+                new ExcavatePrimitive(),
+                new FillPrimitive(),
+                new PlacePrimitive(),
+                new MinePrimitive(),
+                new PickupDropsPrimitive());
     }
 }

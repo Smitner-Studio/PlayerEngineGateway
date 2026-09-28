@@ -201,6 +201,14 @@ public interface Primitive {
             throw unsupported("lastArea");
         }
 
+        /**
+         * The items mining {@code blockId} with the right tool can yield, by canonical id, the block's
+         * own item included (silk touch); empty when it yields nothing.
+         */
+        default List<String> drops(String blockId) {
+            throw unsupported("drops");
+        }
+
         /** The server's game time in ticks. */
         default long gameTime() {
             throw unsupported("gameTime");

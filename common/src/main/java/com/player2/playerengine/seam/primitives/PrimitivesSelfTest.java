@@ -49,13 +49,111 @@ public final class PrimitivesSelfTest {
         List<Case> cases = new ArrayList<>();
         cases.addAll(motion());
         cases.addAll(talk());
+        cases.addAll(world());
         for (Case c : cases) {
             postconditionCatchesAFakedFinished(c);
         }
         everyPrimitiveIsCovered(cases);
         waitUntilRefusesWhatItCannotRecheck();
         confirmAnswersOnlyYesOrNo();
+        mineCountsTheDropsNotTheOrder();
         return checks;
+    }
+
+    // --- world -------------------------------------------------------------------------------------
+
+    private static void fillCells(SeamTestWorld w, String block, int... xz) {
+        for (int i = 0; i < xz.length; i += 2) {
+            w.set(xz[i], 64, xz[i + 1], block);
+        }
+    }
+
+    private static List<Case> world() {
+        Map<String, Object> floor = m("block", "Cobblestone", "box", "0 64 0 1 64 1");
+        Consumer<SeamTestWorld> mineSetup = w -> {
+            w.drops.put("iron_ore", List.of("iron_ore", "raw_iron"));
+            w.carry("raw_iron", 2);
+        };
+        return List.of(
+                new Case("fill", "fill", floor, w -> w.carry("cobblestone", 10),
+                        w -> {
+                            fillCells(w, "cobblestone", 0, 0, 0, 1, 1, 0, 1, 1);
+                            w.carry("cobblestone", -4);
+                        }, FailureCode.UNREACHABLE),
+                new Case("fill, out of blocks", "fill", floor, w -> w.carry("cobblestone", 1),
+                        w -> {
+                            fillCells(w, "cobblestone", 0, 0, 0, 1, 1, 0, 1, 1);
+                            w.carry("cobblestone", -1);
+                        }, FailureCode.MISSING_ITEM),
+                new Case("fill, around a player's block and stone", "fill", floor,
+                        w -> {
+                            w.carry("cobblestone", 10);
+                            w.set(0, 64, 0, "oak_planks");
+                            w.playerPlaced.add(new com.player2.playerengine.tasks.construction.area.AreaSpec.Pos(0, 64, 0));
+                            w.set(1, 64, 1, "stone");
+                        },
+                        w -> fillCells(w, "cobblestone", 0, 1, 1, 0), FailureCode.UNREACHABLE),
+                new Case("fill, water in the box", "fill", floor,
+                        w -> {
+                            w.carry("cobblestone", 10);
+                            w.set(1, 64, 1, "water");
+                        },
+                        w -> fillCells(w, "cobblestone", 0, 0, 0, 1, 1, 0, 1, 1), FailureCode.LIQUID),
+                new Case("place", "place", m("block", "oak planks", "p", "2 64 2"), w -> w.carry("oak_planks", 1),
+                        w -> {
+                            w.set(2, 64, 2, "oak_planks");
+                            w.carry("oak_planks", -1);
+                        }, FailureCode.UNREACHABLE),
+                new Case("place, none carried", "place", m("block", "oak_planks", "p", "2 64 2"), w -> { },
+                        w -> w.set(2, 64, 2, "oak_planks"), FailureCode.MISSING_ITEM),
+                new Case("mine", "mine", m("block", "iron ore", "n", 3), mineSetup,
+                        w -> w.carry("raw_iron", 3), FailureCode.NOT_FOUND),
+                new Case("mine, silk touch", "mine", m("block", "iron_ore", "n", 2), mineSetup,
+                        w -> w.carry("iron_ore", 2), FailureCode.NOT_FOUND),
+                new Case("pickup_drops", "pickup_drops", m("radius", 8),
+                        w -> {
+                            w.position = new Vec3(0.5, 64, 0.5);
+                            w.ground.add(new SeamTestWorld.Ground(new Vec3(3.5, 64, 0.5), "cobblestone", 5));
+                        },
+                        w -> {
+                            w.ground.clear();
+                            w.carry("cobblestone", 5);
+                        }, FailureCode.UNREACHABLE),
+                new Case("pickup_drops, inventory full", "pickup_drops", m("radius", 8),
+                        w -> {
+                            w.position = new Vec3(0.5, 64, 0.5);
+                            w.freeSlots = 0;
+                            w.ground.add(new SeamTestWorld.Ground(new Vec3(3.5, 64, 0.5), "cobblestone", 5));
+                            w.ground.add(new SeamTestWorld.Ground(new Vec3(30.5, 64, 0.5), "dirt", 5));
+                        },
+                        w -> w.ground.remove(0), FailureCode.CONTAINER_FULL));
+    }
+
+    private static void mineCountsTheDropsNotTheOrder() {
+        Primitive p = Seam.primitive("mine");
+        Map<String, Object> args = coerce("mine", m("block", "iron_ore", "n", 3));
+        SeamTestWorld w = new SeamTestWorld();
+        w.drops.put("iron_ore", List.of("iron_ore", "raw_iron"));
+        Map<String, Object> pre = snapshot(p, args, w);
+        w.carry("raw_iron", 1);
+        Outcome partial = Seam.verify(p, args, pre, Primitive.TaskEnd.finished("partial: mined 1 iron_ore"), w, List.of());
+        require(!partial.ok() && partial.error().code() == FailureCode.UNREACHABLE,
+                "a partial mine (1 of 3) is not a success, whatever the Task says: " + partial);
+        SeamTestWorld glass = new SeamTestWorld();
+        glass.drops.put("glass", List.of());
+        try {
+            p.snapshot(coerce("mine", m("block", "glass", "n", 1)), glass);
+            require(false, "mining a block that yields nothing is refused before it starts");
+        } catch (Coercion.Failure f) {
+            require(f.error.code() == FailureCode.BAD_ARGS, "mining glass is bad_args: " + f.error);
+        }
+        Primitive.LineArgs line = p.fromLine("Iron Ore 8", null);
+        require(line != null && line.raw().equals(m("block", "Iron Ore", "n", "8")), "mine's line form: " + line);
+        require(p.fromLine("#minecraft:logs 3", null) == null, "a tag stays with the mine command");
+        Coercion.Result ambiguous = Coercion.coerce(SignatureTable.get("mine"), p.fromLine("iron 3", null).raw(),
+                Coercion.Ids.REGISTRIES);
+        require(!ambiguous.ok() && ambiguous.error().code() == FailureCode.AMBIGUOUS,
+                "mine iron is ambiguous and lists candidates (E6): " + ambiguous.error());
     }
 
     // --- talk --------------------------------------------------------------------------------------

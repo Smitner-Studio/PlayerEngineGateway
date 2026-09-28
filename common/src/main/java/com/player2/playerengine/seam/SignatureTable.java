@@ -104,14 +104,14 @@ public final class SignatureTable {
         t.add(primitive("excavate", "excavate", null, List.of(Arg.of("box", Type.BOX)), true,
                 "every non-excluded cell is air", true, "dig out a box; leaves players' blocks and containers"));
         t.add(primitive("fill", "fill", null, List.of(Arg.of("block", Type.BLOCK), Arg.of("box", Type.BOX)), true,
-                "every target cell is block", false, "fill a box with block"));
+                "every target cell is block", true, "fill a box with block"));
         t.add(primitive("place", null, PermissionClass.WORLD, List.of(Arg.of("block", Type.BLOCK), Arg.of("p", Type.POS)),
-                true, "block_at(p) == block", false, "place one block"));
+                true, "block_at(p) == block", true, "place one block"));
         t.add(primitive("mine", "mine", null, List.of(Arg.of("block", Type.BLOCK), Arg.of("n", Type.COUNT)), false,
-                "the drop item's inventory delta >= the expected drops for n", false, "mine n exposed blocks"));
+                "the drop item's inventory delta >= the expected drops for n", true, "mine n exposed blocks"));
         t.add(primitive("pickup_drops", "pickup_drops", null,
                 List.of(Arg.bounded("radius", Type.INT, 1, MAX_PICKUP_RADIUS)), true,
-                "no item entities left in the radius", false, "pick up dropped items nearby"));
+                "no item entities left in the radius", true, "pick up dropped items nearby"));
 
         // Items.
         t.add(primitive("get", "get", null, List.of(Arg.of("item", Type.ITEM), Arg.of("n", Type.COUNT)), true,

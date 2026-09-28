@@ -66,7 +66,8 @@ public final class SeamSelfTest {
             require(p != null && p.signature().bound() && p.signature().command().equals(bound),
                     bound + " lines dispatch through the seam as the " + bound + " primitive");
         }
-        require(Seam.primitiveFor("mine") == null, "mine is signature only until stage 2B");
+        require(Seam.primitiveFor("mine") != null && Seam.primitiveFor("scan_storage") == null,
+                "mine lines run as the mine primitive; a command no primitive wraps runs as itself");
         String published = SignatureTable.published();
         require(published != null, SignatureTable.RESOURCE + " is published");
         require(SignatureTable.json().equals(published),
