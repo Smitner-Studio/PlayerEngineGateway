@@ -453,3 +453,12 @@ either cap the companion says it is worn out and makes no model call.
 |---|---|
 | `common/src/main/java/com/player2/playerengine/smoke/SmokeHarness.java` | `xray` scenario |
 | `common/src/main/resources/assets/playerengine/lang/en_us.json` | smoke scenario list |
+
+**Baritone mines exposed ore only by default.** `allowOnlyExposedOres` now defaults to `true`, so
+Baritone's `MineProcess` (a separate path from the scanner) also skips enclosed ore, and a pack
+needs no `playerengine/settings.txt` for it. `settings.txt` still overrides it.
+
+| File | Change |
+|---|---|
+| `common/src/main/java/com/player2/playerengine/automaton/api/Settings.java` | `allowOnlyExposedOres` defaults to `true` |
+| `common/src/main/java/com/player2/playerengine/util/PerceptionSelfTest.java` | checks the default |

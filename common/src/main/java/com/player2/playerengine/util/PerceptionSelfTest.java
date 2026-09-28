@@ -27,6 +27,8 @@ public final class PerceptionSelfTest {
         buriedOreIsNeverReported();
         hostilesOnlyInLineOfSight();
         compassAndDistanceAreRough();
+        require(new com.player2.playerengine.automaton.api.Settings().allowOnlyExposedOres.defaultValue,
+                "Baritone's mine process targets exposed ore only unless settings.txt says otherwise");
         return checks;
     }
 

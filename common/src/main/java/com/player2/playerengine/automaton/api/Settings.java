@@ -184,7 +184,7 @@ public final class Settings {
    public final Settings.Setting<Integer> mineGoalUpdateInterval = new Settings.Setting<>(5);
    public final Settings.Setting<Integer> maxCachedWorldScanCount = new Settings.Setting<>(10);
    public final Settings.Setting<Integer> minYLevelWhileMining = new Settings.Setting<>(-64);
-   public final Settings.Setting<Boolean> allowOnlyExposedOres = new Settings.Setting<>(false);
+   public final Settings.Setting<Boolean> allowOnlyExposedOres = new Settings.Setting<>(true);
    public final Settings.Setting<Integer> allowOnlyExposedOresDistance = new Settings.Setting<>(1);
    public final Settings.Setting<Boolean> exploreForBlocks = new Settings.Setting<>(true);
    public final Settings.Setting<Integer> worldExploringChunkOffset = new Settings.Setting<>(0);
