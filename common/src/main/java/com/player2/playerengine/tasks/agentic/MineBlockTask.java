@@ -435,13 +435,21 @@ public final class MineBlockTask extends Task {
             // independent of and not worsened by WS1; closing it (hotbar-aware tier check) is out of scope.
             this.usedWrongTool =
                     !StorageHelper.miningRequirementMetInventory(this.controller, requirement);
-            breakChild = new DestroyBlockTask(activePos);
+            breakChild = DestroyBlockTask.sparingPlayerPlaced(activePos);
             report("breaking " + blockNameAt(activePos), false);
             setDebugState(phase.name() + "@" + activePos.toShortString());
             return breakChild;
         }
         if (!breakChild.isFinished() && !breakChild.stopped()) {
             return breakChild; // still breaking
+        }
+        if (breakChild.refused()) {
+            // Nothing broke: the target is player-placed, and canBreak keeps it out of the next search.
+            breakChild = null;
+            activePos = null;
+            this.phase = Phase.FINDING_BLOCK;
+            setDebugState(phase.name());
+            return null;
         }
         // Block broken (now air) — move to collection. Count-at-BREAK: minedTotal is the single source
         // of truth for "blocks broken" and is incremented here exactly once per break, so a broken-but-

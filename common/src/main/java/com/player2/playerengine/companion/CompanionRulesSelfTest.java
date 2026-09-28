@@ -58,6 +58,7 @@ public final class CompanionRulesSelfTest {
         checks += com.player2.playerengine.player2api.DecisionCaptureSelfTest.runAll();
         checks += com.player2.playerengine.player2api.CompanionAddressSelfTest.runAll();
         checks += com.player2.playerengine.player2api.TurnCapsSelfTest.runAll();
+        checks += com.player2.playerengine.structureprotection.PlayerPlacedProtectionSelfTest.runAll();
         System.out.println("companion self-test: " + checks + " checks passed");
     }
 

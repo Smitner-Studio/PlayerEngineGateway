@@ -492,3 +492,27 @@ their own only.
 | File | Change |
 |---|---|
 | `gradle.properties` | version `1.21.1-1.4.0-gateway.8` |
+
+## Grief fix (gateway.8.1)
+
+**`mine` and collecting leave player-placed blocks standing.** Excavate and fill already left
+every block in `PlayerPlacedBlockStore` alone; `mine`, `get` and the collection tasks did not, so
+after an excavate spared a neighbour's house the model could order `mine oak_planks` and take it
+apart. `WorldHelper.canBreak`, which every self-chosen mining or collecting target passes, now
+refuses a player-placed block, so the companion never paths to one. The store records no placer,
+so the rule is excavate's: every real player's blocks, the owner's included. `mine` and
+collecting also break through a guarded `DestroyBlockTask` that refuses a player-placed block at
+break time, because `clearArea` exempts its own target from the builder's protection. Pathing
+keeps its large but finite cost for player-placed blocks in the way.
+
+| File | Change |
+|---|---|
+| `common/src/main/java/com/player2/playerengine/structureprotection/PlayerPlacedBlockStore.java` | `protects`, the shared rule; a store for the self-test |
+| `common/src/main/java/com/player2/playerengine/structureprotection/PlayerPlacedProtectionSelfTest.java` | new: the rule over a real store |
+| `common/src/main/java/com/player2/playerengine/util/helpers/WorldHelper.java` | `isPlayerPlaced`; `canBreak` refuses player-placed blocks |
+| `common/src/main/java/com/player2/playerengine/tasks/construction/DestroyBlockTask.java` | `sparingPlayerPlaced`: a break that refuses a player-placed block |
+| `common/src/main/java/com/player2/playerengine/tasks/agentic/MineBlockTask.java` | breaks through the guarded task; a refused break counts nothing |
+| `common/src/main/java/com/player2/playerengine/tasks/resources/MineAndCollectTask.java` | breaks through the guarded task |
+| `common/src/main/java/com/player2/playerengine/companion/CompanionRulesSelfTest.java` | runs the protection self-test |
+| `common/src/main/java/com/player2/playerengine/smoke/SmokeHarness.java` | `mine-grief` scenario |
+| `common/src/main/resources/assets/playerengine/lang/en_us.json` | smoke scenario list |
