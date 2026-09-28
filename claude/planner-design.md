@@ -599,6 +599,42 @@ runs on a multiplayer server.
 | the time-derived size cap | 9×4×9 stone with a stone pickaxe accepted; 16×8×16 with a wooden pickaxe refused, with a suggested size | drop the time cap → accepted |
 | fluid and falling-block pre-scan | map-backed fake: waterlogged cell in the shell → refused; a 3-high gravel column → folded in; a 7-high column → refused | skip the fluid-state check → accepted |
 
+### Red-witness runs (2026-09-28)
+
+Each row removes or breaks one property in the source, runs `:common:planSelfTest`, and restores
+the bytes. The quoted text is the assertion that failed. "Commit" is the code the mutation was
+applied to: 3c1ca2d for tests that existed at the WIP commit, otherwise the commit that added the
+test or fix. With every mutation restored, `task test` is green at 8ccf34e (gateway 27, companion 598,
+plan 116 planner + 67 area checks), and so is `task build`.
+
+| Criterion | Production-path test | Red witness (mutation → failing assertion) | Commit | Verdict |
+|---|---|---|---|---|
+| a superseded step (reported Finished) pauses the plan | `supersededStepReportedAsFinishedPausesThePlan` | seq check in `onStepStopped` → `if (false)`: "superseded step pauses the plan" | 3c1ca2d | Proven |
+| a line with a gesture and a command moves the seq (**bug, fixed**) | `everyLineThatRunsACommandMovesTheSeq` via `CommandExecutor.countsAsDispatch` | restore the shipped `startsWith("bodylang")` rule: "a gesture in front of a command still replaces the running step" | 5089771 | Proven |
+| `CommandExecutor.execute` bumps the seq | none | call site → `if (false)`: suite stays green | 5089771 | **Unproven**: needs a live controller; in-game smoke |
+| `;` in a plan step is refused | `parserShapes` | drop the `;` rule in `PlanParser`: "';' injection refused" | 3c1ca2d | Proven |
+| a non-owner turn cannot plan, resume or cancel | `nonOwnerCannotPlanOrResume` | `authorised = true`: "refusal told" | 3c1ca2d | Proven |
+| ownership is the authenticated UUID, never the name | `ownershipIsTheAuthenticatedUuid` via `OwnerGate.isOwner` / `OwnerGate.turn` | accept a message with no UUID: "the owner's name without an authenticated UUID is not the owner" | 6b679ff | Proven |
+| an owner-only command in any `;` part is refused (**bug, fixed**) | `ownerOnlyCommandsAreFoundInEverySemicolonPart` via `OwnerGate.ownerOnlyCommandIn` | check the first part only, as shipped: "an owner-only command after ';' is found" | 6b679ff | Proven |
+| a plan sent on the owner chain's feedback turn is charged to the owner (**bug, fixed**) | `feedbackTurnInOwnerChainCanStartAPlan` | feedback-turn initiator `null`, as shipped: "a feedback turn in the owner's chain is the owner's" | 6b679ff | Proven |
+| the budget is keyed per owner | `budgetIsPerOwnerAcrossCompanions` | one key for everyone in `PlanBudget`: "another owner's allowance is separate" | 3c1ca2d | Proven |
+| companions share the server-wide budget (the loop's wiring) | `companionsShareTheServerBudget` via `PlanCoordinator(Host)` | a fresh `PlanBudget` per coordinator: "a third companion cannot extend the owner's hour" | 8ccf34e | Proven |
+| a step running past 25 min is cancelled and repaired | `stepThatRunsTooLongIsStoppedAndRepaired` | timeout branch in `tick` → `if (false)`: "timed-out step stopped" | 3c1ca2d | Proven |
+| a dig estimated over 20 min is refused with a size that fits | `timeDerivedSizeCap` | drop the `MAX_STEP_SECONDS` refusal: "16x8x16 of stone with a wooden pickaxe is refused…: null" | 3c1ca2d | Proven |
+| liquid in the box or shell refuses the scan | `liquidsRefuseIncludingWaterlogged` | liquid check in `AreaScan.scan` → `if (false)`: NPE on the null refusal at the waterlogged-shell check (`AreaSelfTest.java:175`) | 3c1ca2d | Proven |
+| the fluid state marks waterlogged blocks as water | `fluidStateMarksWaterloggedBlocksAsWater` via `AreaCommand.liquidName` on real block states | decide by `LiquidBlock` type: "a waterlogged slab is water" | 8ccf34e | Proven |
+
+Before 8ccf34e, the shared-budget wiring and the fluid-state mapping could not go red: the budget test built
+its own shared `PlanBudget`, and the map-backed scan test was handed `liquid="water"`, so it never
+exercised the adapter. The self-test has no datapack tags bound, so it asserts only that lava is a
+liquid, not that it is labelled "lava".
+
+Not witnessed (production wiring that has no test double; the in-game smoke covers it):
+
+- `AgentConversationData` calling `OwnerGate` (the gate's logic is witnessed; the call sites are not);
+- the tick-deferred dispatch's own seq check in `PlanHost.dispatch`;
+- the seq bump at the `CommandExecutor.execute` call site (row above).
+
 ### Decisions made while implementing
 
 - The box grammar's coordinate anchor is written `anchor=x,y,z`, so it cannot be confused with the
@@ -643,7 +679,7 @@ pack is untouched.
   - `activePlan` and `lastArea` in `AgentStatus`;
   - the system-prompt paragraph.
 - The dispatch seq: `PlayerEngineController.commandDispatchSeq`, incremented in
-  `CommandExecutor.execute` (not for `bodylang`), and an accepted-seq hook in
+  `CommandExecutor.execute` (not for a line of gestures only), and an accepted-seq hook in
   `AgentSideEffects.onCommandListGenerated`.
 - `Command.isIdempotent()`, true for `goto`, `excavate` and `fill`.
 - The area commands:
@@ -661,9 +697,12 @@ pack is untouched.
 
 **Next**
 
-1. **Red-witness runs.** Mutate each property and confirm its test fails, one per 🔴 row at least:
-   the seq check, the `;` rule, the owner check, the per-owner budget key, the time cap, and the
-   fluid-state liquid scan. Record the results in the table.
+1. **Red-witness runs: done (2026-09-28).** See "Red-witness runs" in section 6. They found three
+   bugs, each fixed with a witness: an owner-only command after `;` in a reply (6b679ff); a plan on
+   a feedback turn refused for want of an initiator (6b679ff); and a `bodylang …; <command>` line
+   that did not move the seq (5089771). Tests were added for the fluid-state mapping and the budget
+   wiring (8ccf34e). Gates at 8ccf34e: `task test` green (gateway 27, companion 598, plan 116
+   planner + 67 area checks), and `task build` green.
 2. **In-game smoke on a local instance, not the NAS server.**
    - Ask Ada for "a 7 by 3 by 7 room here" and a two-step plan.
    - Say "continue" after an interruption.
@@ -671,6 +710,9 @@ pack is untouched.
    - Place a block beside the box and check it is never broken.
    - Waterlogged refusal.
    - Restart with a paused plan.
+   - While a plan step runs, give Ada a direct `@goto` of your own; the plan must pause, not
+     advance (the seq bump at the `CommandExecutor.execute` call site has no unit witness).
+   - Have a second player ask Ada to dig; she must decline (the `OwnerGate` call sites).
 3. **Review points still open:**
    - the loop does not yet charge "continue" turns that the resume phrase handles when no plan
      exists (harmless);
