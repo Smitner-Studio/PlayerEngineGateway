@@ -386,3 +386,17 @@ monsters only.
 | `common/src/main/java/com/player2/playerengine/chains/FoodChain.java`, `commands/SetFollowModeCommand.java` | comments no longer name the removed chain |
 | `common/src/main/java/com/player2/playerengine/smoke/SmokeHarness.java` | `attack` scenario |
 | `common/src/main/resources/assets/playerengine/lang/en_us.json` | smoke scenario list |
+
+**Decision capture for replay.** With `captureDecisions=true` in
+`config/playerengine-companion.properties` (default `false`), every decision turn appends one JSON
+line to `playerengine/data/decisions.jsonl`: the messages the model saw, its reply, and the command
+the turn dispatched. A command's outcome is in the next line's messages, as the model's feedback.
+The lines carry players' chat.
+
+| File | Change |
+|---|---|
+| `common/src/main/java/com/player2/playerengine/player2api/DecisionCapture.java` | new: the capture line and the append |
+| `common/src/main/java/com/player2/playerengine/player2api/DecisionCaptureSelfTest.java` | new: line shape and appending |
+| `common/src/main/java/com/player2/playerengine/companion/CompanionRules.java` | `captureDecisions` key |
+| `common/src/main/java/com/player2/playerengine/player2api/AgentConversationData.java` | records each decision turn after the plan rules |
+| `common/src/main/java/com/player2/playerengine/companion/CompanionRulesSelfTest.java` | capture default and parsing; runs the capture self-test |

@@ -1253,6 +1253,7 @@ public class AgentConversationData {
             command = null;
             cmdId = null;
         }
+        DecisionCapture.record(this, lastEvent, historyWithWrappedStatus, jsonResp, command);
         boolean substantiveReply = !strippedMessage.isEmpty()
                 || (cmdId != null && !"idle".equals(cmdId))   // a real, non-idle command counts
                 || !validBoundaries.isEmpty();                 // a valid gesture counts
