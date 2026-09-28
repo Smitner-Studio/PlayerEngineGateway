@@ -131,21 +131,27 @@ public final class ContainerResolver {
         ContainerKind kind = trapped ? ContainerKind.TRAPPED_CHEST : ContainerKind.CHEST;
 
         if (container instanceof CompoundContainer && type != ChestType.SINGLE) {
-            // Canonical pos rule (single source, Decision 2): the DoubleBlockCombiner FIRST half
-            // is ChestType.RIGHT and always provides slots 0-26 of the CompoundContainer.
-            BlockPos otherHalf = pos.relative(ChestBlock.getConnectedDirection(state));
-            if (type == ChestType.RIGHT) {
-                canonicalPos = pos;
-                secondaryPos = otherHalf;
-            } else {
-                canonicalPos = otherHalf;
-                secondaryPos = pos;
-            }
+            BlockPos[] halves = canonicalHalves(pos, state);
+            canonicalPos = halves[0];
+            secondaryPos = halves[1];
             kind = trapped ? ContainerKind.DOUBLE_TRAPPED_CHEST : ContainerKind.DOUBLE_CHEST;
         }
 
         return Resolution.success(
                 new ResolvedContainer(container, kind, canonicalPos, secondaryPos, container.getContainerSize()));
+    }
+
+    /**
+     * The canonical rule for a double chest named by either half (single source, Decision 2):
+     * {@code [first, second]}, where the DoubleBlockCombiner FIRST half is {@code ChestType.RIGHT}
+     * and always provides slots 0-26 of the CompoundContainer. {@code state} is a non-single
+     * chest's state at {@code pos}.
+     */
+    public static BlockPos[] canonicalHalves(BlockPos pos, BlockState state) {
+        BlockPos otherHalf = pos.relative(ChestBlock.getConnectedDirection(state));
+        return state.getValue(ChestBlock.TYPE) == ChestType.RIGHT
+                ? new BlockPos[] {pos, otherHalf}
+                : new BlockPos[] {otherHalf, pos};
     }
 
     /**

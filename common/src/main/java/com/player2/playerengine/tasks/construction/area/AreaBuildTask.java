@@ -30,7 +30,8 @@ public class AreaBuildTask extends Task implements ITaskRequiresGrounded {
             Blocks.DIRT.asItem(), Blocks.COBBLESTONE.asItem(), Blocks.COBBLED_DEEPSLATE.asItem(),
             Blocks.NETHERRACK.asItem());
 
-    public record Outcome(boolean success, String message) {
+    /** @param code why it failed, as the seam reports it; null on success */
+    public record Outcome(boolean success, String message, com.player2.playerengine.seam.FailureCode code) {
     }
 
     private final AreaScan.Mode mode;
@@ -123,7 +124,7 @@ public class AreaBuildTask extends Task implements ITaskRequiresGrounded {
             lastProgressMillis = now;
         }
         if (mode == AreaScan.Mode.EXCAVATE && remaining > 0 && freeSlots() == 0) {
-            end(false, "my pack is full (" + (checkCells.length - remaining) + " of " + checkCells.length
+            end(false, com.player2.playerengine.seam.FailureCode.CONTAINER_FULL, "my pack is full (" + (checkCells.length - remaining) + " of " + checkCells.length
                     + " done); empty it and carry on");
             return null;
         }
@@ -132,9 +133,9 @@ public class AreaBuildTask extends Task implements ITaskRequiresGrounded {
         AreaScan.Judgement j = AreaScan.judge(builder.isActive(), builder.isPaused(), remaining,
                 checkCells.length, now, lastProgressMillis, stall, deadlineMillis);
         if (j.verdict() == AreaScan.Verdict.SUCCESS) {
-            end(true, successNote());
+            end(true, null, successNote());
         } else if (j.verdict() == AreaScan.Verdict.FAIL) {
-            end(false, j.reason());
+            end(false, j.code(), j.reason());
         }
         return null;
     }
@@ -157,8 +158,8 @@ public class AreaBuildTask extends Task implements ITaskRequiresGrounded {
         }
     }
 
-    private void end(boolean success, String message) {
-        outcome = new Outcome(success, message);
+    private void end(boolean success, com.player2.playerengine.seam.FailureCode code, String message) {
+        outcome = new Outcome(success, message, code);
         onStop(null);
     }
 

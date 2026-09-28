@@ -1,5 +1,6 @@
 package com.player2.playerengine.tasks.construction.area;
 
+import com.player2.playerengine.seam.FailureCode;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -59,13 +60,15 @@ public final class AreaScan {
             int folded,
             double estimatedSeconds,
             /** The refusal clears once the owner confirms (the box holds players' blocks). */
-            boolean needsConfirm) {
+            boolean needsConfirm,
+            /** Why it refused, as the seam reports it; null when it did not. */
+            FailureCode code) {
         public boolean refused() {
             return refusal != null;
         }
 
-        static Result refuse(String why) {
-            return new Result(why, List.of(), List.of(), List.of(), List.of(), 0, 0, 0, false);
+        static Result refuse(FailureCode code, String why) {
+            return new Result(why, List.of(), List.of(), List.of(), List.of(), 0, 0, 0, false, code);
         }
     }
 
@@ -93,11 +96,11 @@ public final class AreaScan {
                 for (int y = b.minY() - 1; y <= b.maxY() + 2; y++) {
                     Cell c = world.cell(x, y, z);
                     if (c == null || !c.loaded()) {
-                        return Result.refuse("part of that ground is not loaded; go closer first");
+                        return Result.refuse(FailureCode.NOT_LOADED, "part of that ground is not loaded; go closer first");
                     }
                     boolean inBox = b.contains(x, y, z);
                     if (c.liquid() != null && (mode == Mode.EXCAVATE || inBox)) {
-                        return Result.refuse("there is " + c.liquid() + (inBox ? " in" : " right next to")
+                        return Result.refuse(FailureCode.LIQUID, "there is " + c.liquid() + (inBox ? " in" : " right next to")
                                 + " that space; digging it would flood it");
                     }
                     long[] p = {x, y, z};
@@ -149,7 +152,7 @@ public final class AreaScan {
                             break;
                         }
                         if (k > MAX_FOLDED_PER_COLUMN) {
-                            return Result.refuse("there is a deep pocket of loose " + c.name()
+                            return Result.refuse(FailureCode.PROTECTED, "there is a deep pocket of loose " + c.name()
                                     + " overhead that would cave in");
                         }
                         long[] p = {x, b.maxY() + k, z};
@@ -165,26 +168,26 @@ public final class AreaScan {
         if (excluded > MAX_EXCLUDED_WITHOUT_CONFIRM && !confirmed) {
             return new Result(excluded + " blocks in there were placed by players or hold items; I will leave "
                     + "them standing, but ask the owner to confirm first, then repeat the command with confirm=yes",
-                    List.of(), List.of(), List.of(), List.of(), excluded, 0, 0, true);
+                    List.of(), List.of(), List.of(), List.of(), excluded, 0, 0, true, FailureCode.PROTECTED);
         }
         double seconds = ticks / 20.0 * MOVE_OVERHEAD;
         if (mode == Mode.EXCAVATE) {
             if (missingToolFor != null) {
-                return Result.refuse("it needs a pickaxe that can mine " + missingToolFor + "; get one first");
+                return Result.refuse(FailureCode.MISSING_ITEM, "it needs a pickaxe that can mine " + missingToolFor + "; get one first");
             }
             if (!targets.isEmpty() && freeSlots < MIN_FREE_SLOTS) {
-                return Result.refuse("my pack is nearly full; empty it first");
+                return Result.refuse(FailureCode.CONTAINER_FULL, "my pack is nearly full; empty it first");
             }
             if (seconds > MAX_STEP_SECONDS) {
                 long fits = Math.max(1, (long) Math.floor(targets.size() * MAX_STEP_SECONDS / seconds));
-                return Result.refuse("that would take about " + Math.round(seconds / 60) + " minutes with my "
+                return Result.refuse(FailureCode.BUDGET, "that would take about " + Math.round(seconds / 60) + " minutes with my "
                         + "current tools; dig at most about " + fits + " blocks per step");
             }
         } else if (targets.size() > fillHave) {
-            return Result.refuse("that needs " + (targets.size() - fillHave) + " more " + fillName
+            return Result.refuse(FailureCode.MISSING_ITEM, "that needs " + (targets.size() - fillHave) + " more " + fillName
                     + " than I carry; get them first");
         }
-        return new Result(null, targets, checkCells, shellProtected, shellAirBefore, excluded, folded, seconds, false);
+        return new Result(null, targets, checkCells, shellProtected, shellAirBefore, excluded, folded, seconds, false, null);
     }
 
     /** Ticks to break one block with a tool of {@code toolSpeed}, as the survival dig arithmetic has it. */
@@ -201,7 +204,8 @@ public final class AreaScan {
 
     public enum Verdict { CONTINUE, SUCCESS, FAIL }
 
-    public record Judgement(Verdict verdict, String reason) {
+    /** @param code why it failed, as the seam reports it; null unless the verdict is FAIL */
+    public record Judgement(Verdict verdict, String reason, FailureCode code) {
     }
 
     /**
@@ -211,21 +215,21 @@ public final class AreaScan {
     public static Judgement judge(boolean builderActive, boolean builderPaused, int remaining, int total,
                                   long nowMillis, long lastProgressMillis, long stallMillis, long deadlineMillis) {
         if (remaining == 0) {
-            return new Judgement(Verdict.SUCCESS, null);
+            return new Judgement(Verdict.SUCCESS, null, null);
         }
         String progress = " (" + (total - remaining) + " of " + total + " done)";
         if (!builderActive) {
-            return new Judgement(Verdict.FAIL, "gave up with " + remaining + " blocks left" + progress);
+            return new Judgement(Verdict.FAIL, "gave up with " + remaining + " blocks left" + progress, FailureCode.UNREACHABLE);
         }
         if (builderPaused) {
-            return new Judgement(Verdict.FAIL, "stuck: can't reach part of it" + progress);
+            return new Judgement(Verdict.FAIL, "stuck: can't reach part of it" + progress, FailureCode.UNREACHABLE);
         }
         if (nowMillis - lastProgressMillis > stallMillis) {
-            return new Judgement(Verdict.FAIL, "no progress for a while" + progress);
+            return new Judgement(Verdict.FAIL, "no progress for a while" + progress, FailureCode.UNREACHABLE);
         }
         if (nowMillis > deadlineMillis) {
-            return new Judgement(Verdict.FAIL, "ran out of time" + progress);
+            return new Judgement(Verdict.FAIL, "ran out of time" + progress, FailureCode.TIMEOUT);
         }
-        return new Judgement(Verdict.CONTINUE, null);
+        return new Judgement(Verdict.CONTINUE, null, null);
     }
 }
