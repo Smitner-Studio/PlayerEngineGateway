@@ -403,6 +403,9 @@ public class PlayerEngineController {
    private void initializeCommands() {
       try {
          PlayerEngineCommands.init(this);
+      } catch (com.player2.playerengine.commands.base.UnclassedCommandException unclassed) {
+         // A companion must not start with commands the dispatcher cannot classify.
+         throw unclassed;
       } catch (Exception var2) {
          var2.printStackTrace();
       }
