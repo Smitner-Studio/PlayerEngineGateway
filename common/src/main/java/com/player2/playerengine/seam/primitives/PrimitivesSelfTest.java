@@ -498,6 +498,8 @@ public final class PrimitivesSelfTest {
     }
 
     private static void everyPrimitiveIsCovered(List<Case> cases) {
+        require(SignatureTable.all().stream().allMatch(Signature::bound), "every signature in the table is bound: "
+                + SignatureTable.all().stream().filter(s -> !s.bound()).map(Signature::name).toList());
         for (Signature s : SignatureTable.all()) {
             if (s.bound() && s.kind() == Signature.Kind.PRIMITIVE && !List.of("goto", "excavate").contains(s.name())) {
                 require(cases.stream().anyMatch(c -> c.name().equals(s.name())),
