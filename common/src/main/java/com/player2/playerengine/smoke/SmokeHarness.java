@@ -157,6 +157,7 @@ public final class SmokeHarness {
             case "chunk-hold" -> chunkHold(level);
             case "attack" -> attackAPlayer(level);
             case "far-owner" -> farOwner(level);
+            case "xray" -> xray(level);
             case "caps" -> turnCaps(level);
             case "chunk-hold-restart" -> chunkHoldAfterRestart(level);
             case "goto" -> planWithInterruption(level, 6, Resume.NONE);
@@ -599,6 +600,37 @@ public final class SmokeHarness {
                     }
                     return stranger.getHealth() == before ? "the hit path did not swing at the player beside it" : "!damage dealt";
                 }, 5, "the hit path was never driven"));
+    }
+
+    /**
+     * F1: a sponge (breaks by hand, never natural here) sealed in dirt three blocks from the companion
+     * is not a target: {@code mine sponge} leaves it alone. With the dirt above it gone, the same
+     * command mines it, so the filter hides only what a player could not see.
+     */
+    private static List<Stage> xray(ServerLevel level) {
+        requireCompanion();
+        BlockPos site = arena(level, 16);
+        BlockPos hidden = site.offset(3, 2, 0);
+        fillBox(level, hidden.offset(-1, -1, -1), hidden.offset(1, 1, 1));
+        level.setBlockAndUpdate(hidden, Blocks.SPONGE.defaultBlockState());
+        place(site, 0, -4, 0.5, 0.5);
+        long[] seq = new long[1];
+        Supplier<String> taken = () -> level.getBlockState(hidden).is(Blocks.SPONGE) ? null
+                : "!the sealed sponge at " + hidden.toShortString() + " was mined";
+        return List.of(
+                act(() -> {
+                    seq[0] = mod().getCommandDispatchSeq();
+                    say(OWNER_ID, OWNER_NAME, "SMOKE-CMD: mine sponge 1");
+                }),
+                window(taken, 25, () -> mod().getCommandDispatchSeq() > seq[0]
+                        ? "sealed sponge not targeted" : "!mine was never dispatched"),
+                act(() -> {
+                    mod().stop();
+                    level.setBlockAndUpdate(hidden.above(), Blocks.AIR.defaultBlockState());
+                }),
+                act(() -> say(OWNER_ID, OWNER_NAME, "SMOKE-CMD: mine sponge 1")),
+                waitFor(() -> level.getBlockState(hidden).is(Blocks.SPONGE) ? null : "exposed sponge mined",
+                        90, () -> "the exposed sponge was not mined: " + botState()));
     }
 
     /**

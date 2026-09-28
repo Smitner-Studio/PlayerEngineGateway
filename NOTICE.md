@@ -445,3 +445,11 @@ either cap the companion says it is worn out and makes no model call.
 | `common/src/main/java/com/player2/playerengine/companion/CompanionRulesSelfTest.java` | runs the caps self-test |
 | `common/src/main/java/com/player2/playerengine/smoke/SmokeHarness.java` | `caps` scenario |
 | `common/src/main/resources/assets/playerengine/lang/en_us.json` | smoke scenario list |
+
+**Perception smoke.** The `xray` scenario seals a block in dirt three blocks from the companion:
+`mine` leaves it alone, and mines it once the dirt above it is gone.
+
+| File | Change |
+|---|---|
+| `common/src/main/java/com/player2/playerengine/smoke/SmokeHarness.java` | `xray` scenario |
+| `common/src/main/resources/assets/playerengine/lang/en_us.json` | smoke scenario list |
