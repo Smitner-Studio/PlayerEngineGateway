@@ -283,17 +283,27 @@ public class AgentSideEffects {
     }
 
     public static void broadcastChatToPlayer(MinecraftServer server, String message, ServerPlayer player) {
-        player.displayClientMessage(Component.literal(message), false);
+        broadcastChatToPlayer(server, Component.literal(message), player);
     }
 
     public static void broadcastChatToPlayer(MinecraftServer server, Component message, ServerPlayer player) {
-        player.displayClientMessage(message, false);
+        sendTo(player, message);
     }
 
     private static void broadcastErrorMsgToPlayer(MinecraftServer server, String message, ServerPlayer player) {
         MutableComponent output = Component.literal(message);
         output.setStyle(output.getStyle().applyFormat(ChatFormatting.RED));
-        player.displayClientMessage(output, false);
+        sendTo(player, output);
+    }
+
+    // The player is null when a turn ends while its owner is offline (billing resolves no online
+    // owner); throwing here would crash the server tick.
+    private static void sendTo(ServerPlayer player, Component message) {
+        if (player == null) {
+            LOGGER.warn("No online player to show a chat line; skipped: {}", message.getString());
+            return;
+        }
+        player.displayClientMessage(message, false);
     }
 
     public static void broadcastChatToAllPlayers(MinecraftServer server, String message) {
