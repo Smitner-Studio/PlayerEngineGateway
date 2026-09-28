@@ -390,7 +390,7 @@ public class MineAndCollectTask extends ResourceTask {
             // Block (re)targeted for mining: start the settle window so the resulting drop has time to
             // settle before the next getWanderTask "still short" re-check (plan WS3 item c).
             this.settleTimer.reset();
-            return new DestroyBlockTask(this.miningPos);
+            return DestroyBlockTask.sparingPlayerPlaced(this.miningPos);
          }
       }
 

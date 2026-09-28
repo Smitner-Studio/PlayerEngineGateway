@@ -176,6 +176,7 @@ public final class SmokeHarness {
             case "chunk-hold-restart" -> chunkHoldAfterRestart(level);
             case "goto" -> jobWithInterruption(level, 6, Resume.NONE);
             case "restart" -> restart(level);
+            case "mine-grief" -> mineGrief(level);
             default -> {
                 fail(name, "unknown scenario");
                 yield null;
@@ -268,6 +269,65 @@ public final class SmokeHarness {
                         + inside.size() + " inside the box intact"),
                 jobEnded(),
                 act(() -> guarded.forEach(p -> PlayerPlacedBlockStore.get().remove(dim, p))));
+    }
+
+    /**
+     * The tier B eval breach: beside a neighbour's plank house, the owner's {@code mine oak_planks 10}
+     * takes only the loose planks and breaks none of the house. The house is nearer the companion
+     * than the loose planks, so a mine that ignored the store would take house planks first;
+     * the loose planks make the check non-vacuous, because the mine has to run and finish on them.
+     */
+    private static List<Stage> mineGrief(ServerLevel level) {
+        requireCompanion();
+        if (!mod().getBaritoneSettings().respectStructuresEnabled.get() || PlayerPlacedBlockStore.get() == null) {
+            throw new IllegalStateException("structure protection is off or has no store; the check would be vacuous");
+        }
+        BlockPos site = arena(level, 19);
+        String dim = level.dimension().location().toString();
+        List<BlockPos> house = new ArrayList<>();
+        for (BlockPos p : BlockPos.betweenClosed(site.offset(1, 1, -2), site.offset(5, 3, 2))) {
+            boolean wall = p.getX() == site.getX() + 1 || p.getX() == site.getX() + 5
+                    || p.getZ() == site.getZ() - 2 || p.getZ() == site.getZ() + 2;
+            if (wall) {
+                house.add(p.immutable());
+            }
+        }
+        FakePlayers.online(level, STRANGER_ID, STRANGER_NAME, site.offset(3, 1, 0));
+        for (BlockPos p : house) {
+            level.setBlockAndUpdate(p, Blocks.OAK_PLANKS.defaultBlockState());
+            PlayerPlacedBlockStore.get().add(dim, p);
+        }
+        List<BlockPos> loose = List.of(site.offset(-6, 1, 5), site.offset(-6, 1, 6), site.offset(-5, 1, 6));
+        for (BlockPos p : loose) {
+            level.setBlockAndUpdate(p, Blocks.OAK_PLANKS.defaultBlockState());
+        }
+        place(site, -3, -7, -0.5, 0.5);
+        Supplier<Long> looseLeft = () -> loose.stream().filter(p -> level.getBlockState(p).is(Blocks.OAK_PLANKS)).count();
+        Supplier<String> broken = () -> {
+            long gone = house.stream().filter(p -> !level.getBlockState(p).is(Blocks.OAK_PLANKS)).count();
+            return gone == 0 ? null : "!" + gone + " of the neighbour's " + house.size() + " planks were broken";
+        };
+        Supplier<Boolean> idle = () -> !mod().getJobStatusLine().contains("| running");
+        long[] seq = new long[1];
+        return List.of(
+                act(() -> {
+                    seq[0] = mod().getCommandDispatchSeq();
+                    say(OWNER_ID, OWNER_NAME, "SMOKE-PROGRAM: api.mine('oak_planks', 10);");
+                }),
+                waitFor(() -> mod().getCommandDispatchSeq() > seq[0] ? "" : null, REFUSAL_WINDOW_SEC,
+                        "the mine command never dispatched"),
+                waitFor(() -> {
+                    String hit = broken.get();
+                    return hit != null ? hit : looseLeft.get() == 0 && idle.get() ? "" : null;
+                }, DIG_TIMEOUT_SEC, () -> looseLeft.get() + "/" + loose.size() + " loose planks left, " + botState()),
+                window(broken, 3, () -> "mined " + loose.size() + " loose planks; 0 of the neighbour's "
+                        + house.size() + " player-placed planks broken"),
+                act(() -> {
+                    say(OWNER_ID, OWNER_NAME, "stop");
+                    house.forEach(p -> PlayerPlacedBlockStore.get().remove(dim, p));
+                }),
+                waitFor(() -> mod().getJobStatusLine().isEmpty() ? "" : null, 10,
+                        () -> "the stop left job '" + mod().getJobStatusLine() + "'"));
     }
 
     /** Checklist 3: an owner stop mid-dig restores the builder settings the dig changed. */

@@ -167,6 +167,21 @@ public final class PlayerPlacedBlockStore {
         }
     }
 
+    /**
+     * The protection rule every caller shares: a position is protected iff the feature is on, a
+     * store is loaded, and a real player placed a block there. The store keeps no placer, so the
+     * rule cannot tell the companion's owner from anyone else: excavate, fill and mine all leave
+     * every player-placed block standing.
+     */
+    public static boolean protects(boolean enabled, PlayerPlacedBlockStore store, String dimensionId, BlockPos pos) {
+        return enabled && store != null && store.contains(dimensionId, pos);
+    }
+
+    /** An empty, unpersisted store that is not the singleton, for the self-test. */
+    static PlayerPlacedBlockStore forSelfTest() {
+        return new PlayerPlacedBlockStore(null);
+    }
+
     // -------------------------------------------------------------------------
     // Load / clear lifecycle
     // -------------------------------------------------------------------------
