@@ -339,3 +339,13 @@ flags: in memory, and released at server stop.
 | `common/src/main/java/com/player2/playerengine/companion/CompanionRulesSelfTest.java` | runs the ticket self-test |
 | `common/src/main/java/com/player2/playerengine/smoke/SmokeHarness.java` | `despawn` reads the ticket store; `chunk-hold` and `chunk-hold-restart` scenarios |
 | `common/src/main/resources/assets/playerengine/lang/en_us.json` | smoke scenario list |
+
+**`reason` is one sentence.** The system prompt asked for step-by-step reasoning in `reason`, which
+nothing reads after parsing and which runs to hundreds of tokens per turn. It now asks for one short
+sentence of at most 200 characters. The field stays (it is the model's room to pick a command until
+programs replace commands); there is no response-side trim, because an output cap shorter than the
+reason truncates the reply before `command` and fails the parse.
+
+| File | Change |
+|---|---|
+| `common/src/main/java/com/player2/playerengine/player2api/Prompts.java` | `reason`: one sentence, at most 200 characters |
