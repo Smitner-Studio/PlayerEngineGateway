@@ -290,3 +290,21 @@ else after a companion claimed it is released when the companion leaves.
 | `common/src/main/java/com/player2/playerengine/companion/CompanionRulesSelfTest.java` | runs the chunk ownership self-test |
 | `common/src/main/java/com/player2/playerengine/smoke/SmokeHarness.java` | `chunks` and `despawn` scenarios |
 | `gradle.properties` | version `1.21.1-1.4.0-gateway.7` |
+
+## Live fixes (gateway.8)
+
+**Companions perceive only what a player could.** Upstream targeted and reported every block the
+scanner read from the world's data, buried ore included, and listed every hostile within 32 blocks
+with its coordinates, through walls. Block targets from the scanner (the collect and mine path) and
+the status tail's nearby blocks now count only exposed blocks: at least one face touching air,
+fluid, or a block that is not a full opaque cube. The status tail's hostiles are only those in line
+of sight from the companion's eyes, given as kind, a distance rounded to 5 blocks and a compass
+direction, without coordinates.
+
+| File | Change |
+|---|---|
+| `common/src/main/java/com/player2/playerengine/util/Perception.java` | new: exposure test, nearest exposed candidate, hostiles in sight |
+| `common/src/main/java/com/player2/playerengine/util/PerceptionSelfTest.java` | new: buried ore never a candidate nor reported; occluded hostiles not listed |
+| `common/src/main/java/com/player2/playerengine/commands/BlockScanner.java` | nearest-block and any-found queries consider exposed blocks only |
+| `common/src/main/java/com/player2/playerengine/player2api/status/StatusUtils.java` | nearby blocks exposed only; hostiles in line of sight, no coordinates |
+| `common/src/main/java/com/player2/playerengine/companion/CompanionRulesSelfTest.java` | runs the perception self-test |
