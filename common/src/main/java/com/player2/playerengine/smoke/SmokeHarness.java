@@ -64,6 +64,8 @@ public final class SmokeHarness {
     private static final String STRANGER_NAME = "SmokeStranger";
     private static final UUID NETHER_PLAYER_ID = UUID.nameUUIDFromBytes("smoke-nether".getBytes(StandardCharsets.UTF_8));
     private static final String NETHER_PLAYER_NAME = "SmokeNether";
+    private static final UUID THIRD_ID = UUID.nameUUIDFromBytes("smoke-third".getBytes(StandardCharsets.UTF_8));
+    private static final String THIRD_NAME = "SmokeThird";
     /** Player2NPC's game id; its join handler asks the gateway for this game's characters. */
     private static final String GAME_ID = "player2-ai-npc-minecraft";
     private static final int FLOOR_Y = 120;
@@ -109,7 +111,7 @@ public final class SmokeHarness {
             tickRegistered = true;
             TickEvent.SERVER_POST.register(SmokeHarness::tick);
             LifecycleEvent.SERVER_STOPPING.register(server -> FakePlayers.quitAll(server,
-                    List.of(OWNER_ID, STRANGER_ID, NETHER_PLAYER_ID)));
+                    List.of(OWNER_ID, STRANGER_ID, NETHER_PLAYER_ID, THIRD_ID)));
         }
         HelpRegistry.register(new HelpEntry("playerengine", "smoke", "smoke <scenario>",
                 "help.playerengine.smoke.short", "help.playerengine.smoke.long",
@@ -159,6 +161,7 @@ public final class SmokeHarness {
             case "far-owner" -> farOwner(level);
             case "xray" -> xray(level);
             case "caps" -> turnCaps(level);
+            case "two-ada" -> twoAdas(level);
             case "chunk-hold-restart" -> chunkHoldAfterRestart(level);
             case "goto" -> planWithInterruption(level, 6, Resume.NONE);
             case "restart" -> restart(level);
@@ -749,6 +752,71 @@ public final class SmokeHarness {
                 com.player2.playerengine.player2api.TurnCaps.PER_PLAYER_PER_HOUR,
                 com.player2.playerengine.player2api.TurnCaps.PER_COMPANION_PER_HOUR)));
         return stages;
+    }
+
+    /**
+     * Two players' Adas side by side. A third player's bare "stop Ada" stops neither and is told
+     * which to name; the stranger's bare "stop Ada" stops the stranger's own, and only that one.
+     * The stop acknowledgements the speaker receives are the witness: one per companion stopped.
+     */
+    private static List<Stage> twoAdas(ServerLevel level) {
+        requireCompanion();
+        BlockPos site = arena(level, 18);
+        place(site, 0, -4, 0.5, 0.5);
+        ServerPlayer stranger = FakePlayers.online(level, STRANGER_ID, STRANGER_NAME, site.offset(3, 1, -4));
+        FakePlayers.online(level, THIRD_ID, THIRD_NAME, site.offset(-3, 1, -4));
+        List<String> notices = new java.util.concurrent.CopyOnWriteArrayList<>();
+        AgentConversationData[] second = new AgentConversationData[1];
+        Supplier<String> acks = () -> {
+            long n = notices.stream().filter(s -> s.contains("owner_stop_ack")).count();
+            return n > 1 ? "!one stop line stopped " + n + " companions: " + notices : null;
+        };
+        return List.of(
+                act(() -> invoke(companionManager(stranger), "spawnCompanion", Character.class, character)),
+                waitFor(() -> {
+                    for (AgentConversationData d : ConversationManager.getDataByOwner(STRANGER_ID)) {
+                        if (character.id().equals(d.getCharacter().id())) {
+                            second[0] = d;
+                            d.getMod().getPlayer().teleportTo(site.getX() + 2.5, site.getY() + 1, site.getZ() + 0.5);
+                            return "the stranger's Ada is summoned beside the owner's";
+                        }
+                    }
+                    return null;
+                }, 60, "no Ada for the stranger"),
+                act(() -> {
+                    ConversationManager.noticeTap = (who, text) -> notices.add(who + ": " + describe(text));
+                    sayRaw(THIRD_ID, THIRD_NAME, "stop " + character.shortName());
+                }),
+                window(acks, 4, () -> notices.stream().anyMatch(s -> s.startsWith(THIRD_NAME + ": message.playerengine.call.which"))
+                        && notices.stream().noneMatch(s -> s.contains("owner_stop_ack"))
+                        ? "a third player's bare stop with two Adas stopped none and asked which"
+                        : "!the third player's bare stop: " + notices),
+                act(() -> {
+                    notices.clear();
+                    sayRaw(STRANGER_ID, STRANGER_NAME, "stop " + character.shortName());
+                }),
+                window(acks, 4, () -> notices.size() == 1 && notices.get(0).contains("owner_stop_ack")
+                        && notices.get(0).contains(STRANGER_NAME + "'s")
+                        ? "the stranger's bare stop stopped the stranger's Ada only"
+                        : "!the stranger's bare stop: " + notices),
+                act(() -> {
+                    ConversationManager.noticeTap = null;
+                    invoke(companionManager(stranger), "dismissCompanion", Character.class, character);
+                }),
+                waitFor(() -> ConversationManager.getDataByOwner(STRANGER_ID).isEmpty() ? "the stranger's Ada dismissed" : null,
+                        20, "the stranger's Ada is still registered"));
+    }
+
+    /** A translatable notice as its key and arguments, for the harness's checks. */
+    private static String describe(net.minecraft.network.chat.Component text) {
+        if (text.getContents() instanceof net.minecraft.network.chat.contents.TranslatableContents t) {
+            StringBuilder b = new StringBuilder(t.getKey());
+            for (Object arg : t.getArgs()) {
+                b.append(" | ").append(arg instanceof net.minecraft.network.chat.Component c ? c.getString() : arg);
+            }
+            return b.toString();
+        }
+        return text.getString();
     }
 
     /** Checklist 5: a waterlogged block in the shell makes the excavate refuse. */

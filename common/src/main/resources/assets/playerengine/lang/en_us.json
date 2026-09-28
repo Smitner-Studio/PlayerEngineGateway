@@ -17,7 +17,7 @@
   "help.playerengine.queue-clear.arg.player": "Limit the clear to this player's companions.",
   "help.playerengine.smoke.short": "Run one live companion smoke scenario (test servers only).",
   "help.playerengine.smoke.long": "OP-only, and registered only when the server runs with -Dplayerengine.smoke=true. Drives a fake owner, a fake stranger and a summoned companion through one scenario in a scratch arena far from spawn, and logs one [smoke] <scenario> ok or FAIL line.",
-  "help.playerengine.smoke.arg.scenario": "spawn, excavate, protected, stop, plan, waterlogged, stranger, chunks, resume, despawn, chunk-hold, attack, xray, far-owner, caps, goto, chunk-hold-restart or restart.",
+  "help.playerengine.smoke.arg.scenario": "spawn, excavate, protected, stop, plan, waterlogged, stranger, chunks, resume, despawn, chunk-hold, attack, xray, far-owner, caps, two-ada, goto, chunk-hold-restart or restart.",
   "help.playerengine.resolve.short": "Dry-run the deterministic material resolver for an item.",
   "help.playerengine.resolve.long": "OP-only debug tool. Runs the resolver against a live companion's current inventory and prints the resolution plan (status, sub-craft steps, external acquisitions, deficit). Makes no model calls and persists nothing.",
   "help.playerengine.resolve.arg.item": "The item to resolve (namespace defaults to minecraft:).",

@@ -477,3 +477,12 @@ Operators re-issue any `/forceload` they still want after that first start.
 | `common/src/main/java/com/player2/playerengine/MCCommands.java` | runs the clear at server start, before the ticket sweep |
 | `common/src/main/java/com/player2/playerengine/companion/CompanionRulesSelfTest.java` | runs the clear self-test |
 | `common/src/main/java/com/player2/playerengine/smoke/SmokeHarness.java` | `spawn` reports the clear; `chunk-hold-restart` checks it was skipped and the first boot's forced chunks kept |
+
+**Two-Ada smoke.** The `two-ada` scenario summons a second player's Ada beside the owner's. A third
+player's bare "stop Ada" stops neither and is asked which; the second player's bare "stop Ada" stops
+their own only.
+
+| File | Change |
+|---|---|
+| `common/src/main/java/com/player2/playerengine/smoke/SmokeHarness.java` | `two-ada` scenario |
+| `common/src/main/resources/assets/playerengine/lang/en_us.json` | smoke scenario list |
