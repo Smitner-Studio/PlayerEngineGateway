@@ -197,7 +197,7 @@ public class Utils {
    }
 
    /**
-    * Some models occasionally emit {@code {{ "reason": ..., "command": ..., "message": ... }}}
+    * Some models occasionally emit {@code {{ "say": ..., "program": ... }}}
     * instead of a single JSON object. The balanced extractor correctly returns the outer span, but
     * Gson rejects it because the extra braces are not an object member. Peel only one syntactically
     * redundant brace pair at a time, and only when the inner span is itself balanced.

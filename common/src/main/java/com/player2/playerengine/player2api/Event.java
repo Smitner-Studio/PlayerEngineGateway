@@ -48,11 +48,11 @@ public sealed interface Event // tagged union basically of the below events
         }
     }
 
-    public record CharacterMessage(String message, String command, AgentConversationData sendingCharacterData,
+    public record CharacterMessage(String message, AgentConversationData sendingCharacterData,
             @Nullable String originatingUserName)
             implements Event {
-        public CharacterMessage(String message, String command, AgentConversationData sendingCharacterData) {
-            this(message, command, sendingCharacterData, null);
+        public CharacterMessage(String message, AgentConversationData sendingCharacterData) {
+            this(message, sendingCharacterData, null);
         }
 
         public String getConversationHistoryString() {
@@ -60,8 +60,8 @@ public sealed interface Event // tagged union basically of the below events
         }
 
         public String toString() {
-            return String.format("CharacterMessage(name='%s', message='%s', command='%s', originatingUser=%s)",
-                    sendingCharacterData.getName(), message, command, originatingUserName);
+            return String.format("CharacterMessage(name='%s', message='%s', originatingUser=%s)",
+                    sendingCharacterData.getName(), message, originatingUserName);
         }
 
     }

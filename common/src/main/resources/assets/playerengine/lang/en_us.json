@@ -12,6 +12,9 @@
   "help.playerengine.help.arg.command": "A command path to show detailed help for.",
   "help.playerengine.help.arg.page": "The page number to show.",
 
+  "help.playerengine.stop.short": "Stop a companion at once, or every companion.",
+  "help.playerengine.stop.long": "OP-only. Stops a companion without the model: its job is cancelled and its task stops, as the chat stop does. Name it uniquely (Arran's Ada), by a name only one companion has, or use all.",
+  "help.playerengine.stop.arg.companion": "A companion's unique name, a name only one companion has, or all.",
   "help.playerengine.queue-clear.short": "Flush pending AI work and shut down LLM buckets.",
   "help.playerengine.queue-clear.long": "OP-only. Flushes pending AI events and shuts down per-billing LLM buckets so a stuck or runaway queue can be recovered without a server restart. With a player argument it is scoped to that player's companions.",
   "help.playerengine.queue-clear.arg.player": "Limit the clear to this player's companions.",
@@ -136,6 +139,9 @@
   "message.playerengine.budget.field.fallback_behavior_stop": "budgetFallbackBehavior=HARD_STOP",
 
   "message.playerengine.commands.queue_clear": "PlayerEngine queue clear: drained %1$d conversation queue(s), shut down %2$d LLM bucket(s).",
+  "message.playerengine.commands.stop_done": "Stopped %s companion(s).",
+  "message.playerengine.commands.stop_none": "No companion is named %s.",
+  "message.playerengine.commands.stop_which": "That names more than one companion; stop one of: %s.",
   "message.playerengine.commands.queue_clear_scoped": "PlayerEngine queue clear (%1$s): drained %2$d conversation queue(s), shut down %3$d LLM bucket(s).",
   "message.playerengine.commands.no_active_bots": "No Player2 API service registered (no active bots).",
   "message.playerengine.commands.echo_prefix": "> %s",

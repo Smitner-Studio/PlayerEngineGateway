@@ -1,6 +1,5 @@
 package com.player2.playerengine.seam;
 
-import com.google.gson.JsonElement;
 import com.player2.playerengine.PlayerEngineCommands;
 import com.player2.playerengine.tasks.construction.area.AreaScan;
 import com.player2.playerengine.tasks.construction.area.AreaSpec;
@@ -184,13 +183,6 @@ public final class SeamSelfTest {
         CommandLines.Normalised other = CommandLines.normalise("mine", "Iron Ores 3", ids);
         require(other.ok() && other.args().equals("Iron Ores 3") && other.notes().isEmpty(),
                 "lines no rule covers pass unchanged");
-        JsonElement plan = CommandLines.liftPlan("plan {\"goal\": \"dig\", \"steps\": [\"goto 1 2 3\"]}", "@");
-        require(plan != null && plan.isJsonObject() && plan.getAsJsonObject().get("goal").getAsString().equals("dig"),
-                "a plan sent as a command is read as the plan field");
-        JsonElement bare = CommandLines.liftPlan("@plan [\"goto 1 2 3\", \"excavate 3 3 3\"]", "@");
-        require(bare != null && bare.getAsJsonObject().getAsJsonArray("steps").size() == 2, "a bare step list too");
-        require(CommandLines.liftPlan("place_sign 1 2 3 hi", "@") == null && CommandLines.liftPlan("planks", "@") == null
-                && CommandLines.liftPlan("plan resume", "@") == null, "other commands are not plans");
     }
 
     // --- containers -------------------------------------------------------------------------------

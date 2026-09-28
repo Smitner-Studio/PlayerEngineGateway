@@ -1,8 +1,5 @@
 package com.player2.playerengine.seam;
 
-import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -10,9 +7,10 @@ import java.util.Locale;
 import java.util.Set;
 
 /**
- * Tolerant forms of today's command lines (§5.4, E5, E6), until the stage-4 cutover retires the
- * command grammar: a plan sent as a command, {@code scan_storage} without a mode, and storage item
- * lists with loose ids or commas without spaces. Each change is reported as a note.
+ * Tolerant forms of a command line (§5.4, E6): {@code scan_storage} without a mode, and storage item
+ * lists with loose ids or commas without spaces. Each change is reported as a note. After the stage-4
+ * cutover no model or player line reaches the command grammar; the settings' idle command is its
+ * last caller.
  */
 public final class CommandLines {
     private static final Set<String> SCAN_MODES = Set.of("light", "deep", "targeted");
@@ -25,38 +23,6 @@ public final class CommandLines {
     public record Normalised(String args, List<String> notes, ActionError error) {
         public boolean ok() {
             return error == null;
-        }
-    }
-
-    /**
-     * The plan a model put in the {@code command} field ({@code plan {"goal": ..., "steps": [...]}},
-     * E5), as the {@code plan} field would carry it, or null when the command is not one.
-     */
-    public static JsonElement liftPlan(String command, String prefix) {
-        if (command == null) {
-            return null;
-        }
-        String c = command.trim();
-        if (prefix != null && !prefix.isEmpty() && c.startsWith(prefix)) {
-            c = c.substring(prefix.length()).trim();
-        }
-        if (!c.toLowerCase(Locale.ROOT).startsWith("plan")) {
-            return null;
-        }
-        String rest = c.substring(4).trim();
-        if (!rest.startsWith("{") && !rest.startsWith("[")) {
-            return null;
-        }
-        try {
-            JsonElement plan = JsonParser.parseString(rest);
-            if (plan.isJsonArray()) {
-                JsonObject wrapped = new JsonObject();
-                wrapped.add("steps", plan);
-                return wrapped;
-            }
-            return plan.isJsonObject() ? plan : null;
-        } catch (RuntimeException e) {
-            return null;
         }
     }
 

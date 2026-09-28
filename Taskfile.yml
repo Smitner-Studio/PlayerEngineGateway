@@ -27,13 +27,26 @@ tasks:
         silent: true
 
   test:
-    desc: 'Run the gateway, companion-rules, planner, program-interpreter and smoke-gate self-tests [JDK]'
+    desc: 'Run the gateway, companion-rules (reply contract included), area, program-interpreter and smoke-gate self-tests, and the stage-4 cutover grep gate [JDK]'
     preconditions:
       - *need-jdk
     env:
       JAVA_HOME: '{{.JDK}}'
     cmds:
-      - cmd /d /c "{{.GRADLEW}}" :common:gatewaySelfTest :common:companionSelfTest :common:planSelfTest :common:programSelfTest :common:smokeGateSelfTest --no-daemon -q
+      - cmd /d /c "{{.GRADLEW}}" :common:gatewaySelfTest :common:companionSelfTest :common:areaSelfTest :common:programSelfTest :common:smokeGateSelfTest --no-daemon -q
+
+  lint-programs:
+    desc: 'Lint a JSONL file of programs (lines of {"key", "source", "profile"}) into OUT, for the pack replay checker [IN, OUT, JDK]'
+    requires:
+      vars: [IN, OUT]
+    preconditions:
+      - *need-jdk
+      - sh: test -f "{{.IN}}"
+        msg: 'No programs file at {{.IN}}. Pass IN=<programs.jsonl>.'
+    env:
+      JAVA_HOME: '{{.JDK}}'
+    cmds:
+      - cmd /d /c "{{.GRADLEW}}" :common:lintPrograms -PlintIn="{{.IN}}" -PlintOut="{{.OUT}}" --no-daemon -q
 
   seam-signatures:
     desc: 'Regenerate the seam signature table, common/src/main/resources/playerengine/seam/signatures.json, after editing SignatureTable [JDK]'

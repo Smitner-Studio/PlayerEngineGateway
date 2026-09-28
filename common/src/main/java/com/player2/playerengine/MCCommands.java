@@ -195,7 +195,7 @@ public class MCCommands {
             }
             // On dedicated, drop queued AI work before tearing down executors so the next start
             // doesn't pick up a stuck queue. Integrated server keeps single-player conversation
-            // state for the next session. Plans are kept: plan.json loads PAUSED on the next start.
+            // state for the next session. Jobs are kept: job.json loads PAUSED on the next start.
             if (server != null && server.isDedicatedServer()) {
                 try {
                     ConversationManager.QueueClearSummary summary = ConversationManager.clearPendingWork(false);
@@ -275,6 +275,7 @@ public class MCCommands {
                          .then(registerRelog())
                          .then(registerSummon())
                          .then(registerQueueClear())
+                         .then(registerStop())
                          .then(registerRag())
                          .then(registerRouting())
                          .then(registerCapability())
@@ -441,6 +442,9 @@ public class MCCommands {
                         new ArgNote("page", "help.playerengine.help.arg.page")), 0, null, "general"));
 
         // diagnostics
+        HelpRegistry.register(new HelpEntry("playerengine", "stop", "stop <companion|all>",
+                "help.playerengine.stop.short", "help.playerengine.stop.long",
+                List.of(new ArgNote("companion", "help.playerengine.stop.arg.companion")), 2, null, "diagnostics"));
         HelpRegistry.register(new HelpEntry("playerengine", "queue clear", "queue clear [player]",
                 "help.playerengine.queue-clear.short", "help.playerengine.queue-clear.long",
                 List.of(new ArgNote("player", "help.playerengine.queue-clear.arg.player")), 2, null, "diagnostics"));
@@ -537,6 +541,42 @@ public class MCCommands {
                                     sendQueueClearFeedback(ctx.getSource(), summary, target.getName().getString());
                                     return summary.queuesCleared();
                                 })));
+    }
+
+    /**
+     * {@code /playerengine stop <companion|all>}, OP-only: the last-resort stop that does not depend on
+     * chat routing (§13 ask 2). A unique name ("Arran's Ada") stops that companion; a bare name stops
+     * the one companion it names and never fans out (R16); {@code all} stops every companion. It is
+     * the chat stop lane's action, so the model is bypassed and the job is cancelled.
+     */
+    private static LiteralArgumentBuilder<CommandSourceStack> registerStop() {
+        return Commands.literal("stop")
+                .requires(src -> src.hasPermission(2))
+                .then(Commands.argument("companion", StringArgumentType.greedyString())
+                        .executes(ctx -> {
+                            String name = StringArgumentType.getString(ctx, "companion").trim();
+                            List<AgentConversationData> named = ConversationManager.companionsNamed(name);
+                            if (named.isEmpty()) {
+                                ctx.getSource().sendFailure(Component.translatable(
+                                        "message.playerengine.commands.stop_none", name));
+                                return 0;
+                            }
+                            if (named.size() > 1 && !"all".equalsIgnoreCase(name)) {
+                                List<String> which = new java.util.ArrayList<>();
+                                named.forEach(d -> which.add(ConversationManager.uniqueName(d)));
+                                ctx.getSource().sendFailure(Component.translatable(
+                                        "message.playerengine.commands.stop_which", String.join(", ", which)));
+                                return 0;
+                            }
+                            for (AgentConversationData d : named) {
+                                ConversationManager.stopCompanion(d);
+                                LOGGER.info("/playerengine stop by {} stopped {}", ctx.getSource().getTextName(),
+                                        ConversationManager.uniqueName(d));
+                            }
+                            ctx.getSource().sendSuccess(() -> Component.translatable(
+                                    "message.playerengine.commands.stop_done", named.size()), true);
+                            return named.size();
+                        }));
     }
 
     private static void sendQueueClearFeedback(CommandSourceStack src,

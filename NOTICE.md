@@ -492,3 +492,51 @@ their own only.
 | File | Change |
 |---|---|
 | `gradle.properties` | version `1.21.1-1.4.0-gateway.8` |
+
+## Programs replace commands (companion stage 4)
+
+**The reply is `{say, program?, save?, mood?}` (R4, R10, R15).** A companion acts by writing a
+short program in a JavaScript subset against the typed `api.*` of the seam, and the interpreter
+added before this runs it as a job. The reply's `command`, `plan`, `message` and `reason` fields
+are gone with no alias: a reply that carries `command` or `plan` is a format error, retried like
+unparseable JSON and never run. The command list, the per-turn `validCommands` and the RAG command
+documents left the prompt; the system prompt is now `playerengine/program/system-prompt.txt`
+filled with the character and the full API reference generated from `signatures.json`. The
+command-era consumers are replaced: the greeting's forced `bodylang` became a `[bl:greeting]`
+marker, the RAG deep-search meta-command and the post-decision retry are removed (a program that
+does not lint gets one repair turn instead), the command dispatcher is the job board, the repeated
+command-failure guard became a per-job repair limit (8 model turns, and the same failure twice
+ends it), and the repeated-reply check reads `say`. The `plan` package and `plan.json` are gone:
+jobs persist in `job.json` beside the conversation; a `plan.json` left by gateway.6 to gateway.8 is
+deleted on first load, with a line to its initiator. A job restored after a restart waits, paused,
+for the companion's owner, and its initiator is told (R19). A bare "continue" resumes the paused
+job and "resume X" a shelved one, without the model. A completion report built from the verified
+calls log is said when a job ends (R5). Gestures run the `bodylang` task directly. The model-free
+stop phrase stays (R16), and the op-only `/playerengine stop <companion|all>` is added. The
+`@` command line survives only for the settings' idle command. `task test` runs `checkCutover`,
+which fails when a retired reader or consumer is back in the sources.
+
+| File | Change |
+|---|---|
+| `common/src/main/java/com/player2/playerengine/player2api/Reply.java` | new: the v2 reply; `command` or `plan` is a format error |
+| `common/src/main/java/com/player2/playerengine/player2api/ReplySelfTest.java` | new: legacy fields rejected, v2 parses, job lines, repair limit, the prompt names every api call |
+| `common/src/main/java/com/player2/playerengine/player2api/ProgramJobs.java` | new: lint, start and run jobs through the seam; `job.json`; old `plan.json` discarded; R19 notice |
+| `common/src/main/java/com/player2/playerengine/player2api/RepairLimit.java` | new: model turns a job may spend on repairs |
+| `common/src/main/java/com/player2/playerengine/player2api/ResumeIntent.java` | new: "continue" and "resume X" |
+| `common/src/main/java/com/player2/playerengine/seam/ProgramPort.java` | new: the interpreter's `ActionPort` over `Seam.call`, with the job's region |
+| `common/src/main/java/com/player2/playerengine/program/ApiReference.java` | new: the prompt's API reference from the signature table |
+| `common/src/main/java/com/player2/playerengine/program/LintFile.java` | new: lints a file of programs for the pack's replay checker |
+| `common/src/main/resources/playerengine/program/system-prompt.txt` | new: the system prompt template |
+| `common/src/main/java/com/player2/playerengine/player2api/AgentConversationData.java` | v2 replies start jobs; command, plan, RAG, deep-search, retry and finish-prompt paths removed |
+| `common/src/main/java/com/player2/playerengine/player2api/AgentSideEffects.java` | speech only; the command dispatcher and idle handling removed |
+| `common/src/main/java/com/player2/playerengine/player2api/Prompts.java`, `AIPersistantData.java`, `ConversationHistory.java`, `Event.java` | program prompt; no command list or `validCommands`; `job.json`; a character line carries no command |
+| `common/src/main/java/com/player2/playerengine/player2api/manager/ConversationManager.java` | shared stop action, `/playerengine stop` lookup, companion notices, job tick |
+| `common/src/main/java/com/player2/playerengine/MCCommands.java` | `/playerengine stop <companion\|all>` |
+| `common/src/main/java/com/player2/playerengine/PlayerEngine.java` | gestures run the `bodylang` task directly |
+| `common/src/main/java/com/player2/playerengine/PlayerEngineController.java`, `player2api/status/AgentStatus.java` | the status's `job` line |
+| `common/src/main/java/com/player2/playerengine/player2api/plan/*`, `RepeatedCommandFailureGuard.java`, `AgentSideEffectsSelfTest.java` | removed |
+| `common/src/main/java/com/player2/playerengine/retrieval/RagPromptBuilder.java`, `RagDeepSearchCommands.java`, `learning/RagDeepCheckCoordinator.java`, `learning/RagDeepCheckPipeline.java`, `learning/DeepCheckRephraseService.java` | removed |
+| `common/src/main/java/com/player2/playerengine/seam/CommandLines.java`, `Seam.java` | the plan-as-a-command lift removed |
+| `common/src/main/java/com/player2/playerengine/smoke/SmokeHarness.java` | scenarios send `SMOKE-PROGRAM:` programs; `plan`, `resume`, `goto` and `restart` are jobs; `restart` checks the old `plan.json` discard and the R19 notice |
+| `common/build.gradle`, `Taskfile.yml` | `checkCutover`, `areaSelfTest` (was run by the plan self-test), `lintPrograms` / `task lint-programs` |
+| `common/src/main/resources/assets/playerengine/lang/en_us.json` | `/playerengine stop` help and replies |

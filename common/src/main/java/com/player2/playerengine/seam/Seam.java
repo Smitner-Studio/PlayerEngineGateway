@@ -17,14 +17,14 @@ import java.util.function.Consumer;
 import net.minecraft.server.level.ServerLevel;
 
 /**
- * The one door every action goes through (§3, §5). Until the stage-4 cutover the model's command
- * lines come through here too: a line a bound primitive takes runs as that primitive (coerced,
- * admitted, run, then checked by its postcondition), and any other line runs its registered command
- * after the tolerant-form coercions. The permission class check stays in front of this, in
- * {@code CommandExecutor}, over the same class table the signatures read.
+ * The one door every action goes through (§3, §5). A program's calls come in through {@link #call}
+ * (by way of {@link ProgramPort}): a query joins the query queue, and a primitive is coerced,
+ * admitted, run, then checked by its postcondition.
  *
- * <p>A program's calls come in through {@link #call}: a query joins the query queue, and a
- * primitive runs the same way a command line's does.
+ * <p>A command line still comes through {@link #run} when {@code CommandExecutor} runs one (the
+ * settings' idle command is the last caller): a line a bound primitive takes runs as that primitive,
+ * and any other line runs its registered command after the tolerant-form coercions. The permission
+ * class check stays in front of that, in {@code CommandExecutor}.
  */
 public final class Seam {
     private static final Map<String, Primitive> BY_NAME;

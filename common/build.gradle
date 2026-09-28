@@ -59,13 +59,62 @@ tasks.register('seamSignatures', JavaExec) {
     args file('src/main/resources/playerengine/seam/signatures.json').absolutePath
 }
 
-tasks.register('planSelfTest', JavaExec) {
+tasks.register('areaSelfTest', JavaExec) {
     group = 'verification'
-    description = 'Checks the companion planner and the area-command bounds with a mock model and host.'
+    description = 'Checks the area-command bounds, grammar and dig-time arithmetic.'
     dependsOn tasks.named('classes')
     classpath = sourceSets.main.runtimeClasspath
-    mainClass.set('com.player2.playerengine.player2api.plan.PlanSelfTest')
+    mainClass.set('com.player2.playerengine.tasks.construction.area.AreaSelfTest')
     enableAssertions = true
+}
+
+tasks.register('lintPrograms', JavaExec) {
+    group = 'verification'
+    description = 'Lints a JSONL file of programs for the pack replay checker: -PlintIn=<in.jsonl> -PlintOut=<out.jsonl>.'
+    dependsOn tasks.named('classes')
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass.set('com.player2.playerengine.program.LintFile')
+    args = [project.findProperty('lintIn') ?: '', project.findProperty('lintOut') ?: '']
+}
+
+// The stage-4 cutover (companion-architecture §11, R10, R15): the reply's command and plan fields, the
+// plan path and the command-era consumers (🟡6) have no reader left. Each pattern is a name or read that
+// only the retired paths had; a hit anywhere in the sources fails the build's test gate.
+def checkCutover = tasks.register('checkCutover') {
+    group = 'verification'
+    description = 'Fails when a retired command-era reader or consumer is back in the sources.'
+    def dir = file('src/main/java')
+    inputs.dir(dir)
+    doLast {
+        def retired = [
+            ~/getStringJsonSafely\(\s*\w+\s*,\s*"(?:command|plan|reason|message)"\s*\)/,
+            ~/\.get\("(?:command|plan)"\)/,
+            ~/onCommandListGenerated/,
+            ~/RepeatedCommandFailureGuard/,
+            ~/isRedundantAssistantAfterInfo/,
+            ~/maybePostDecisionRetry/,
+            ~/maybeModelRequestedDeepSearch/,
+            ~/RagDeepSearchCommands/,
+            ~/\?\s*"bodylang greeting"|ONLY USE COMMAND/,
+            ~/PlanParser|PlanCoordinator|PlanStore/,
+            ~/validCommands/,
+        ]
+        int files = 0
+        dir.eachFileRecurse { File f ->
+            if (!f.name.endsWith('.java')) {
+                return
+            }
+            files++
+            f.getText('UTF-8').eachLine(1) { String line, int n ->
+                retired.each { pattern ->
+                    if (line =~ pattern) {
+                        throw new GradleException("${f.name}:${n}: a retired command-era path is back (${pattern}): ${line.trim()}")
+                    }
+                }
+            }
+        }
+        println "cutover: ${files} files, no reader of the reply's command or plan and no command-era consumer"
+    }
 }
 
 // The program package stays pure (companion-architecture §11 stage 3): no Minecraft types, and from
@@ -99,7 +148,7 @@ def checkProgramPurity = tasks.register('checkProgramPurity') {
 tasks.register('programSelfTest', JavaExec) {
     group = 'verification'
     description = 'Checks the program interpreter over a stub world: lint, yield and restore, caps, reconcile, jobs.'
-    dependsOn tasks.named('classes'), checkProgramPurity
+    dependsOn tasks.named('classes'), checkProgramPurity, checkCutover
     classpath = sourceSets.main.runtimeClasspath
     mainClass.set('com.player2.playerengine.program.ProgramSelfTest')
     enableAssertions = true

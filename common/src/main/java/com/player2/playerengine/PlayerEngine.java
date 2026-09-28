@@ -402,8 +402,9 @@ public final class PlayerEngine {
    /**
     * Fire the valid boundary at {@code segIndex} exactly once for {@code botData}. Idempotent across
     * duplicate {@code segment_done} packets AND across the timer/ACK race (whichever marks the index
-    * first wins; the other is a no-op). Dispatches via the existing command path; onCommandListGenerated
-    * already hops to the server tick thread via {@code server.execute}.
+    * first wins; the other is a no-op). The gesture runs the registered {@code bodylang} task body on
+    * the server thread; a gesture suspends the running task rather than replacing it, so it is not an
+    * order and moves no dispatch seq.
     */
    private static void fireSegment(UUID botUuid, AgentConversationData botData, int segIndex, boolean fromTimer) {
       java.util.List<com.player2.playerengine.player2api.MarkerParser.SegmentBoundary> boundaries =
@@ -428,8 +429,21 @@ public final class PlayerEngine {
       String action = b.action().name().toLowerCase(java.util.Locale.ROOT);
       LOGGER.info("PlayerEngine: firing bodylang segment bot={} seg={} action={} fromTimer={}",
             botData.getName(), segIndex, action, fromTimer);
-      AgentSideEffects.onCommandListGenerated(botData.getMod(), "bodylang " + action,
-            botData::onCommandFinish);
+      PlayerEngineController mod = botData.getMod();
+      com.player2.playerengine.commands.base.Command gesture = mod.getCommandExecutor().get("bodylang");
+      net.minecraft.server.MinecraftServer server = mod.getPlayer() == null ? null : mod.getPlayer().getServer();
+      if (gesture == null || server == null) {
+         return;
+      }
+      server.execute(() -> {
+         try {
+            gesture.run(mod, "bodylang " + action, () -> { },
+                  e -> LOGGER.warn("PlayerEngine: gesture {} failed for bot={}: {}", action, botData.getName(),
+                        e.getMessage()));
+         } catch (com.player2.playerengine.commands.base.CommandException e) {
+            LOGGER.warn("PlayerEngine: gesture {} refused for bot={}: {}", action, botData.getName(), e.getMessage());
+         }
+      });
    }
 
    private static void copyToolOverridesReadmeIfAbsent() {

@@ -56,9 +56,9 @@ import org.apache.logging.log4j.Logger;
  * <p>The owner and a stranger are {@link FakePlayers}; the companion is summoned through Player2NPC's
  * own {@code CompanionManager}; chat enters through {@link ConversationManager#onUserChatMessage}, the
  * method the chat event calls. The model is a loopback mock ({@code PLAYERENGINE_GATEWAY_URL}) that
- * echoes the command or plan named after a {@code SMOKE-CMD:} / {@code SMOKE-PLAN:} marker, so every
- * reply still goes through the real response parser, plan coordinator, owner gate and command
- * executor. Only the chat packet decode is skipped.
+ * answers a {@code SMOKE-PROGRAM:} marker with that program, so every reply still goes through the
+ * real reply parser, linter, job board and seam. Only the chat packet decode is skipped. A program in
+ * a marker uses single quotes: the mock reads it out of a JSON string.
  *
  * <p>Each scenario is a list of stages (act once, then poll the world until settled) and logs exactly
  * one {@code [smoke] <name> ok: ...} or {@code [smoke] <name> FAIL: ...} line. Every marker line sent
@@ -159,11 +159,11 @@ public final class SmokeHarness {
             case "excavate" -> excavate(level);
             case "protected" -> protectedShell(level);
             case "stop" -> stopMidDig(level);
-            case "plan" -> planWithInterruption(level, 5, Resume.CONTINUE);
+            case "plan" -> jobWithInterruption(level, 5, Resume.SHELVE);
             case "waterlogged" -> waterlogged(level);
             case "stranger" -> stranger(level);
             case "chunks" -> chunksSurvive(level);
-            case "resume" -> planWithInterruption(level, 8, Resume.REATTACH);
+            case "resume" -> jobWithInterruption(level, 8, Resume.REATTACH);
             case "despawn" -> despawnReleases(level);
             case "chunk-hold" -> chunkHold(level);
             case "attack" -> attackAPlayer(level);
@@ -173,7 +173,7 @@ public final class SmokeHarness {
             case "caps" -> turnCaps(level);
             case "two-ada" -> twoAdas(level);
             case "chunk-hold-restart" -> chunkHoldAfterRestart(level);
-            case "goto" -> planWithInterruption(level, 6, Resume.NONE);
+            case "goto" -> jobWithInterruption(level, 6, Resume.NONE);
             case "restart" -> restart(level);
             default -> {
                 fail(name, "unknown scenario");
@@ -210,9 +210,10 @@ public final class SmokeHarness {
         place(site, 0, -6, 0.5, -2.5);
         int total = solid(level, a, b);
         return List.of(
-                act(() -> say(OWNER_ID, OWNER_NAME, "SMOKE-CMD: excavate " + corners(a, b))),
+                act(() -> say(OWNER_ID, OWNER_NAME, "SMOKE-PROGRAM: " + excavate(a, b))),
                 waitFor(() -> solid(level, a, b) == 0 ? "cleared " + total + " cells" : null,
-                        DIG_TIMEOUT_SEC, () -> "remaining " + solid(level, a, b) + "/" + total + ", " + botState()));
+                        DIG_TIMEOUT_SEC, () -> "remaining " + solid(level, a, b) + "/" + total + ", " + botState()),
+                jobEnded());
     }
 
     /**
@@ -257,13 +258,14 @@ public final class SmokeHarness {
             return null;
         };
         return List.of(
-                act(() -> say(OWNER_ID, OWNER_NAME, "SMOKE-CMD: excavate " + corners(a, b))),
+                act(() -> say(OWNER_ID, OWNER_NAME, "SMOKE-PROGRAM: " + excavate(a, b))),
                 waitFor(() -> {
                     String hit = broken.get();
                     return hit != null ? hit : left.get() == 0 ? "cleared " + total + " cells" : null;
                 }, DIG_TIMEOUT_SEC, () -> "remaining " + left.get() + "/" + total + ", " + botState()),
                 window(broken, 3, () -> (guarded.size() - inside.size()) + " player-placed shell blocks and "
                         + inside.size() + " inside the box intact"),
+                jobEnded(),
                 act(() -> guarded.forEach(p -> PlayerPlacedBlockStore.get().remove(dim, p))));
     }
 
@@ -279,7 +281,7 @@ public final class SmokeHarness {
         BuilderSettings before = BuilderSettings.of(mod().getBaritoneSettings());
         int[] remainingAtStop = new int[1];
         return List.of(
-                act(() -> say(OWNER_ID, OWNER_NAME, "SMOKE-CMD: excavate " + corners(a, b))),
+                act(() -> say(OWNER_ID, OWNER_NAME, "SMOKE-PROGRAM: " + excavate(a, b))),
                 waitFor(() -> {
                     BuilderSettings now = BuilderSettings.of(mod().getBaritoneSettings());
                     return solid(level, a, b) < total && !now.equals(before)
@@ -299,26 +301,24 @@ public final class SmokeHarness {
                                 ? "idle after the stop" : "!settings changed again after the stop"));
     }
 
-    /** What follows the paused plan in {@link #planWithInterruption}. */
+    /** What follows the running two-box job in {@link #jobWithInterruption}. */
     private enum Resume {
-        /** Leave it paused on disk for the restart scenario. */
+        /** Leave it running when the server stops, for the restart scenario. */
         NONE,
-        /** The owner's "continue" finishes it. */
-        CONTINUE,
+        /** A new job (a goto) shelves it (R6); "resume the dig" brings it back and finishes it. */
+        SHELVE,
         /**
-         * The companion gets a fresh conversation, as after a restart or re-attach, with its return
-         * event queued, and the owner's "continue" lands in that first batch. The first turn of a
-         * fresh conversation used to be forced to a greeting, which dropped the "continue".
+         * The companion gets a fresh conversation, as after a re-attach: job.json restores the job
+         * PAUSED, and the owner's bare "continue" in that conversation's first batch finishes it.
          */
         REATTACH
     }
 
     /**
-     * Checklist 2 ({@code plan}), 7 ({@code goto}) and {@code resume}: a 2-step plan starts, a direct
-     * {@code goto} from the model mid-step pauses it (the CommandExecutor dispatch bump), then
-     * {@link Resume} decides what follows.
+     * Checklist 2 ({@code plan}), 7 ({@code goto}) and {@code resume}: a two-statement program digs two
+     * boxes as one job; once the first box is being dug, {@link Resume} decides what follows.
      */
-    private static List<Stage> planWithInterruption(ServerLevel level, int slot, Resume resume) {
+    private static List<Stage> jobWithInterruption(ServerLevel level, int slot, Resume resume) {
         requireCompanion();
         BlockPos site = arena(level, slot);
         BlockPos a1 = site.offset(2, 1, -4);
@@ -332,25 +332,28 @@ public final class SmokeHarness {
         BlockPos away = site.offset(-5, 1, 0);
         long[] seq = new long[1];
         List<Stage> stages = new ArrayList<>(List.of(
-                act(() -> say(OWNER_ID, OWNER_NAME, "SMOKE-PLAN: excavate " + corners(a1, b1)
-                        + " | excavate " + corners(a2, b2))),
-                waitFor(() -> mod().getPlanStatusLine().contains("step 1/2 running") && solid(level, a1, b1) < total1
-                                ? "step 1 digging" : null,
-                        120, () -> "step 1 never started: plan='" + mod().getPlanStatusLine() + "' box "
-                                + solid(level, a1, b1) + "/" + total1),
-                act(() -> {
-                    seq[0] = mod().getCommandDispatchSeq();
-                    say(OWNER_ID, OWNER_NAME, "SMOKE-CMD: goto " + away.getX() + " " + away.getY() + " " + away.getZ());
-                }),
-                waitFor(() -> mod().getPlanStatusLine().contains("step 1/2 paused")
-                                ? "goto paused it mid-step 1 (seq " + seq[0] + "->" + mod().getCommandDispatchSeq()
-                                        + ", box " + solid(level, a1, b1) + "/" + total1 + " left)"
-                                : null,
-                        30, () -> "plan not paused by the goto: plan='" + mod().getPlanStatusLine() + "' seq "
-                                + seq[0] + "->" + mod().getCommandDispatchSeq())));
-        if (resume == Resume.CONTINUE) {
-            stages.add(act(() -> say(OWNER_ID, OWNER_NAME, "continue")));
-            stages.add(bothCleared(level, a1, b1, a2, b2, "continue resumed it; both boxes cleared"));
+                act(() -> say(OWNER_ID, OWNER_NAME, "dig two boxes SMOKE-PROGRAM: " + excavate(a1, b1) + " "
+                        + excavate(a2, b2))),
+                waitFor(() -> mod().getJobStatusLine().contains("| running") && solid(level, a1, b1) < total1
+                                ? "box 1 digging (" + mod().getJobStatusLine() + ")" : null,
+                        120, () -> "the job never started digging: job='" + mod().getJobStatusLine() + "' box "
+                                + solid(level, a1, b1) + "/" + total1)));
+        if (resume == Resume.SHELVE) {
+            stages.add(act(() -> {
+                seq[0] = mod().getCommandDispatchSeq();
+                say(OWNER_ID, OWNER_NAME, "SMOKE-PROGRAM: api.goto(pos(" + away.getX() + ", " + away.getY() + ", "
+                        + away.getZ() + "));");
+            }));
+            stages.add(waitFor(() -> companion().jobs().stream().anyMatch(j -> j.startsWith("dig two boxes")
+                            && j.endsWith("| shelved"))
+                            ? "the goto job shelved the dig mid-box 1 (seq " + seq[0] + "->" + mod().getCommandDispatchSeq()
+                                    + ", box " + solid(level, a1, b1) + "/" + total1 + " left)"
+                            : null,
+                    30, () -> "the dig was not shelved by the new job: " + companion().jobs()));
+            stages.add(waitFor(() -> mod().getJobStatusLine().isEmpty() ? "the goto job finished" : null, 60,
+                    () -> "the goto job did not finish: job='" + mod().getJobStatusLine() + "'"));
+            stages.add(act(() -> say(OWNER_ID, OWNER_NAME, "resume the dig")));
+            stages.add(bothCleared(level, a1, b1, a2, b2, "resume the dig un-shelved it; both boxes cleared"));
         } else if (resume == Resume.REATTACH) {
             stages.add(act(() -> {
                 PlayerEngineController m = mod();
@@ -359,13 +362,39 @@ public final class SmokeHarness {
                 ConversationManager.sendReturnMessage(m, character, OWNER_NAME);
                 say(OWNER_ID, OWNER_NAME, "continue");
             }));
-            stages.add(waitFor(() -> mod().getPlanStatusLine().contains("running")
-                            ? "one continue resumed it in the fresh conversation's first turn" : null,
-                    30, () -> "plan not resumed by the first continue after re-attach: plan='"
-                            + mod().getPlanStatusLine() + "'"));
+            stages.add(waitFor(() -> mod().getJobStatusLine().contains("| running")
+                            ? "one continue resumed the restored job in the fresh conversation's first batch" : null,
+                    30, () -> "the job was not resumed by the first continue after re-attach: job='"
+                            + mod().getJobStatusLine() + "'"));
             stages.add(bothCleared(level, a1, b1, a2, b2, "both boxes cleared"));
+        } else {
+            // The restart scenario's red witness: a gateway.7 plan.json beside job.json is discarded
+            // on the next load, with a notice to its initiator.
+            stages.add(act(() -> writeOldPlan(mod())));
         }
         return stages;
+    }
+
+    /** A plan.json as gateway.7 wrote it, for the restart scenario to see discarded (§5.1). */
+    private static void writeOldPlan(PlayerEngineController m) {
+        java.nio.file.Path plan = m.getAIPersistantData().getPlanFileOrNull();
+        if (plan == null) {
+            throw new IllegalStateException("the companion has no persistence folder for plan.json");
+        }
+        String json = "{\"version\":1,\"generation\":1,\"goal\":\"old plan\",\"steps\":[\"goto 1 2 3\"],"
+                + "\"next\":0,\"state\":\"PAUSED\",\"initiator\":\"" + OWNER_ID + "\"}";
+        try {
+            java.nio.file.Files.createDirectories(plan.getParent());
+            java.nio.file.Files.writeString(plan, json);
+        } catch (java.io.IOException e) {
+            throw new IllegalStateException("cannot write " + plan + ": " + e, e);
+        }
+    }
+
+    /** A program that digs out the box between {@code a} and {@code b}. */
+    private static String excavate(BlockPos a, BlockPos b) {
+        return "api.excavate(box(pos(" + a.getX() + ", " + a.getY() + ", " + a.getZ() + "), pos(" + b.getX() + ", "
+                + b.getY() + ", " + b.getZ() + ")));";
     }
 
     /**
@@ -588,10 +617,11 @@ public final class SmokeHarness {
     }
 
     /**
-     * R2: the owner, then a second player, each order the companion to attack the other player; no
-     * attack task starts. Then the companion's own hit path is driven directly at a player beside it,
-     * and it does not swing. Fake players are invulnerable (NeoForge {@code FakePlayer}), so damage
-     * cannot be the witness; the attack task and the swing are.
+     * R2: the owner, then a second player, each order the companion to attack the other player; the
+     * program API has no attack, so the program does not lint and no attack task starts. Then the
+     * companion's own hit path is driven directly at a player beside it, and it does not swing. Fake
+     * players are invulnerable (NeoForge {@code FakePlayer}), so damage cannot be the witness; the
+     * attack task and the swing are.
      */
     private static List<Stage> attackAPlayer(ServerLevel level) {
         requireCompanion();
@@ -607,17 +637,14 @@ public final class SmokeHarness {
         return List.of(
                 act(() -> {
                     seq[0] = mod().getCommandDispatchSeq();
-                    say(OWNER_ID, OWNER_NAME, "SMOKE-CMD: attack " + STRANGER_NAME);
+                    say(OWNER_ID, OWNER_NAME, "SMOKE-PROGRAM: api.attack('" + STRANGER_NAME + "');");
                 }),
-                window(attacking, REFUSAL_WINDOW_SEC, () -> mod().getCommandDispatchSeq() > seq[0]
-                        ? "owner's attack on " + STRANGER_NAME + " refused (seq " + seq[0] + "->" + mod().getCommandDispatchSeq() + ")"
-                        : "!the owner's attack command never dispatched"),
+                window(attacking, REFUSAL_WINDOW_SEC, () -> refusedByLint("owner's attack on " + STRANGER_NAME, seq[0])),
                 act(() -> {
                     seq[0] = mod().getCommandDispatchSeq();
-                    say(STRANGER_ID, STRANGER_NAME, "SMOKE-CMD: attack " + OWNER_NAME);
+                    say(STRANGER_ID, STRANGER_NAME, "SMOKE-PROGRAM: api.attack('" + OWNER_NAME + "');");
                 }),
-                window(attacking, REFUSAL_WINDOW_SEC, () -> mod().getCommandDispatchSeq() > seq[0]
-                        ? "stranger's attack on " + OWNER_NAME + " refused" : "!the stranger's attack command never dispatched"),
+                window(attacking, REFUSAL_WINDOW_SEC, () -> refusedByLint("stranger's attack on " + OWNER_NAME, seq[0])),
                 waitFor(() -> {
                     bot().teleportTo(stranger.getX() - 1.0, stranger.getY(), stranger.getZ());
                     bot().swinging = false;
@@ -628,6 +655,16 @@ public final class SmokeHarness {
                     }
                     return stranger.getHealth() == before ? "the hit path did not swing at the player beside it" : "!damage dealt";
                 }, 5, "the hit path was never driven"));
+    }
+
+    /** The verdict of an attack order: the program did not lint, and nothing was dispatched. */
+    private static String refusedByLint(String what, long seqBefore) {
+        String verdict = companion().lastProgramVerdict();
+        if (!verdict.startsWith("lint:") || !verdict.contains("attack")) {
+            return "!the " + what + " was not refused by the linter: " + verdict;
+        }
+        return mod().getCommandDispatchSeq() == seqBefore ? what + " refused by the linter, nothing dispatched"
+                : "!the " + what + " dispatched something (seq " + seqBefore + "->" + mod().getCommandDispatchSeq() + ")";
     }
 
     /**
@@ -648,26 +685,30 @@ public final class SmokeHarness {
         return List.of(
                 act(() -> {
                     seq[0] = mod().getCommandDispatchSeq();
-                    say(OWNER_ID, OWNER_NAME, "SMOKE-CMD: mine sponge 1");
+                    say(OWNER_ID, OWNER_NAME, "SMOKE-PROGRAM: api.mine('sponge', 1);");
                 }),
                 window(taken, 25, () -> mod().getCommandDispatchSeq() > seq[0]
-                        ? "sealed sponge not targeted" : "!mine was never dispatched"),
+                        ? "sealed sponge not targeted (job: " + mod().getJobStatusLine() + ")" : "!mine was never dispatched"),
                 act(() -> {
                     mod().stop();
                     level.setBlockAndUpdate(hidden.above(), Blocks.AIR.defaultBlockState());
                 }),
-                act(() -> say(OWNER_ID, OWNER_NAME, "SMOKE-CMD: mine sponge 1")),
+                act(() -> say(OWNER_ID, OWNER_NAME, "SMOKE-PROGRAM: api.mine('sponge', 1);")),
                 waitFor(() -> level.getBlockState(hidden).is(Blocks.SPONGE) ? null : "exposed sponge mined",
-                        90, () -> "the exposed sponge was not mined: " + botState()));
+                        90, () -> "the exposed sponge was not mined: " + botState()),
+                waitFor(() -> mod().getJobStatusLine().contains("| running") ? null
+                                : "job " + (mod().getJobStatusLine().isEmpty() ? "done" : mod().getJobStatusLine()),
+                        60, () -> "the mine job is still running: " + mod().getJobStatusLine()),
+                act(() -> say(OWNER_ID, OWNER_NAME, "stop")),
+                waitFor(() -> mod().getJobStatusLine().isEmpty() ? "" : null, 10,
+                        () -> "the stop left job '" + mod().getJobStatusLine() + "'"));
     }
 
     /**
-     * E6, E8, E9: a {@code deposit_to_storage} line naming the non-canonical half of a double chest,
-     * with a comma list the old grammar split wrongly, runs as the {@code store} primitive: both
-     * halves together gain exactly the 20 cobblestone and all the dirt the companion carried, the
-     * companion's inventory lost the same, and the seam knows the chest as opened. The seam marks it
-     * known only after the store's Task finished, so the last check also shows the line took the
-     * primitive path.
+     * E6, E8, E9: a program's {@code store} naming the non-canonical half of a double chest, with a
+     * loose comma list for the items: both halves together gain exactly the 20 cobblestone and all the
+     * dirt the companion carried, the companion's inventory lost the same, and the seam knows the chest
+     * as opened. The seam marks it known only after the store's Task finished.
      */
     private static List<Stage> storeInDoubleChest(ServerLevel level) {
         requireCompanion();
@@ -707,8 +748,8 @@ public final class SmokeHarness {
                             + "-slot double chest named by its left half; the seam knows it" : null;
         };
         return List.of(
-                act(() -> say(OWNER_ID, OWNER_NAME, "SMOKE-CMD: deposit_to_storage " + left.getX() + " " + left.getY()
-                        + " " + left.getZ() + " cobblestone 20,dirt")),
+                act(() -> say(OWNER_ID, OWNER_NAME, "SMOKE-PROGRAM: api.store(pos(" + left.getX() + ", " + left.getY()
+                        + ", " + left.getZ() + "), 'cobblestone 20,dirt');")),
                 waitFor(stored, 90, () -> "chest not filled as asked: carrying " + carried(Items.COBBLESTONE)
                         + " cobblestone and " + carried(Items.DIRT) + " dirt (from " + cobble + " and " + dirt
                         + "), known=" + mod().getCommandExecutor().seam().isKnown(chest) + ", " + botState()));
@@ -747,10 +788,10 @@ public final class SmokeHarness {
                 + (text.getContents() instanceof net.minecraft.network.chat.contents.TranslatableContents t
                         ? t.getKey() : text.getString()));
         long[] seq = new long[1];
-        String gotoA = "SMOKE-CMD: goto " + site.getX() + " " + (site.getY() + 1) + " " + (site.getZ() + 3);
-        String gotoB = "SMOKE-CMD: goto " + site.getX() + " " + (site.getY() + 1) + " " + (site.getZ() - 3);
+        String gotoA = "SMOKE-PROGRAM: api.goto(pos(" + site.getX() + ", " + (site.getY() + 1) + ", " + (site.getZ() + 3) + "));";
+        String gotoB = "SMOKE-PROGRAM: api.goto(pos(" + site.getX() + ", " + (site.getY() + 1) + ", " + (site.getZ() - 3) + "));";
         Supplier<String> moved = () -> mod().getCommandDispatchSeq() != seq[0]
-                ? "!a command was dispatched (seq " + seq[0] + "->" + mod().getCommandDispatchSeq() + ")" : null;
+                ? "!a program call was dispatched (seq " + seq[0] + "->" + mod().getCommandDispatchSeq() + ")" : null;
         return List.of(
                 act(() -> {
                     seq[0] = mod().getCommandDispatchSeq();
@@ -790,7 +831,12 @@ public final class SmokeHarness {
                 act(() -> {
                     ConversationManager.noticeTap = null;
                     FakePlayers.teleport(owner, site.offset(0, 1, -3));
-                }));
+                }),
+                // A far player's goto is outside the job's region around that player (§4.2), so the
+                // job pauses for repair; the stop ends it before the next scenario.
+                act(() -> say(OWNER_ID, OWNER_NAME, "stop")),
+                waitFor(() -> mod().getJobStatusLine().isEmpty() ? "" : null, 10,
+                        () -> "the stop left job '" + mod().getJobStatusLine() + "'"));
     }
 
     /**
@@ -891,7 +937,10 @@ public final class SmokeHarness {
         return text.getString();
     }
 
-    /** Checklist 5: a waterlogged block in the shell makes the excavate refuse. */
+    /**
+     * Checklist 5: a waterlogged block in the shell makes the excavate refuse; the job pauses on the
+     * error for repair, and a stop ends it.
+     */
     private static List<Stage> waterlogged(ServerLevel level) {
         requireCompanion();
         BlockPos site = arena(level, 1);
@@ -904,18 +953,23 @@ public final class SmokeHarness {
         int total = solid(level, a, b);
         long seqBefore = mod().getCommandDispatchSeq();
         return List.of(
-                act(() -> say(OWNER_ID, OWNER_NAME, "SMOKE-CMD: excavate " + corners(a, b))),
+                act(() -> say(OWNER_ID, OWNER_NAME, "SMOKE-PROGRAM: " + excavate(a, b))),
                 window(() -> solid(level, a, b) < total ? "!box was dug: " + solid(level, a, b) + "/" + total : null,
                         REFUSAL_WINDOW_SEC,
                         () -> mod().getCommandDispatchSeq() > seqBefore && solid(level, a, b) == total
+                                        && mod().getJobStatusLine().contains("paused (repair)")
                                 ? "refused: seq " + seqBefore + "->" + mod().getCommandDispatchSeq() + ", box intact " + total
-                                : "!command never dispatched (seq " + mod().getCommandDispatchSeq() + ")"));
+                                        + ", job " + mod().getJobStatusLine()
+                                : "!the excavate was not refused as a paused job: seq " + mod().getCommandDispatchSeq()
+                                        + ", job '" + mod().getJobStatusLine() + "'"),
+                act(() -> say(OWNER_ID, OWNER_NAME, "stop")),
+                waitFor(() -> mod().getJobStatusLine().isEmpty() ? "stopped" : null, 10,
+                        () -> "the stop left job '" + mod().getJobStatusLine() + "'"));
     }
 
     /**
      * Checklist 8 under R1 (no difference between owners and strangers): a second player's excavate
-     * command, then their excavate plan, each clear a box. The command path and the plan path were
-     * the two owner gates.
+     * program, then their second program, each clear a box as a job.
      */
     private static List<Stage> stranger(ServerLevel level) {
         requireCompanion();
@@ -931,21 +985,22 @@ public final class SmokeHarness {
         int total1 = solid(level, a1, b1);
         int total2 = solid(level, a2, b2);
         return List.of(
-                act(() -> say(STRANGER_ID, STRANGER_NAME, "SMOKE-CMD: excavate " + corners(a1, b1))),
-                waitFor(() -> solid(level, a1, b1) == 0 ? "stranger's excavate command cleared " + total1 + " cells" : null,
-                        DIG_TIMEOUT_SEC, () -> "stranger's command: box " + solid(level, a1, b1) + "/" + total1 + ", "
-                                + botState()),
-                act(() -> say(STRANGER_ID, STRANGER_NAME, "SMOKE-PLAN: excavate " + corners(a2, b2))),
-                waitFor(() -> solid(level, a2, b2) == 0 && mod().getPlanStatusLine().isEmpty()
-                                ? "stranger's excavate plan cleared " + total2 + " cells" : null,
-                        DIG_TIMEOUT_SEC, () -> "stranger's plan: box " + solid(level, a2, b2) + "/" + total2 + " plan='"
-                                + mod().getPlanStatusLine() + "', " + botState()));
+                act(() -> say(STRANGER_ID, STRANGER_NAME, "SMOKE-PROGRAM: " + excavate(a1, b1))),
+                waitFor(() -> solid(level, a1, b1) == 0 ? "stranger's first program cleared " + total1 + " cells" : null,
+                        DIG_TIMEOUT_SEC, () -> "stranger's first program: box " + solid(level, a1, b1) + "/" + total1
+                                + ", " + botState()),
+                act(() -> say(STRANGER_ID, STRANGER_NAME, "SMOKE-PROGRAM: " + excavate(a2, b2))),
+                waitFor(() -> solid(level, a2, b2) == 0 && mod().getJobStatusLine().isEmpty()
+                                ? "stranger's second program cleared " + total2 + " cells as a job" : null,
+                        DIG_TIMEOUT_SEC, () -> "stranger's second program: box " + solid(level, a2, b2) + "/" + total2
+                                + " job='" + mod().getJobStatusLine() + "', " + botState()));
     }
 
     /**
-     * Checklist 6, on a second boot of the same world after {@code goto} left a plan paused: the owner
-     * logs back in, Player2NPC re-summons the companion from its join handler, the plan loads PAUSED
-     * from plan.json, and "continue" finishes it.
+     * Checklist 6 and R19, on a second boot of the same world after {@code goto} left its job running
+     * and an old plan.json beside it: the owner logs back in, Player2NPC re-summons the companion from
+     * its join handler, the job loads PAUSED from job.json and the owner (its initiator) is told, the
+     * old plan.json is discarded with its own notice, and "continue" finishes the job.
      */
     private static List<Stage> restart(ServerLevel level) {
         BlockPos site = site(level, 6);
@@ -955,11 +1010,14 @@ public final class SmokeHarness {
         BlockPos a2 = site.offset(2, 1, 2);
         BlockPos b2 = site.offset(4, 2, 4);
         if (solid(level, a2, b2) == 0) {
-            throw new IllegalStateException("step 2's box is already clear; run `goto` on the first boot");
+            throw new IllegalStateException("box 2 is already clear; run `goto` on the first boot");
         }
+        List<String> notices = new java.util.concurrent.CopyOnWriteArrayList<>();
+        ConversationManager.noticeTap = (who, text) -> notices.add(who + ": " + describe(text));
         ServerPlayer owner = FakePlayers.login(level, OWNER_ID, OWNER_NAME, site.offset(0, 1, -7));
         character = CharacterUtils.requestFirstCharacter(owner, GAME_ID);
         tickedOwner = owner;
+        java.nio.file.Path[] plan = new java.nio.file.Path[1];
         return List.of(
                 waitFor(() -> companion() == null ? null
                                 : "re-summoned " + companion().getName() + " on the owner's join",
@@ -969,10 +1027,27 @@ public final class SmokeHarness {
                 window(() -> companionCount() > 1 ? "!" + companionCount() + " companions for " + character.id()
                                 + " after the owner's join" : null,
                         5, () -> "one " + character.id()),
-                waitFor(() -> mod().getPlanStatusLine().contains("paused")
-                                ? "plan loaded paused (" + mod().getPlanStatusLine() + ")" : null,
-                        30, () -> "no paused plan after the restart: plan='" + mod().getPlanStatusLine() + "'"),
-                act(() -> say(OWNER_ID, OWNER_NAME, "continue")),
+                waitFor(() -> mod().getJobStatusLine().contains("paused (restart)")
+                                ? "job loaded paused (" + mod().getJobStatusLine() + ")" : null,
+                        30, () -> "no paused job after the restart: job='" + mod().getJobStatusLine() + "'"),
+                waitFor(() -> notices.stream().anyMatch(n -> n.startsWith(OWNER_NAME + ": ")
+                                && n.contains("interrupted by a restart"))
+                                ? "the initiator was told the job was interrupted (R19)" : null,
+                        10, () -> "no restore notice to the initiator: " + notices),
+                waitFor(() -> {
+                    plan[0] = mod().getAIPersistantData().getPlanFileOrNull();
+                    boolean told = notices.stream().anyMatch(n -> n.startsWith(OWNER_NAME + ": ")
+                            && n.contains("dropped an old unfinished job"));
+                    if (plan[0] != null && java.nio.file.Files.exists(plan[0])) {
+                        return null;
+                    }
+                    return told ? "the old plan.json was discarded, with a notice to its initiator"
+                            : "!plan.json is gone but nobody was told: " + notices;
+                }, 10, () -> "the old plan.json is still at " + plan[0]),
+                act(() -> {
+                    ConversationManager.noticeTap = null;
+                    say(OWNER_ID, OWNER_NAME, "continue");
+                }),
                 bothCleared(level, a1, b1, a2, b2, "continue finished it; both boxes cleared"));
     }
 
@@ -995,11 +1070,17 @@ public final class SmokeHarness {
         return new Stage(() -> { }, violation, seconds, verdict);
     }
 
+    /** The job verified its last call and ended: the dig can be done before the postcondition is read. */
+    private static Stage jobEnded() {
+        return waitFor(() -> mod().getJobStatusLine().isEmpty() ? "job ended" : null, 60,
+                () -> "the job did not end: '" + mod().getJobStatusLine() + "'");
+    }
+
     private static Stage bothCleared(ServerLevel level, BlockPos a1, BlockPos b1, BlockPos a2, BlockPos b2, String note) {
         return waitFor(() -> solid(level, a1, b1) == 0 && solid(level, a2, b2) == 0
-                        && mod().getPlanStatusLine().isEmpty() ? note : null,
+                        && mod().getJobStatusLine().isEmpty() ? note : null,
                 DIG_TIMEOUT_SEC, () -> "boxes " + solid(level, a1, b1) + " and " + solid(level, a2, b2)
-                        + " left, plan='" + mod().getPlanStatusLine() + "', " + botState());
+                        + " left, job='" + mod().getJobStatusLine() + "', " + botState());
     }
 
     private static void tick(MinecraftServer server) {
@@ -1057,9 +1138,9 @@ public final class SmokeHarness {
 
     private static void fail(String name, String why) {
         LOGGER.error("[smoke] {} FAIL: {}", name, why);
-        // A failed scenario can leave a plan or a dig running; stop it so the next scenario
+        // A failed scenario can leave a job or a dig running; stop it so the next scenario
         // reports its own result instead of this one's leftovers.
-        if (!"restart".equals(name) && companion() != null && !mod().getPlanStatusLine().isEmpty()) {
+        if (!"restart".equals(name) && companion() != null && !mod().getJobStatusLine().isEmpty()) {
             say(OWNER_ID, OWNER_NAME, "stop");
         }
     }
@@ -1087,9 +1168,9 @@ public final class SmokeHarness {
         if (companion() == null) {
             throw new IllegalStateException("no companion; run `playerengine smoke spawn` first");
         }
-        String leftover = mod().getPlanStatusLine();
+        String leftover = mod().getJobStatusLine();
         if (!leftover.isEmpty()) {
-            throw new IllegalStateException("an earlier scenario left a plan behind: " + leftover);
+            throw new IllegalStateException("an earlier scenario left a job behind: " + leftover);
         }
     }
 
@@ -1211,10 +1292,6 @@ public final class SmokeHarness {
             }
         }
         return n;
-    }
-
-    private static String corners(BlockPos a, BlockPos b) {
-        return a.getX() + " " + a.getY() + " " + a.getZ() + " " + b.getX() + " " + b.getY() + " " + b.getZ();
     }
 
     /** The per-entity builder settings an area task changes and must restore on every exit. */

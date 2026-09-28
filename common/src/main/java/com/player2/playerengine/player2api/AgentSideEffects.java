@@ -1,15 +1,6 @@
 
 package com.player2.playerengine.player2api;
 
-import java.util.function.Consumer;
-
-import com.player2.playerengine.PlayerEngineController;
-import com.player2.playerengine.commands.base.CommandCaller;
-import com.player2.playerengine.commands.base.CommandExecutor;
-import com.player2.playerengine.commands.base.UnknownCommandException;
-import com.player2.playerengine.retrieval.RagDeepSearchCommands;
-import com.player2.playerengine.retrieval.learning.AliasLearningService;
-import com.player2.playerengine.tasks.LookAtOwnerTask;
 import com.player2.playerengine.player2api.manager.ConversationManager;
 import com.player2.playerengine.player2api.manager.TTSManager;
 import org.apache.logging.log4j.LogManager;
@@ -22,47 +13,14 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
 
-import java.util.Locale;
-import java.util.UUID;
-
 public class AgentSideEffects {
     private static final Logger LOGGER = LogManager.getLogger();
-    private static final String MIXED_IDLE_MODEL_ERROR =
-            "idle must be sent by itself and cannot be combined with another command";
-    private static final String IGNORED_IDLE_MODEL_NOTE =
-            "idle was ignored because a real user task is still active; use stop to cancel that task";
 
-    public sealed interface CommandExecutionStopReason
-            permits CommandExecutionStopReason.Cancelled,
-            CommandExecutionStopReason.Finished,
-            CommandExecutionStopReason.Error {
-        String commandName();
-
-        record Cancelled(String commandName) implements CommandExecutionStopReason {
-        }
-
-        record Finished(String commandName, String note) implements CommandExecutionStopReason {
-        }
-
-        record Error(String commandName, String errMsg) implements CommandExecutionStopReason {
-        }
-    }
-
-    enum IdleHandling {
-        NOT_IDLE,
-        IGNORE_ACTIVE_TASK,
-        INSTALL_LOOK_AT_OWNER,
-        LEAVE_WITHOUT_USER_TASK
-    }
-
-    enum IdleCommandShape {
-        NO_IDLE,
-        SOLE_IDLE,
-        MIXED_IDLE
-    }
-
+    /**
+     * A companion's line: chat to every player, speech, and the relay to other companions. What it
+     * does is not here: a reply's program runs as a job (ProgramJobs), never from this message.
+     */
     public static void onEntityMessage(MinecraftServer server, Event.CharacterMessage characterMessage) {
-        // message part:
         AgentConversationData sendingCharacterData = characterMessage.sendingCharacterData();
         boolean hasText = characterMessage.message() != null && !characterMessage.message().isBlank();
         // A marker-only message ("[bl:greeting]") strips to empty text (decision 2) but still carries
@@ -78,11 +36,7 @@ public class AgentSideEffects {
             Component chatLine = Component.translatable("message.playerengine.chat.character_message",
                     sendingCharacterData.getName(), characterMessage.message());
             for (ServerPlayer player : server.getPlayerList().getPlayers()) {
-                // if you are an owner, or close, send to player.
-                // if(sendingCharacterData.isOwner(player.getUUID()) ||
-                // isClose(sendingCharacterData, player) ){
                 broadcastChatToPlayer(server, chatLine, player);
-                // }
             }
         }
         if (hasText || hasPendingGesture) {
@@ -115,176 +69,11 @@ public class AgentSideEffects {
             ConversationManager.onAICharacterMessage(characterMessage,
                     characterMessage.sendingCharacterData().getUUID());
         }
-
-        // command part:
-        if (characterMessage.command() != null && !characterMessage.command().isBlank()) {
-            onCommandListGenerated(characterMessage.sendingCharacterData().getMod(), characterMessage.command(),
-                    characterMessage.sendingCharacterData()::onCommandFinish, null,
-                    characterMessage.sendingCharacterData().commandCaller());
-        }
     }
 
     public static void onError(MinecraftServer server, String errMsg, ServerPlayer player) {
         LOGGER.error(errMsg);
         broadcastErrorMsgToPlayer(server, errMsg, player);
-    }
-
-    public static void onCommandListGenerated(PlayerEngineController mod, String command,
-                                              Consumer<CommandExecutionStopReason> onStop) {
-        onCommandListGenerated(mod, command, onStop, null, CommandCaller.UNPRIVILEGED);
-    }
-
-    /**
-     * @param onAcceptedSeq receives the controller's command dispatch seq once the line has parsed and
-     *                      is about to run; null when the caller does not track supersession
-     * @param caller the player the line runs for, whose permissions the dispatcher checks
-     */
-    public static void onCommandListGenerated(PlayerEngineController mod, String command,
-                                              Consumer<CommandExecutionStopReason> onStop,
-                                              java.util.function.LongConsumer onAcceptedSeq,
-                                              CommandCaller caller) {
-        CommandExecutor cmdExecutor = mod.getCommandExecutor();
-        String commandWithPrefix = cmdExecutor.isClientCommand(command) ? command
-                : (cmdExecutor.getCommandPrefix() + command);
-        if (commandWithPrefix.equals("@stop")) {
-            mod.isStopping = true;
-        } else {
-            mod.isStopping = false;
-        }
-        IdleCommandShape idleShape = classifyIdleCommandLine(
-                commandWithPrefix, cmdExecutor.getCommandPrefix());
-        if (idleShape == IdleCommandShape.MIXED_IDLE) {
-            rejectMixedIdleCommand(mod, onStop);
-            return;
-        }
-        String commandId = idleShape == IdleCommandShape.SOLE_IDLE
-                ? "idle" : firstCommandId(commandWithPrefix, cmdExecutor);
-        IdleHandling idleHandling = classifyIdleHandling(
-                commandId,
-                mod.hasActiveNonIdleUserTask(),
-                mod.getModSettings().isEnableLookAtOwnerIdle());
-        if (idleHandling != IdleHandling.NOT_IDLE) {
-            if (idleHandling == IdleHandling.IGNORE_ACTIVE_TASK) {
-                LOGGER.info("Ignoring idle while a non-idle user task is active (step={})",
-                        mod.getActiveTrackedStep().map(e -> e.getStepKind()).orElse("unknown"));
-                reportIgnoredIdleToPlayer(mod);
-            } else if (idleHandling == IdleHandling.INSTALL_LOOK_AT_OWNER) {
-                mod.runIdleUserTask(new LookAtOwnerTask());
-            } else if (idleHandling == IdleHandling.LEAVE_WITHOUT_USER_TASK) {
-                mod.clearPolicyIdleUserTask();
-            }
-            completeHandledIdle(idleHandling, commandWithPrefix, onStop);
-            return;
-        }
-
-        // add quotes to build_structure so it gets proccessed as one arg:
-        String processedCommandWithPrefix = commandWithPrefix;
-        // String processedCommandWithPrefix = commandWithPrefix.replaceFirst(
-        //         "^(@build_structure)\\s+(?![\"'])(.+)$",
-        //         "$1 \"$2\"");
-
-        MinecraftServer server = mod.getWorld().getServer();
-        UUID ownerUuid = mod.getOwner() != null ? mod.getOwner().getUUID() : null;
-        UUID botUuid = mod.getPlayer().getUUID();
-        String acceptedCommandId = firstCommandId(processedCommandWithPrefix, cmdExecutor);
-        if (RagDeepSearchCommands.isMetaCommandId(acceptedCommandId)) {
-            LOGGER.debug("[B5] ignoring virtual command rag_deepsearch in AgentSideEffects");
-            return;
-        }
-
-        // Shared finish handler for both the clean path (note == null) and the success-with-note path
-        // (note != null). Behavior is identical apart from the note carried on the Finished reason, so
-        // the clean/cancelled paths are byte-for-byte unchanged.
-        Consumer<String> onFinishWithNote =
-                (note) -> {
-                    if (mod.isStopping) {
-                        LOGGER.info(
-                                "[AgentSideEffects/AgentSideEffects]: (%s) was cancelled. Not adding finish event to queue.",
-                                processedCommandWithPrefix);
-                        onStop.accept(new CommandExecutionStopReason.Cancelled(commandWithPrefix));
-                        LOGGER.info("after cancel, not running look at owner");
-                    } else {
-                        if (!commandWithPrefix.equals("@bodylang greeting")) {
-                            LOGGER.info("Running on stop after finish cmd={}", commandWithPrefix);
-                            onStop.accept(new CommandExecutionStopReason.Finished(commandWithPrefix, note));
-                        } else {
-                            LOGGER.info("Ignore onStop for bodylang greeting");
-                        }
-                        // ISSUE 1: gate LookAtOwner scheduling. onStop.accept(Finished) above already ran;
-                        // skipping this leaves the bot idle (no user task), the desired behavior. The
-                        // runUserTask call is the LAST statement in this block, so the finish flow
-                        // (queue events, AliasLearning) is unaffected.
-                        if (mod.getModSettings().isEnableLookAtOwnerIdle()) {
-                            LOGGER.info("Running look at owner task after finish cmd={}", commandWithPrefix);
-                            mod.runIdleUserTask(new LookAtOwnerTask());
-                        }
-                    }
-                };
-
-        Runnable runExecute =
-                () ->
-                        cmdExecutor.execute(
-                                processedCommandWithPrefix,
-                                caller,
-                                () -> {
-                                    if (onAcceptedSeq != null) {
-                                        onAcceptedSeq.accept(mod.getCommandDispatchSeq());
-                                    }
-                                    if (server != null && ownerUuid != null && acceptedCommandId != null) {
-                                        AliasLearningService.onCommandAccepted(
-                                                server, ownerUuid, botUuid, acceptedCommandId, cmdExecutor);
-                                    }
-                                },
-                                () -> onFinishWithNote.accept(null),
-                                onFinishWithNote,
-                                (err) -> {
-                                    boolean unknownCommand = err instanceof UnknownCommandException;
-                                    // Keep the RAG-learning audit honest: an UnknownCommandException means the
-                                    // emitted name resolved to a command that is NOT registered (not a real
-                                    // alias hit), so feeding it to onCommandRejected would record a phantom
-                                    // SKIPPED_EXECUTION_ERROR against an unregistered tool id. For aliased
-                                    // commands (drop -> give) firstCommandId already returns the resolved name
-                                    // and this branch is never taken, so genuine rejections are still audited.
-                                    if (!unknownCommand
-                                            && server != null && ownerUuid != null && acceptedCommandId != null) {
-                                        AliasLearningService.onCommandRejected(
-                                                server, ownerUuid, botUuid, acceptedCommandId, err.getMessage());
-                                    }
-                                    // Honest player-facing correction ONLY for an unknown command name.
-                                    // The pre-committed chat line was broadcast before the command ran and
-                                    // asserted an action the bot could not perform; add a concise retraction
-                                    // so the player is not left believing it happened (DESIGN.md §3). Gated on
-                                    // UnknownCommandException so item-arg rejections (already broadcast by
-                                    // GetCommand) and runtime errors are NOT double-broadcast / mis-corrected.
-                                    // The model already gets the enriched failure verbatim via the executor's
-                                    // error route -> onCommandFinish InfoMessage, so both audiences are served
-                                    // with audience-tailored wording (DESIGN.md §3): the model sees the raw
-                                    // enriched "... Did you mean ...?" string; the player gets a short, plain line.
-                                    if (unknownCommand && server != null && ownerUuid != null) {
-                                        ServerPlayer ownerPlayer = server.getPlayerList().getPlayer(ownerUuid);
-                                        if (ownerPlayer != null) {
-                                            broadcastChatToPlayer(server,
-                                                    playerCorrectionFor(processedCommandWithPrefix, cmdExecutor,
-                                                            err.getMessage()),
-                                                    ownerPlayer);
-                                        }
-                                    }
-                                    onStop.accept(
-                                            new CommandExecutionStopReason.Error(commandWithPrefix, err.getMessage()));
-                                    // ISSUE 1: gate LookAtOwner scheduling. onStop.accept(Error) above
-                                    // already ran; skipping this leaves the bot idle (no user task). Last
-                                    // statement in the error callback, so the error flow is unaffected.
-                                    if (mod.getModSettings().isEnableLookAtOwnerIdle()) {
-                                        LOGGER.info("Running look at owner aftr error in cmd={}", commandWithPrefix);
-                                        mod.runIdleUserTask(new LookAtOwnerTask());
-                                    }
-                                });
-
-        if (server != null && !server.isSameThread()) {
-            server.execute(runExecute);
-        } else {
-            runExecute.run();
-        }
     }
 
     public static void broadcastChatToPlayer(MinecraftServer server, String message, ServerPlayer player) {
@@ -321,184 +110,6 @@ public class AgentSideEffects {
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
             broadcastChatToPlayer(server, message, player);
         }
-    }
-
-    /** First semicolon-separated command name without prefix or arguments. */
-    public static String firstCommandId(String commandWithPrefix, CommandExecutor cmdExecutor) {
-        if (commandWithPrefix == null || commandWithPrefix.isBlank()) {
-            return null;
-        }
-        try {
-            String line = commandWithPrefix;
-            if (cmdExecutor.isClientCommand(line)) {
-                line = line.substring(cmdExecutor.getCommandPrefix().length());
-            }
-            String first = line.split(";")[0].trim();
-            if (first.isEmpty()) {
-                return null;
-            }
-            int sp = first.indexOf(' ');
-            String name = sp == -1 ? first : first.substring(0, sp);
-            // Lower-case first (prior behavior), then resolve a silent synonym (e.g. drop -> give) so the
-            // RAG-learning layer (AliasLearningService) audits the RESOLVED command, not the raw synonym —
-            // otherwise an aliased emission records a phantom rejection (drop is not in commandSheet).
-            return CommandExecutor.resolveName(name.toLowerCase(Locale.ROOT));
-        } catch (Exception e) {
-            return null;
-        }
-    }
-
-    /** Classifies idle across the full semicolon command line using CommandExecutor's split rules. */
-    static IdleCommandShape classifyIdleCommandLine(String commandWithPrefix, String commandPrefix) {
-        if (commandWithPrefix == null || commandWithPrefix.isBlank()) {
-            return IdleCommandShape.NO_IDLE;
-        }
-        String prefix = commandPrefix == null ? "" : commandPrefix;
-        String line = commandWithPrefix;
-        if (!prefix.isEmpty() && line.startsWith(prefix)) {
-            line = line.substring(prefix.length());
-        }
-        int commandCount = 0;
-        boolean containsIdle = false;
-        for (String rawPart : line.split(";", -1)) {
-            String part = rawPart.trim();
-            if (part.isEmpty()) {
-                continue;
-            }
-            if (!prefix.isEmpty() && part.startsWith(prefix)) {
-                part = part.substring(prefix.length()).trim();
-            }
-            if (part.isEmpty()) {
-                continue;
-            }
-            int space = part.indexOf(' ');
-            String rawName = space < 0 ? part : part.substring(0, space);
-            String commandId = CommandExecutor.resolveName(rawName.toLowerCase(Locale.ROOT));
-            commandCount++;
-            containsIdle |= "idle".equals(commandId);
-        }
-        if (!containsIdle) {
-            return IdleCommandShape.NO_IDLE;
-        }
-        return commandCount == 1
-                ? IdleCommandShape.SOLE_IDLE : IdleCommandShape.MIXED_IDLE;
-    }
-
-    /** Package-visible pure branch policy exercised by {@link AgentSideEffectsSelfTest}. */
-    static IdleHandling classifyIdleHandling(
-            String commandId,
-            boolean hasActiveNonIdleTask,
-            boolean enableLookAtOwnerIdle) {
-        if (!"idle".equals(commandId)) {
-            return IdleHandling.NOT_IDLE;
-        }
-        if (hasActiveNonIdleTask) {
-            return IdleHandling.IGNORE_ACTIVE_TASK;
-        }
-        return enableLookAtOwnerIdle
-                ? IdleHandling.INSTALL_LOOK_AT_OWNER
-                : IdleHandling.LEAVE_WITHOUT_USER_TASK;
-    }
-
-    /** Resolves one locally-handled idle command exactly once, including ignored-idle degradation. */
-    static void completeHandledIdle(
-            IdleHandling handling,
-            String commandWithPrefix,
-            Consumer<CommandExecutionStopReason> onStop) {
-        if (handling == null || handling == IdleHandling.NOT_IDLE) {
-            throw new IllegalArgumentException("idle completion requires a handled idle branch");
-        }
-        String note = handling == IdleHandling.IGNORE_ACTIVE_TASK
-                ? IGNORED_IDLE_MODEL_NOTE : null;
-        java.util.Objects.requireNonNull(onStop, "onStop")
-                .accept(new CommandExecutionStopReason.Finished(commandWithPrefix, note));
-    }
-
-    private static void reportIgnoredIdleToPlayer(PlayerEngineController mod) {
-        MinecraftServer server = mod.getWorld() == null ? null : mod.getWorld().getServer();
-        if (server != null && mod.getOwner() instanceof ServerPlayer owner) {
-            broadcastChatToPlayer(server,
-                    Component.translatable("message.playerengine.agent.idle_ignored_active_task"), owner);
-        }
-    }
-
-    private static void rejectMixedIdleCommand(
-            PlayerEngineController mod,
-            Consumer<CommandExecutionStopReason> onStop) {
-        MinecraftServer server = mod.getWorld() == null ? null : mod.getWorld().getServer();
-        if (server != null && mod.getOwner() instanceof ServerPlayer owner) {
-            broadcastChatToPlayer(server,
-                    Component.translatable("message.playerengine.agent.mixed_idle_commands"), owner);
-        }
-        completeRejectedMixedIdle(onStop);
-    }
-
-    /** Package-visible exact terminal exercised without a live server by the self-test. */
-    static void completeRejectedMixedIdle(Consumer<CommandExecutionStopReason> onStop) {
-        java.util.Objects.requireNonNull(onStop, "onStop").accept(
-                new CommandExecutionStopReason.Error("idle", MIXED_IDLE_MODEL_ERROR));
-    }
-
-    /**
-     * Builds the short, plain, player-facing retraction for an unknown emitted command name. The
-     * model already receives the full enriched executor message ("Command drop does not exist. Did
-     * you mean \"give\"?") via the onCommandFinish InfoMessage path; the player gets an
-     * audience-tailored line (DESIGN.md §3) rather than that model-oriented string. When the enriched
-     * message carries a "Did you mean \"x\"?" suggestion, the player line names it ("trying 'x'");
-     * otherwise it degrades to a generic honest retraction. Best-effort: any parse failure falls back
-     * to the generic line, never throws.
-     */
-    private static Component playerCorrectionFor(String commandWithPrefix, CommandExecutor cmdExecutor,
-                                              String enrichedMessage) {
-        String rawName = rawCommandName(commandWithPrefix, cmdExecutor);
-        String suggestion = extractSuggestion(enrichedMessage);
-        if (rawName != null && suggestion != null) {
-            return Component.translatable("message.playerengine.agent.correction_with_suggestion", rawName, suggestion);
-        }
-        if (rawName != null) {
-            return Component.translatable("message.playerengine.agent.correction_no_suggestion", rawName);
-        }
-        return Component.translatable("message.playerengine.agent.correction_fallback");
-    }
-
-    /** Raw first command name as the model emitted it (no alias resolution — the player hears the
-     * word they actually triggered). Null on any parse failure. */
-    private static String rawCommandName(String commandWithPrefix, CommandExecutor cmdExecutor) {
-        if (commandWithPrefix == null || commandWithPrefix.isBlank()) {
-            return null;
-        }
-        try {
-            String line = commandWithPrefix;
-            if (cmdExecutor.isClientCommand(line)) {
-                line = line.substring(cmdExecutor.getCommandPrefix().length());
-            }
-            String first = line.split(";")[0].trim();
-            if (first.isEmpty()) {
-                return null;
-            }
-            int sp = first.indexOf(' ');
-            return (sp == -1 ? first : first.substring(0, sp)).toLowerCase(Locale.ROOT);
-        } catch (Exception e) {
-            return null;
-        }
-    }
-
-    /** Extracts the suggested command from the enriched executor message of the form
-     * {@code ... Did you mean "give"?}. Returns null when no suggestion is present. */
-    private static String extractSuggestion(String enrichedMessage) {
-        if (enrichedMessage == null) {
-            return null;
-        }
-        int idx = enrichedMessage.indexOf("Did you mean \"");
-        if (idx < 0) {
-            return null;
-        }
-        int start = idx + "Did you mean \"".length();
-        int end = enrichedMessage.indexOf('"', start);
-        if (end <= start) {
-            return null;
-        }
-        return enrichedMessage.substring(start, end);
     }
 
     public static void teleportOwnerTo(AgentConversationData data){

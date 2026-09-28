@@ -29,7 +29,7 @@ final class GatewayJsonSelfTest {
     private GatewayJsonSelfTest() {
     }
 
-    private static final String JSON_REPLY = "{\"reason\":\"asked to wait\",\"command\":\"idle\",\"message\":\"On it.\"}";
+    private static final String JSON_REPLY = "{\"say\":\"On it.\",\"program\":\"api.wait(20);\"}";
     /** Verbatim from the 2026-09-27 server log: a whole decision reply in prose. */
     private static final String PROSE_REPLY =
             "I've got 20 spruce logs. To make armor and weapons I need more wood for planks and sticks, plus iron for the gear.";
@@ -117,14 +117,14 @@ final class GatewayJsonSelfTest {
 
     private static List<JsonObject> smallTurn() {
         List<JsonObject> messages = new ArrayList<>();
-        messages.add(message("system", "You are Foreman Ada. Reply with one JSON object: reason, command, message."));
+        messages.add(message("system", "You are Foreman Ada. Reply with one JSON object: say, program."));
         messages.add(message("user", USER_MESSAGE));
         return messages;
     }
 
     /**
      * The request shape the 2026-09-27 server log shows on most turns: an 8.8k system prompt, about
-     * 1.3k of history over nine messages, and an 18.6k status turn whose command list alone is 15.4k.
+     * 1.3k of history over nine messages, and an 18.6k status turn whose debug messages alone are 15.4k.
      */
     private static List<JsonObject> liveShapeTurn() {
         List<JsonObject> messages = new ArrayList<>();
@@ -139,8 +139,7 @@ final class GatewayJsonSelfTest {
         status.addProperty("currentMood", "{\"label\":\"determined\",\"intensity\":0.6}");
         status.addProperty("worldStatus", filler("{\"weather\":\"clear\",\"nearbyBlocks\":\"spruce_log\"} ", 1_175));
         status.addProperty("agentStatus", filler("{\"health\":20,\"hunger\":18} ", 561));
-        status.addProperty("gameDebugMessages", "");
-        status.addProperty("validCommands", filler("get <item> <count>: collect or craft an item ", 15_364));
+        status.addProperty("gameDebugMessages", filler("[PlayerEngine] task tick: collect or craft an item ", 15_364));
         messages.add(message("user", status.toString()));
         return messages;
     }
@@ -162,7 +161,7 @@ final class GatewayJsonSelfTest {
             install(dir, lan, openai, "endpoint.openai.jsonMode", "false");
 
             JsonObject reply = DecisionTurnProbe.complete("foreman-ada", smallTurn());
-            require("idle".equals(reply.get("command").getAsString()), "the decision reply must be parsed");
+            require("api.wait(20);".equals(reply.get("program").getAsString()), "the decision reply must be parsed");
             JsonObject sent = lan.bodies().get(0);
             require(sent.has("response_format")
                             && "json_object".equals(sent.getAsJsonObject("response_format").get("type").getAsString()),
@@ -204,8 +203,8 @@ final class GatewayJsonSelfTest {
             }
             require(USER_MESSAGE.equals(status.get("userMessage").getAsString()), "the player's words must survive whole");
             require(REMINDERS.equals(status.get("reminders").getAsString()), "the format reminder must survive whole");
-            require(status.get("validCommands").getAsString().contains("trimmed"),
-                    "the bulky command list is what gets trimmed");
+            require(status.get("gameDebugMessages").getAsString().contains("trimmed"),
+                    "the bulky debug messages are what gets trimmed");
             require(status.has("agentStatus") && status.has("worldStatus"), "no status field may disappear");
         }
     }
