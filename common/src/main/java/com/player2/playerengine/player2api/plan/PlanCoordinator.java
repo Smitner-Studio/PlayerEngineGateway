@@ -87,6 +87,15 @@ public final class PlanCoordinator {
         return plan;
     }
 
+    /**
+     * Called before a batch's chat lines: a resume phrase applies to the turn it arrived in. A turn
+     * that never reached {@link #onModelDecision} (a peer turn, a turn discarded by an owner stop)
+     * must not leave it set for a later, unrelated decision.
+     */
+    public synchronized void beginTurn() {
+        resumeRequested = false;
+    }
+
     /** Called for each owner or non-owner chat line before the model turn it starts. */
     public synchronized void onUserMessage(String text, boolean fromOwner) {
         if (fromOwner && plan != null && plan.status != CompanionPlan.Status.RUNNING

@@ -51,6 +51,7 @@ public final class CompanionRulesSelfTest {
         checks += com.player2.playerengine.chains.GestureGuardSelfTest.runAll();
         checks += com.player2.playerengine.automaton.utils.player.FeetChunkSelfTest.runAll();
         checks += com.player2.playerengine.trackers.ChunkHoldSelfTest.runAll();
+        checks += com.player2.playerengine.util.ChunkControllerSelfTest.runAll();
         System.out.println("companion self-test: " + checks + " checks passed");
     }
 

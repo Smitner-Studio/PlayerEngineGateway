@@ -75,7 +75,7 @@ Files changed from upstream:
 | `common/src/main/java/com/player2/playerengine/player2api/Player2PayerResolution.java` | server-wide work is billable with no player online when the gateway is enabled |
 | `common/src/main/java/com/player2/playerengine/player2api/utils/AudioUtils.java` | text-to-speech skipped when the gateway is enabled |
 | `common/build.gradle` | `gatewaySelfTest` task |
-| `gradle.properties` | version `1.21.1-1.4.0-gateway.6` |
+| `gradle.properties` | version `1.21.1-1.4.0-gateway.7` |
 | `neoforge/src/main/resources/META-INF/neoforge.mods.toml` | display name "PlayerEngine (OpenAI-gateway fork)" |
 | `README.md`, `NOTICE.md`, `Taskfile.yml`, `.gitignore` | fork documentation and build entries |
 
@@ -253,3 +253,40 @@ freezing it there).
 | `common/src/main/resources/assets/playerengine/lang/en_us.json` | help text for the smoke command |
 | `common/build.gradle`, `Taskfile.yml` | `planSelfTest` and `smokeGateSelfTest` tasks, run by `task test` |
 | `gradle.properties` | version `1.21.1-1.4.0-gateway.6` |
+
+## Greeting and chunk fixes (gateway.7)
+
+**The greeting no longer eats "continue".** Upstream forced the first reply of every fresh
+conversation to `bodylang greeting`, and that turn skipped the plan and owner rules. After a
+restart or re-attach the owner's first "continue" or plan was dropped. A turn is now forced to the
+greeting only when a greeting was actually queued (a first meeting), and never when its batch
+carries a message from the owner: that turn runs normally and greets through the `[bl:greeting]`
+marker. A resume phrase now applies only to the turn it arrived in.
+
+| File | Change |
+|---|---|
+| `common/src/main/java/com/player2/playerengine/player2api/AgentConversationData.java` | greeting armed when queued, decided per batch, never over an owner message |
+| `common/src/main/java/com/player2/playerengine/player2api/AIPersistantData.java` | `returnGreets()`: whether the return event is a greeting |
+| `common/src/main/java/com/player2/playerengine/player2api/plan/PlanCoordinator.java` | `beginTurn()` clears a resume request left by an earlier turn |
+| `common/src/main/java/com/player2/playerengine/player2api/plan/PlanSelfTest.java` | a continue applies only to its own turn |
+| `common/src/main/java/com/player2/playerengine/smoke/SmokeHarness.java` | `resume` scenario: one continue after re-attach resumes the plan |
+| `common/src/main/resources/assets/playerengine/lang/en_us.json` | smoke scenario list |
+
+**Companions release only the chunks they forced.** Upstream un-forced any chunk a companion left,
+including chunks an operator's `/forceload` or another mod had forced, keyed holds by chunk
+coordinates without the dimension, and never released a hold when a companion was removed. A
+companion now never claims a chunk that is already forced, keys holds by dimension and chunk,
+releases its whole 3x3 hold when Player2NPC removes it, and every hold is released at server stop
+so none is saved into the world. Still open until the ticket-based fix: a chunk forced by someone
+else after a companion claimed it is released when the companion leaves.
+
+| File | Change |
+|---|---|
+| `common/src/main/java/com/player2/playerengine/util/ChunkController.java` | holds by dimension and chunk; never claims a forced chunk; release-all per companion and at stop |
+| `common/src/main/java/com/player2/playerengine/util/ChunkControllerSelfTest.java` | new: chunk ownership self-test, run by `companionSelfTest` |
+| `common/src/main/java/com/player2/playerengine/trackers/ChunkLoadingTracker.java` | re-asserts the hold each second; releases it on a dimension change and on reset |
+| `common/src/main/java/com/player2/playerengine/PlayerEngineController.java` | removal and stale-controller pruning release the companion's chunks |
+| `common/src/main/java/com/player2/playerengine/MCCommands.java` | releases every companion-forced chunk at server stop |
+| `common/src/main/java/com/player2/playerengine/companion/CompanionRulesSelfTest.java` | runs the chunk ownership self-test |
+| `common/src/main/java/com/player2/playerengine/smoke/SmokeHarness.java` | `chunks` and `despawn` scenarios |
+| `gradle.properties` | version `1.21.1-1.4.0-gateway.7` |
