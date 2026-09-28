@@ -5,8 +5,7 @@ import com.player2.playerengine.player2api.config.Player2ServerConfigHolder;
 import com.player2.playerengine.player2api.config.Player2ServerRuntimeConfig;
 
 /**
- * Thin wrapper over {@link MemoryExtractionBudgetTracker} for the memory-pipeline windowed cap
- * (analogous to the deep-check-cap portion of {@code retrieval.learning.DeepCheckBudgetGate}).
+ * Thin wrapper over {@link MemoryExtractionBudgetTracker} for the memory-pipeline windowed cap.
  *
  * <p>Provides read-only {@code peek*} methods (W5's reflection-trigger budget peek — never
  * reserves) and {@link #reserveSlot} (records at fire time). The A4 / patron checks live in

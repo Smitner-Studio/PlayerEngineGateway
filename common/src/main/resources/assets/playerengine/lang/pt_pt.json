@@ -28,12 +28,6 @@
   "help.playerengine.rag-retrieve.arg.category": "Etiqueta de categoria opcional para restringir a recuperação; pode ser repetida antes do objetivo.",
   "help.playerengine.rag-reload.short": "Recarregar todos os ficheiros de sobreposição RAG e reconstruir o índice.",
   "help.playerengine.rag-reload.long": "Volta a ler todos os ficheiros de sobreposição a partir do disco, reconstrói o mecanismo de recuperação global e esvazia todas as caches por proprietário.",
-  "help.playerengine.rag-audit-tail.short": "Mostrar as últimas N entradas do registo de auditoria de aprendizagem de aliases do RAG.",
-  "help.playerengine.rag-audit-tail.arg.n": "Quantas linhas finais de auditoria mostrar (por defeito 20).",
-  "help.playerengine.rag-reset-learned.short": "Limpar os aliases aprendidos do RAG para uma ferramenta ou para todas as ferramentas.",
-  "help.playerengine.rag-reset-learned.long": "Remove os dados de aprendizagem de aliases do proprietário que executa o comando (ou de todos os proprietários com --all-owners), opcionalmente limitados a uma única ferramenta.",
-  "help.playerengine.rag-reset-learned.arg.toolId": "Limitar a reposição a este ID de ferramenta (omitir para todas as ferramentas).",
-  "help.playerengine.rag-reset-learned-all-owners.short": "Limpar os aliases aprendidos do RAG de todos os proprietários.",
   "help.playerengine.rag-inspect.short": "Mostrar o documento de ferramenta combinado para um ID de ferramenta.",
   "help.playerengine.rag-inspect.long": "Mostra todos os campos do documento de ferramenta combinado do índice do jogador que executa o comando; palavras-chave e exemplos adicionados por uma sobreposição são marcados com [+].",
   "help.playerengine.rag-inspect.arg.toolId": "O ID de ferramenta a inspecionar.",
@@ -161,9 +155,6 @@
   "message.playerengine.rag.reload_failed": "Recarregamento do RAG concluído. Índice global: FALHOU",
   "message.playerengine.rag.not_initialized": "Índice do RAG não inicializado.",
   "message.playerengine.rag.inspect_tool_not_found": "Nenhuma ferramenta encontrada com id \"%s\".",
-  "message.playerengine.rag.audit_no_rows": "(nenhuma linha)",
-  "message.playerengine.rag.reset_learned_console_error": "A consola deve usar reset_learned --all-owners ou especificar o contexto do dono através de um jogador.",
-  "message.playerengine.rag.reset_learned_success": "Sobreposições aprendidas redefinidas para %1$s%2$s (%3$d diretório(s) de dono afetado(s)).",
 
   "message.playerengine.routing.unknown_task_class": "Classe de tarefa desconhecida: %s. Usa RETRIEVAL, RERANKING, SUMMARIZATION, PLANNING ou DECISION.",
 

@@ -143,7 +143,7 @@ public final class MemoryGate {
 
     /**
      * Reserves one memory-pipeline slot at FIRE time (two-phase: {@link #preflight} peeked, this
-     * records), mirroring {@code DeepCheckBudgetGate.reserveDeepCheckSlot}. Returns {@code false}
+     * records). Returns {@code false}
      * if the cap was reached between the peek and the record (a tight race), in which case the
      * caller must NOT fire.
      */

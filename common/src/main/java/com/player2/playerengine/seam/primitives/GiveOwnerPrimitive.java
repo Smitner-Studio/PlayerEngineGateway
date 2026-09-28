@@ -20,37 +20,6 @@ final class GiveOwnerPrimitive extends Base {
         super("give_owner");
     }
 
-    /** {@code give [owner] <item> [count]}; a line naming anyone but the owner is not this primitive. */
-    @Override
-    public LineArgs fromLine(String argsText, Context ctx) {
-        String[] t = argsText.trim().split("\\s+");
-        String user = null;
-        String item;
-        Object n = 1;
-        if (t.length == 3) {
-            user = t[0];
-            item = t[1];
-            n = t[2];
-        } else if (t.length == 2 && t[1].matches("-?\\d+")) {
-            item = t[0];
-            n = t[1];
-        } else if (t.length == 2) {
-            user = t[0];
-            item = t[1];
-        } else if (t.length == 1 && !t[0].isEmpty()) {
-            item = t[0];
-        } else {
-            return null;
-        }
-        if (user != null) {
-            Player o = ctx == null ? null : ctx.mod().getOwner();
-            if (o == null || !o.getName().getString().equalsIgnoreCase(user)) {
-                return null;
-            }
-        }
-        return LineArgs.of(Map.of("item", item, "n", n), Map.of());
-    }
-
     @Override
     public ActionError admit(Map<String, Object> args, Context ctx) {
         Player o = ctx.mod().getOwner();

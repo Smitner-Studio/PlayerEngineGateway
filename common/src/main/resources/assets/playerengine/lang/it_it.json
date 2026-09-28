@@ -28,12 +28,6 @@
   "help.playerengine.rag-retrieve.arg.category": "Tag di categoria facoltativo per limitare il recupero; ripetibile prima dell'obiettivo.",
   "help.playerengine.rag-reload.short": "Ricarica tutti i file overlay RAG e ricostruisci l'indice.",
   "help.playerengine.rag-reload.long": "Rilegge tutti i file overlay dal disco, ricostruisce il retriever globale ed elimina tutte le cache per-proprietario.",
-  "help.playerengine.rag-audit-tail.short": "Stampa le ultime N voci del registro di controllo dell'apprendimento degli alias RAG.",
-  "help.playerengine.rag-audit-tail.arg.n": "Quante righe finali del registro mostrare (predefinito 20).",
-  "help.playerengine.rag-reset-learned.short": "Cancella gli alias RAG appresi per uno strumento o per tutti gli strumenti.",
-  "help.playerengine.rag-reset-learned.long": "Rimuove i dati di apprendimento degli alias per il proprietario che esegue il comando (o per tutti i proprietari con --all-owners), facoltativamente limitato a un singolo strumento.",
-  "help.playerengine.rag-reset-learned.arg.toolId": "Limita il ripristino a questo id di strumento (omettere per tutti gli strumenti).",
-  "help.playerengine.rag-reset-learned-all-owners.short": "Cancella gli alias RAG appresi per tutti i proprietari.",
   "help.playerengine.rag-inspect.short": "Stampa il documento strumento unificato per un id di strumento.",
   "help.playerengine.rag-inspect.long": "Mostra tutti i campi del documento strumento unificato per l'indice del giocatore che esegue il comando; le parole chiave e gli esempi aggiunti da un overlay sono contrassegnati con [+].",
   "help.playerengine.rag-inspect.arg.toolId": "L'id di strumento da ispezionare.",
@@ -162,9 +156,6 @@
   "message.playerengine.rag.reload_failed": "Ricaricamento RAG completato. Indice globale: FALLITO",
   "message.playerengine.rag.not_initialized": "Indice RAG non inizializzato.",
   "message.playerengine.rag.inspect_tool_not_found": "Nessuno strumento trovato con ID «%s».",
-  "message.playerengine.rag.audit_no_rows": "(nessuna riga)",
-  "message.playerengine.rag.reset_learned_console_error": "La console deve usare reset_learned --all-owners oppure specificare il contesto del proprietario tramite player.",
-  "message.playerengine.rag.reset_learned_success": "Reimpostazione degli overlay appresi per %1$s%2$s (%3$d directory del proprietario interessate).",
 
   "message.playerengine.routing.unknown_task_class": "Classe di attività sconosciuta: %s. Usa RETRIEVAL, RERANKING, SUMMARIZATION, PLANNING o DECISION.",
 

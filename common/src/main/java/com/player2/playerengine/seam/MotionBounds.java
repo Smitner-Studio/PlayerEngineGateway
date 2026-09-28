@@ -5,9 +5,12 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Where a job may walk (§4.2): in a job, {@code goto} and {@code follow} targets must lie inside the
- * job's region, a sphere of {@link #RADIUS} blocks around the initiator at job start. Outside a job
- * there is no region, and a lone command walks where it is told.
+ * Where a job may change the world (§4.2, as ruled 2026-09-28): a job's region is a sphere of
+ * {@link #RADIUS} blocks around its initiator when the job was created, fixed for the job's life.
+ * World-editing calls ({@code excavate}, {@code fill}, {@code place}) must target inside it, and the
+ * ones that pick their own targets near the companion ({@code mine}, {@code get}, {@code craft})
+ * must start inside it. Movement ({@code goto}, {@code follow_owner}) is not bounded. Outside a job
+ * there is no region.
  */
 public final class MotionBounds {
     public static final int RADIUS = 48;

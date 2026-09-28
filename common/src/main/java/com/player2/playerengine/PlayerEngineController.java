@@ -186,7 +186,7 @@ public class PlayerEngineController {
                if ((!this.getUserTaskChain().isActive() || this.getUserTaskChain().isRunningIdleTask())
                       && this.getModSettings().shouldRunIdleCommandWhenNotActive()) {
                   this.getUserTaskChain().runIdleCommand(() -> this.getCommandExecutor()
-                        .executeWithPrefix(this.getModSettings().getIdleCommand()));
+                        .runIdle(this.getModSettings().getIdleCommand()));
                }
 
                this.getExtraBaritoneSettings().avoidBlockBreak(this.userBlockRangeTracker::isNearUserTrackedBlock);

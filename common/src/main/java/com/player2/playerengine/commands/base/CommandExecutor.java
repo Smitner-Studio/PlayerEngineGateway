@@ -111,192 +111,47 @@ public class CommandExecutor {
       return null;
    }
 
-   public String getCommandPrefix() {
-      return this.mod.getModSettings().getCommandPrefix();
-   }
-
-   public boolean isClientCommand(String line) {
-      return line.startsWith(this.getCommandPrefix());
-   }
-
-   private void executeRecursive(
-         Command[] commands,
-         String[] parts,
-         int index,
-         String accumulatedNote,
-         Runnable onFinish,
-         Consumer<String> onFinishWithNote,
-         Consumer<CommandException> getException) {
-      if (index >= commands.length) {
-         // Deliver the accumulated success note only once the whole chain has completed. A
-         // degraded-but-successful part advances the chain exactly like a clean success (it must NOT
-         // abort later parts — a partial gather is still a success), so its note is carried forward
-         // and emitted here. A blank accumulated note is byte-identical to the old clean finish.
-         if (accumulatedNote == null || accumulatedNote.isBlank()) {
-            onFinish.run();
-         } else {
-            onFinishWithNote.accept(accumulatedNote);
-         }
-      } else {
-         Command command = commands[index];
-         String part = parts[index];
-
-         try {
-            if (command == null) {
-               getException.accept(new CommandException("Invalid command:" + part));
-               this.executeRecursive(commands, parts, index + 1, accumulatedNote, onFinish, onFinishWithNote, getException);
-            } else {
-               // Pass the executor's error route to the command so a command that ends via
-               // finishWithError(..) reaches CommandExecutionStopReason.Error (the only supported way
-               // to deliver custom FAILED feedback to the model) — that terminates the chain. By
-               // contrast, both a clean finish() and a success-with-note advance to the next part; the
-               // note (if any) is joined into accumulatedNote and delivered once the chain completes,
-               // so a degraded-but-successful part never silently drops a later command.
-               this.seam.run(
-                  command,
-                  part,
-                  () -> this.executeRecursive(commands, parts, index + 1, accumulatedNote, onFinish, onFinishWithNote, getException),
-                  getException,
-                  (note) -> this.executeRecursive(
-                        commands, parts, index + 1, joinNotes(accumulatedNote, note), onFinish, onFinishWithNote, getException));
-            }
-         } catch (CommandException var9) {
-            getException.accept(new CommandException(var9.getMessage() + "\nUsage: " + command.getHelpRepresentation(), var9));
-         }
-      }
-   }
-
-   /** Joins two success notes with "; ", treating null/blank as empty, so notes across a chain combine. */
-   private static String joinNotes(String existing, String next) {
-      if (next == null || next.isBlank()) {
-         return existing;
-      }
-      if (existing == null || existing.isBlank()) {
-         return next;
-      }
-      return existing + "; " + next;
-   }
-
-   public void execute(String line, Runnable onFinish, Consumer<CommandException> getException) {
-      this.execute(line, () -> {}, onFinish, getException);
-   }
-
    /**
-    * Executes a client command line. {@code onAccepted} runs after all command parts parse
-    * successfully and before the first command's {@code run(...)} starts (Phase B5 grounding).
-    * Delegates with a safe default note route that ignores any success note and finishes cleanly,
-    * so callers that do not opt into the note route keep byte-identical behavior.
+    * Runs the settings' idle command ({@code idleCommand}) as its registered command, with no command
+    * grammar: one command and its arguments, no prefix and no {@code ;} chaining (a leading prefix from
+    * an older settings file is tolerated). It runs for no player, under the same permission policy, and
+    * is not an order: it moves no dispatch seq.
     */
-   public void execute(
-         String line,
-         Runnable onAccepted,
-         Runnable onFinish,
-         Consumer<CommandException> getException) {
-      this.execute(line, onAccepted, onFinish, (note) -> onFinish.run(), getException);
-   }
-
-   /**
-    * Executes a client command line, carrying the success-detail route. {@code onAccepted} runs after
-    * all command parts parse successfully and before the first command's {@code run(...)} starts
-    * (Phase B5 grounding). {@code onFinishWithNote} is the success-detail route: when one or more
-    * commands in the chain end via {@link Command#finishWithNote(String)} with a non-blank note, the
-    * chain still runs to completion (a success-with-note advances like a clean success) and the joined
-    * note is delivered here once the chain finishes. A fully clean chain routes through {@code onFinish}.
-    * Runs for {@link CommandCaller#UNPRIVILEGED}.
-    */
-   public void execute(
-         String line,
-         Runnable onAccepted,
-         Runnable onFinish,
-         Consumer<String> onFinishWithNote,
-         Consumer<CommandException> getException) {
-      this.execute(line, CommandCaller.UNPRIVILEGED, onAccepted, onFinish, onFinishWithNote, getException);
-   }
-
-   /**
-    * As the overload without {@code caller}, with the permission check for {@code caller}: a line
-    * {@link CommandPolicy} refuses runs no part, never reaches {@code onAccepted}, and ends on
-    * {@code getException} with a message starting {@link CommandPolicy#DENIED}. The dispatch seq still
-    * moves, since the order was given.
-    */
-   public void execute(
-         String line,
-         CommandCaller caller,
-         Runnable onAccepted,
-         Runnable onFinish,
-         Consumer<String> onFinishWithNote,
-         Consumer<CommandException> getException) {
-      if (!this.isClientCommand(line)) {
+   public void runIdle(String line) {
+      String text = line == null ? "" : line.trim();
+      String prefix = this.mod.getModSettings().getCommandPrefix();
+      if (prefix != null && !prefix.isEmpty() && text.startsWith(prefix)) {
+         text = text.substring(prefix.length()).trim();
+      }
+      if (text.isEmpty()) {
          return;
       }
-      line = line.substring(this.getCommandPrefix().length());
-      // The chain's own idle fallback after a task finishes is not a new order: bumping for it
-      // would make a plan's next step, scheduled in that same tick, look superseded.
-      if (countsAsDispatch(line) && !this.mod.getUserTaskChain().isInstallingIdleCommand()) {
-         this.mod.bumpCommandDispatchSeq();
+      if (text.contains(";")) {
+         Debug.logWarning("idleCommand \"" + line + "\" chains commands; only one runs: " + text.split(";")[0].trim());
+         text = text.split(";")[0].trim();
       }
-      String[] parts = line.split(";");
-      Command[] commands = new Command[parts.length];
-
-      try {
-         for (int i = 0; i < parts.length; i++) {
-            commands[i] = this.getCommand(parts[i]);
-         }
-      } catch (CommandException var7) {
-         getException.accept(var7);
+      Command command = this.get(text.split("\\s+")[0]);
+      if (command == null) {
+         Debug.logWarning("idleCommand names no registered command: " + text);
          return;
       }
-
-      String refusal = this.refusal(line, caller,
+      String refusal = this.refusal(text, CommandCaller.UNPRIVILEGED,
             name -> NoPvp.namesAPlayer(name, this.mod.getWorld() == null ? null : this.mod.getWorld().getServer()));
       if (refusal != null) {
-         Debug.logMessage("Refused command line \"" + line + "\": " + refusal);
-         getException.accept(new CommandException(refusal));
+         Debug.logWarning("idleCommand refused: " + refusal);
          return;
       }
-
-      if (onAccepted != null) {
-         onAccepted.run();
+      try {
+         command.run(this.mod, text, () -> { }, e -> Debug.logWarning(e.getMessage()));
+      } catch (CommandException e) {
+         Debug.logWarning("idleCommand failed: " + e.getMessage());
       }
-      this.executeRecursive(commands, parts, 0, null, onFinish, onFinishWithNote, getException);
-   }
-
-   /**
-    * Whether a line (prefix removed) moves the command dispatch seq. Gestures suspend and resume the
-    * running task rather than replace it, so a line of gestures only does not count; any other part
-    * does, since every part runs.
-    */
-   public static boolean countsAsDispatch(String lineWithoutPrefix) {
-      for (String part : lineWithoutPrefix.split(";")) {
-         String p = part.trim();
-         if (!p.isEmpty() && !p.split("\\s+")[0].equalsIgnoreCase("bodylang")) {
-            return true;
-         }
-      }
-      return false;
-   }
-
-   public void execute(String line, Consumer<CommandException> getException) {
-      this.execute(line, () -> {}, () -> {}, getException);
-   }
-
-   public void execute(String line) {
-      this.execute(line, ex -> Debug.logWarning(ex.getMessage()));
-   }
-
-   public void executeWithPrefix(String line) {
-      if (!line.startsWith(this.getCommandPrefix())) {
-         line = this.getCommandPrefix() + line;
-      }
-
-      this.execute(line);
    }
 
    /**
     * Pure, static alias lookup: returns the resolved command name when {@code raw} is a known synonym,
-    * the unchanged input otherwise. Lower-cases {@code raw} to match {@code firstCommandId}'s lowering,
-    * so the executor and the RAG-learning layer ({@code AliasLearningService}) resolve identically and
-    * a silently-aliased emission never records a phantom rejection. Needs no instance state.
+    * the unchanged input otherwise. Lower-cases {@code raw} first, so every caller resolves a synonym
+    * the same way. Needs no instance state.
     */
    public static String resolveName(String raw) {
       if (raw == null) {

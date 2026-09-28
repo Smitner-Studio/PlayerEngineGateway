@@ -11,9 +11,9 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 /**
- * {@code job.json} beside a companion's {@code conversation.jsonl}, written as {@code PlanStore}
- * writes {@code plan.json}: to a sibling {@code .tmp}, then an atomic move over the file, so a crash
- * mid-write leaves the previous file whole. Never throws.
+ * {@code job.json} beside a companion's {@code conversation.jsonl}, written to a sibling
+ * {@code .tmp}, then moved atomically over the file, so a crash mid-write leaves the previous file
+ * whole. Never throws.
  */
 public final class JobStore {
     private static final Logger LOGGER = LogManager.getLogger();

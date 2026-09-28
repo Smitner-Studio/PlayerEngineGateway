@@ -86,6 +86,7 @@ public final class ProgramJobs {
             return;
         }
         Job active = board.active();
+        port.region(motion(active));
         ProgramPort.Delivery d;
         while ((d = port.poll()) != null) {
             if (active != null) {
@@ -116,8 +117,8 @@ public final class ProgramJobs {
             board.cancel();
         }
         Job job = Job.start(UUID.randomUUID().toString().substring(0, 8), g, initiator == null ? ""
-                : initiator.toString(), lint, PROFILE, api);
-        port.region(regionFor(initiator));
+                : initiator.toString(), lint, PROFILE, api).region(regionFor(initiator));
+        port.region(motion(job));
         board.give(job);
         see(job);
         mod.setJobStatusLine(board.promptTail());
@@ -146,7 +147,8 @@ public final class ProgramJobs {
             resumed = board.active();
         }
         if (resumed != null) {
-            port.region(regionFor(speaker));
+            // Ruling 3b: the region is the one the job was created with, whoever resumes it.
+            port.region(motion(resumed));
             see(resumed);
             mod.setJobStatusLine(board.promptTail());
         }
@@ -273,8 +275,15 @@ public final class ProgramJobs {
         seenPause = j == null ? null : j.pause();
     }
 
-    /** §4.2: within 48 blocks of the initiator at job start; the companion's own place when the initiator is not here. */
-    private MotionBounds.Region regionFor(UUID initiator) {
+    /** The seam's form of a job's region; null for no job or a job without one. */
+    private static MotionBounds.Region motion(Job job) {
+        Job.Region r = job == null ? null : job.region();
+        return r == null ? null : new MotionBounds.Region(r.dimension(), new AreaSpec.Pos(r.x(), r.y(), r.z()),
+                r.radius());
+    }
+
+    /** §4.2: within 48 blocks of the initiator at creation; the companion's own place when the initiator is not here. */
+    private Job.Region regionFor(UUID initiator) {
         LivingEntity self = mod.getPlayer();
         if (self == null || self.getServer() == null) {
             return null;
@@ -286,8 +295,8 @@ public final class ProgramJobs {
                 anchor = p;
             }
         }
-        return MotionBounds.Region.around(self.level().dimension().location().toString(),
-                new AreaSpec.Pos(anchor.getBlockX(), anchor.getBlockY(), anchor.getBlockZ()));
+        return new Job.Region(self.level().dimension().location().toString(), anchor.getBlockX(),
+                anchor.getBlockY(), anchor.getBlockZ(), MotionBounds.RADIUS);
     }
 
     private UUID ownerUuid() {

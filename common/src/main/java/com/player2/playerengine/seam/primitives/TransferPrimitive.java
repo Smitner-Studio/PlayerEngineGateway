@@ -30,21 +30,6 @@ abstract class TransferPrimitive extends Base {
         this.command = command;
     }
 
-    /** {@code <x> <y> <z> <items...>}, the storage commands' grammar; any other form stays with the command. */
-    @Override
-    public LineArgs fromLine(String argsText, Context ctx) {
-        String[] t = argsText.trim().split("\\s+", 4);
-        if (t.length < 3 || !t[0].matches("-?\\d+") || !t[1].matches("-?\\d+") || !t[2].matches("-?\\d+")) {
-            return null;
-        }
-        Map<String, Object> raw = new LinkedHashMap<>();
-        raw.put("c", t[0] + " " + t[1] + " " + t[2]);
-        if (t.length == 4) {
-            raw.put("items", t[3]);
-        }
-        return LineArgs.of(raw, Map.of());
-    }
-
     @Override
     public ActionError admit(Map<String, Object> args, Context ctx) {
         ContainerHandle c = (ContainerHandle) args.get("c");

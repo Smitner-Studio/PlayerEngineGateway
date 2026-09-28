@@ -28,12 +28,6 @@
   "help.playerengine.rag-retrieve.arg.category": "検索を絞り込むためのオプションのカテゴリタグ。目標より前に複数回指定できます。",
   "help.playerengine.rag-reload.short": "すべてのRAGオーバーレイファイルを再読み込みし、インデックスを再構築します。",
   "help.playerengine.rag-reload.long": "ディスクからすべてのオーバーレイファイルを再読み込みし、グローバルリトリーバーを再構築して、オーナー別キャッシュをすべて破棄します。",
-  "help.playerengine.rag-audit-tail.short": "RAGエイリアス学習監査ログの直近N件を表示します。",
-  "help.playerengine.rag-audit-tail.arg.n": "表示する監査ログの行数（デフォルト20）。",
-  "help.playerengine.rag-reset-learned.short": "特定のツールまたはすべてのツールについて、学習済みのRAGエイリアスを消去します。",
-  "help.playerengine.rag-reset-learned.long": "実行したオーナー（--all-ownersを指定した場合はすべてのオーナー）のエイリアス学習データを削除します。オプションで単一のツールに範囲を限定できます。",
-  "help.playerengine.rag-reset-learned.arg.toolId": "リセットの対象をこのツールIDに限定します（省略時はすべてのツールが対象）。",
-  "help.playerengine.rag-reset-learned-all-owners.short": "すべてのオーナーの学習済みRAGエイリアスを消去します。",
   "help.playerengine.rag-inspect.short": "指定したツールIDのマージ済みツールドキュメントを表示します。",
   "help.playerengine.rag-inspect.long": "実行したプレイヤーのインデックスにおけるマージ済みツールドキュメントの全フィールドを表示します。オーバーレイによって追加されたキーワードや例には[+]が付きます。",
   "help.playerengine.rag-inspect.arg.toolId": "検査対象のツールID。",
@@ -161,9 +155,6 @@
   "message.playerengine.rag.reload_failed": "RAGの再読み込みが完了しました。グローバルインデックス: FAILED",
   "message.playerengine.rag.not_initialized": "RAGインデックスが初期化されていません。",
   "message.playerengine.rag.inspect_tool_not_found": "ID「%s」のツールが見つかりません。",
-  "message.playerengine.rag.audit_no_rows": "(行なし)",
-  "message.playerengine.rag.reset_learned_console_error": "コンソールではreset_learned --all-ownersを使用するか、playerでオーナーコンテキストを指定してください。",
-  "message.playerengine.rag.reset_learned_success": "%1$s%2$sの学習済みオーバーレイをリセットしました（オーナーディレクトリ%3$d件が対象）。",
 
   "message.playerengine.routing.unknown_task_class": "タスククラス「%s」は不明です。RETRIEVAL, RERANKING, SUMMARIZATION, PLANNING, or DECISION のいずれかを使用してください。",
 

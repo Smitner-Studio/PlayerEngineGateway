@@ -28,12 +28,6 @@
   "help.playerengine.rag-retrieve.arg.category": "وسم تصنيف اختياري لتقييد الاسترجاع؛ يمكن تكراره قبل الهدف.",
   "help.playerengine.rag-reload.short": "إعادة تحميل جميع ملفات تراكب RAG وإعادة بناء الفهرس.",
   "help.playerengine.rag-reload.long": "يعيد قراءة جميع ملفات التراكب من القرص، ويعيد بناء أداة الاسترجاع العامة، ويُفرغ جميع ذاكرات التخزين المؤقت الخاصة بكل مالك.",
-  "help.playerengine.rag-audit-tail.short": "طباعة آخر N إدخالات من سجل تدقيق تعلّم الأسماء المستعارة في RAG.",
-  "help.playerengine.rag-audit-tail.arg.n": "عدد صفوف التدقيق الأخيرة المراد عرضها (الافتراضي 20).",
-  "help.playerengine.rag-reset-learned.short": "مسح الأسماء المستعارة المتعلَّمة في RAG لأداة واحدة أو لجميع الأدوات.",
-  "help.playerengine.rag-reset-learned.long": "يزيل بيانات تعلّم الأسماء المستعارة الخاصة بالمالك المنفّذ للأمر (أو جميع الملاك عند استخدام --all-owners)، ويمكن تقييده اختياريًا بأداة واحدة.",
-  "help.playerengine.rag-reset-learned.arg.toolId": "تقييد إعادة التعيين بمعرّف هذه الأداة (احذف هذا المعامل لتطبيق إعادة التعيين على جميع الأدوات).",
-  "help.playerengine.rag-reset-learned-all-owners.short": "مسح الأسماء المستعارة المتعلَّمة في RAG لجميع الملاك.",
   "help.playerengine.rag-inspect.short": "طباعة مستند الأداة المدمَج لمعرّف أداة معيّن.",
   "help.playerengine.rag-inspect.long": "يعرض جميع حقول مستند الأداة المدمَج الخاص بفهرس اللاعب المنفّذ للأمر؛ تُميَّز الكلمات المفتاحية والأمثلة المضافة عبر تراكب بالعلامة [+].",
   "help.playerengine.rag-inspect.arg.toolId": "معرّف الأداة المطلوب فحصها.",
@@ -161,9 +155,6 @@
   "message.playerengine.rag.reload_failed": "اكتملت إعادة تحميل RAG. الفهرس العام: فشل",
   "message.playerengine.rag.not_initialized": "فهرس RAG غير مهيأ.",
   "message.playerengine.rag.inspect_tool_not_found": "أداة غير معروفة بالمعرّف '%s'.",
-  "message.playerengine.rag.audit_no_rows": "(لا توجد صفوف)",
-  "message.playerengine.rag.reset_learned_console_error": "يجب على وحدة التحكم استخدام reset_learned --all-owners أو تحديد سياق المالك عبر اللاعب.",
-  "message.playerengine.rag.reset_learned_success": "تمت إعادة تعيين الطبقات المتعلمة لـ %1$s%2$s (تم التأثير في %3$d من مجلد(ات) المالك).",
 
   "message.playerengine.routing.unknown_task_class": "فئة المهمة غير معروفة: '%s'. استخدم RETRIEVAL, RERANKING, SUMMARIZATION, PLANNING, أو DECISION.",
 

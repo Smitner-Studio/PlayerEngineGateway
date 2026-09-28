@@ -25,21 +25,6 @@ final class FillPrimitive extends Base {
         super("fill");
     }
 
-    /** Every form the {@code fill} command takes: a block, then a size with anchor and facing, or two corners. */
-    @Override
-    public LineArgs fromLine(String argsText, Context ctx) {
-        String[] err = new String[1];
-        AreaSpec.Request req = AreaSpec.parse(argsText, true, err);
-        if (req == null) {
-            return LineArgs.failed(ActionError.of(FailureCode.BAD_ARGS, err[0]));
-        }
-        AreaSpec.Resolved resolved = AreaSpec.resolve(req, AreaCommand.anchors(ctx.mod()));
-        if (resolved.error() != null) {
-            return LineArgs.failed(ActionError.of(FailureCode.BAD_ARGS, resolved.error()));
-        }
-        return LineArgs.of(Map.of("block", req.block(), "box", resolved.box()), Map.of("confirm", req.confirm()));
-    }
-
     /** Null when {@code id} names a block with an item to place, else {@code bad_args}. */
     static ActionError placeable(String id) {
         Block b = Queries.block(id);

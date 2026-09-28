@@ -79,7 +79,6 @@ import com.player2.playerengine.player2api.manager.ConversationManager;
 import com.player2.playerengine.retrieval.RagIndex;
 import com.player2.playerengine.retrieval.RetrievalHit;
 import com.player2.playerengine.retrieval.SeedToolMetadata;
-import com.player2.playerengine.retrieval.learning.AliasLearningService;
 import com.player2.playerengine.retrieval.ToolDocument;
 import com.player2.playerengine.retrieval.ToolRetriever;
 import com.player2.playerengine.modintelligence.ModIntelligenceService;
@@ -465,17 +464,6 @@ public class MCCommands {
         HelpRegistry.register(new HelpEntry("playerengine", "rag reload", "rag reload",
                 "help.playerengine.rag-reload.short", "help.playerengine.rag-reload.long",
                 List.of(), 2, null, "rag"));
-        HelpRegistry.register(new HelpEntry("playerengine", "rag audit tail", "rag audit tail [n]",
-                "help.playerengine.rag-audit-tail.short", null,
-                List.of(new ArgNote("n", "help.playerengine.rag-audit-tail.arg.n")), 2, null, "rag"));
-        HelpRegistry.register(new HelpEntry("playerengine", "rag reset_learned",
-                "rag reset_learned [toolId] [--all-owners]",
-                "help.playerengine.rag-reset-learned.short", "help.playerengine.rag-reset-learned.long",
-                List.of(new ArgNote("toolId", "help.playerengine.rag-reset-learned.arg.toolId")), 2, null, "rag"));
-        HelpRegistry.register(new HelpEntry("playerengine", "rag reset_learned --all-owners",
-                "rag reset_learned [toolId] --all-owners",
-                "help.playerengine.rag-reset-learned-all-owners.short", null,
-                List.of(), 2, null, "rag"));
         HelpRegistry.register(new HelpEntry("playerengine", "rag inspect", "rag inspect <toolId>",
                 "help.playerengine.rag-inspect.short", "help.playerengine.rag-inspect.long",
                 List.of(new ArgNote("toolId", "help.playerengine.rag-inspect.arg.toolId")), 2, null, "rag"));
@@ -628,13 +616,6 @@ public class MCCommands {
                             ctx.getSource().sendSuccess(() -> displayMsg, true);
                             return 1;
                         }))
-                .then(Commands.literal("audit")
-                        .then(Commands.literal("tail")
-                                .executes(ctx -> executeRagAuditTail(ctx, 20))
-                                .then(Commands.argument("n", IntegerArgumentType.integer(1, 100))
-                                        .executes(ctx -> executeRagAuditTail(
-                                                ctx, IntegerArgumentType.getInteger(ctx, "n"))))))
-                .then(buildRagResetLearnedCommand())
                 .then(Commands.literal("inspect")
                         .then(Commands.argument("toolId", StringArgumentType.word())
                                 .executes(ctx -> {
@@ -928,60 +909,6 @@ public class MCCommands {
 
         LOGGER.info(sb.toString());
         src.sendSuccess(() -> Component.literal(sb.toString()), false);
-        return 1;
-    }
-
-    private static int executeRagAuditTail(CommandContext<CommandSourceStack> ctx, int n) {
-        MinecraftServer server = ctx.getSource().getServer();
-        List<String> lines = AliasLearningService.auditTail(server, n);
-        String body = String.join("\n", lines);
-        ctx.getSource().sendSuccess(() -> body.isEmpty()
-                ? Component.translatable("message.playerengine.rag.audit_no_rows")
-                : Component.literal(body), false);
-        return 1;
-    }
-
-    private static LiteralArgumentBuilder<CommandSourceStack> buildRagResetLearnedCommand() {
-        return Commands.literal("reset_learned")
-                .executes(ctx -> executeRagResetLearned(ctx, null, false))
-                .then(Commands.literal("--all-owners")
-                        .executes(ctx -> executeRagResetLearned(ctx, null, true))
-                        .then(Commands.argument("toolId", StringArgumentType.word())
-                                .executes(ctx -> executeRagResetLearned(
-                                        ctx,
-                                        StringArgumentType.getString(ctx, "toolId"),
-                                        true))))
-                .then(Commands.argument("toolId", StringArgumentType.word())
-                        .executes(ctx -> executeRagResetLearned(
-                                ctx,
-                                StringArgumentType.getString(ctx, "toolId"),
-                                false))
-                        .then(Commands.literal("--all-owners")
-                                .executes(ctx -> executeRagResetLearned(
-                                        ctx,
-                                        StringArgumentType.getString(ctx, "toolId"),
-                                        true))));
-    }
-
-    private static int executeRagResetLearned(
-            CommandContext<CommandSourceStack> ctx, String toolId, boolean allOwners) {
-        CommandSourceStack src = ctx.getSource();
-        MinecraftServer server = src.getServer();
-        UUID ownerUuid = null;
-        if (!allOwners) {
-            try {
-                ServerPlayer player = src.getPlayerOrException();
-                ownerUuid = player.getUUID();
-            } catch (Exception e) {
-                src.sendFailure(Component.translatable("message.playerengine.rag.reset_learned_console_error"));
-                return 0;
-            }
-        }
-        int count = AliasLearningService.resetLearned(server, ownerUuid, toolId);
-        String scope = allOwners ? "all owners" : ("owner " + ownerUuid);
-        String tool = toolId != null ? (" tool=" + toolId) : " (all tools)";
-        src.sendSuccess(() -> Component.translatable("message.playerengine.rag.reset_learned_success",
-                scope, tool, count), true);
         return 1;
     }
 

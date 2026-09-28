@@ -111,7 +111,16 @@ final class Program {
     static List<Expr> children(Expr e) {
         return switch (e) {
             case ArrayLit a -> a.items();
-            case ObjectLit o -> o.values();
+            case ObjectLit o -> {
+                List<Expr> l = new java.util.ArrayList<>(o.values().size() * 2);
+                for (Expr k : o.computed()) {
+                    if (k != null) {
+                        l.add(k);
+                    }
+                }
+                l.addAll(o.values());
+                yield l;
+            }
             case Member m -> List.of(m.object());
             case Index i -> List.of(i.object(), i.index());
             case Call c -> {

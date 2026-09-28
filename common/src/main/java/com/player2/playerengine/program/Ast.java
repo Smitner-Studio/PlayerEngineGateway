@@ -41,7 +41,11 @@ final class Ast {
     record ArrayLit(List<Expr> items, int line, int col) implements Expr {
     }
 
-    record ObjectLit(List<String> keys, List<Expr> values, int line, int col) implements Expr {
+    /**
+     * {@code computed} has one entry per field: null for a plain key ({@code keys} holds it), else the
+     * expression of a computed key {@code [k]: v} (its {@code keys} entry is empty).
+     */
+    record ObjectLit(List<String> keys, List<Expr> computed, List<Expr> values, int line, int col) implements Expr {
     }
 
     record Member(Expr object, String name, int line, int col) implements Expr {

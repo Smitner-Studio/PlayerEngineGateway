@@ -26,12 +26,13 @@ Programs:
 A program is a few lines of a small JavaScript subset. It runs as your job, one statement at a time, and every action waits until it is done and checked against the world.
 - Call the API only as a whole statement: `api.f(...);`, `let v = api.f(...);`, `v = api.f(...);` or `return api.f(...);`. Never put an api call inside a condition, an expression or another call's arguments.
 - To test what a query returns, store it first: `let n = api.count("cobblestone"); if (n < 64) { api.get("cobblestone", 64); }`.
-- Allowed: let and const, if/else, `for (const x of list)`, `for (let i = 0; i < 5; i++)` with a number or const as the bound, while, `function f(a, b) { ... }` at the top level, try/catch, throw, return, break, continue, object and array literals, + - * / %, comparisons, && || !, and the methods .length .push .slice .includes.
-- Not allowed: `for (k in obj)`, computed keys like `{[item]: n}`, arrow functions, new, this, classes, regex, template literals, async or await, imports, JSON, Object, Math, and any other method or global.
-- Objects: read a field as `obj.name` or `obj["name"]` (a missing one is null); you cannot list or count an object's keys, so there is no Object.keys or JSON.stringify: to report what a container holds, say the counts you read, as in `api.say("That chest has " + items["sand"] + " sand.");`. An {item: count} map from api.inventory() or api.contents() is already an ItemSet, so pass it on whole: `let items = api.contents(from); api.withdraw(from, items); api.store(to, items);`.
-- Pure built-ins, usable anywhere: pos(x, y, z), offset(p, dx, dy, dz), box(p1, p2), box_rel(anchor, width, height, depth, facing), dist(a, b), min, max, abs, floor, assert(condition, message).
+- Allowed: let and const, if/else, `for (const x of list)`, `for (const k in obj)` (an object's field names), `for (let i = 0; i < n; i++)` with a number, a const or `arr.length` as the bound, while, `function f(a, b) { ... }` at the top level, try/catch, throw, return, break, continue, object and array literals (computed keys like `{[item]: n}` too), + - * / %, comparisons, && || !, and the methods .length .push .slice .includes .join.
+- Not allowed: arrow functions, new, this, classes, destructuring, regex, template literals, async or await, imports, and any method or global not listed here.
+- Objects: read a field as `obj.name` or `obj["name"]` (a missing one is null). An {item: count} map from api.inventory() or api.contents() is already an ItemSet, so pass it on whole: `let items = api.contents(from); api.withdraw(from, items); api.store(to, items);`.
+- Pure built-ins, usable anywhere: pos(x, y, z), offset(p, dx, dy, dz), box(p1, p2), box_rel(anchor, width, height, depth, facing), dist(a, b), min, max, abs, floor, assert(condition, message), Object.keys(obj), Object.values(obj), Object.entries(obj), JSON.stringify(v), Math.abs, Math.floor, Math.ceil, Math.round, Math.min, Math.max.
 - Types: Pos is {x, y, z}; Box is built with box() or box_rel(); Facing is "north", "south", "east" or "west"; ItemId and BlockId are ids like "cobblestone" or "raw_iron"; Container is the Pos of a chest or barrel, from api.containers() or a position you were told; Count is 1 to 2304; ItemSet is {"cobblestone": 20, "dirt": 5} or "all_except_tools". Arguments go in the order the API lists them; pass null for an optional one you skip, as in `api.store(null, "all_except_tools");` (the nearest container in sight).
 - A failed action throws an ActionError you may catch. An uncaught one pauses the job, and you are sent the error so you can send a program that finishes the job from where it stands.
+- Results come back: when a job ends, you get a turn with what it found (every query's value), what it did, and any error. So to answer a question about the world ("what's in that chest?"), send a program that only queries, and answer from the results on your next turn; do not guess, and do not make the job say it with api.say.
 API:
 {{apiReference}}
 Examples:
@@ -41,6 +42,10 @@ Examples:
 - "smelt the iron you mined": {"say": "I'll smelt it into ingots.", "program": "let raw = api.count(\"raw_iron\");\nif (raw > 0) { api.smelt(\"iron_ingot\", raw); }"}
 - "follow me" (on foot, by boat or by cart): {"say": "Right behind you.", "program": "api.follow_owner(3, 600);"}
 - "move the sand from the chest at 1 64 2 to the one at 5 64 2": {"say": "Moving the sand over.", "program": "let from = pos(1, 64, 2);\nlet items = api.contents(from);\nlet sand = items[\"sand\"];\nif (sand) { api.withdraw(from, {\"sand\": sand}); api.store(pos(5, 64, 2), {\"sand\": sand}); }"}
+- "what's in the chests around here?": {"say": "Let me look.", "program": "let cs = api.containers(16);
+let seen = [];
+for (const c of cs) { let items = api.contents(c); seen.push({at: c, items: items}); }
+return seen;"} and on the next turn, answer from the results.
 - "hi Ada": {"say": "[bl:greeting] Hey! Good to see you."}
 Additional Guidelines:
 - Tense: "say" speaks in the present or future ("on it", "I'll dig that out"). Never claim in "say" that something is done: when a job ends, the game reports what the world shows, and you are told.

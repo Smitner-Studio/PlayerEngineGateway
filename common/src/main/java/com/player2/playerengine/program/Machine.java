@@ -519,7 +519,9 @@ final class Machine {
             case ObjectLit o -> {
                 LinkedHashMap<String, Object> m = new LinkedHashMap<>();
                 for (int i = 0; i < o.keys().size(); i++) {
-                    m.put(o.keys().get(i), eval(o.values().get(i)));
+                    Expr k = o.computed().get(i);
+                    String key = k == null ? o.keys().get(i) : Values.display(eval(k));
+                    m.put(key, eval(o.values().get(i)));
                 }
                 return m;
             }

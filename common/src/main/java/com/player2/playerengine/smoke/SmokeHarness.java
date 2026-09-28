@@ -843,12 +843,16 @@ public final class SmokeHarness {
                 waitFor(() -> mod().getCommandDispatchSeq() > seq[0]
                                 ? "stranger naming " + unique + " from 100 blocks: acted on" : null,
                         REFUSAL_WINDOW_SEC, "the stranger's unique-name ask was dropped"),
+                // Movement is unbounded (ruling 3a): the goto is 100 blocks from its initiator, outside
+                // the job's region, and still runs.
+                window(() -> mod().getJobStatusLine().contains("out_of_region")
+                                ? "!the goto was bounded by the region: " + mod().getJobStatusLine() : null,
+                        4, () -> "a goto 100 blocks from its initiator is not bounded"),
                 act(() -> {
                     ConversationManager.noticeTap = null;
                     FakePlayers.teleport(owner, site.offset(0, 1, -3));
                 }),
-                // A far player's goto is outside the job's region around that player (§4.2), so the
-                // job pauses for repair; the stop ends it before the next scenario.
+                // The walk may still be going; the stop ends it before the next scenario.
                 act(() -> say(OWNER_ID, OWNER_NAME, "stop")),
                 waitFor(() -> mod().getJobStatusLine().isEmpty() ? "" : null, 10,
                         () -> "the stop left job '" + mod().getJobStatusLine() + "'"));

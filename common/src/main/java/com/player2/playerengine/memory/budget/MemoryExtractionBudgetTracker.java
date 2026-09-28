@@ -8,9 +8,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Per-billing-key windowed call ceiling for the ENTIRE memory pipeline (extraction + folded-in
- * importance + reflection + layer-3 alias). Clone of
- * {@code retrieval.learning.DeepCheckBudgetTracker}, but a SEPARATE window map so memory spend is
- * independent of and additive to chat/DeepCheck.
+ * importance + reflection + layer-3 alias), with its own window map so memory spend is independent
+ * of and additive to the chat caps.
  *
  * <p>The hard guarantee from the cost model is the <em>call count</em>: at most
  * {@code callsPerWindow} memory {@code /chat/completions} per billing key per

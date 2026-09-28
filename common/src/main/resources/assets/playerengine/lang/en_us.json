@@ -34,12 +34,6 @@
   "help.playerengine.rag-retrieve.arg.category": "Optional category tag to restrict retrieval; repeatable before the goal.",
   "help.playerengine.rag-reload.short": "Reload all RAG overlay files and rebuild the index.",
   "help.playerengine.rag-reload.long": "Re-reads all overlay files from disk, rebuilds the global retriever, and evicts all per-owner caches.",
-  "help.playerengine.rag-audit-tail.short": "Print the last N entries of the RAG alias-learning audit log.",
-  "help.playerengine.rag-audit-tail.arg.n": "How many trailing audit rows to show (default 20).",
-  "help.playerengine.rag-reset-learned.short": "Clear learned RAG aliases for a tool or all tools.",
-  "help.playerengine.rag-reset-learned.long": "Removes alias-learning data for the executing owner (or all owners with --all-owners), optionally scoped to a single tool.",
-  "help.playerengine.rag-reset-learned.arg.toolId": "Limit the reset to this tool id (omit for all tools).",
-  "help.playerengine.rag-reset-learned-all-owners.short": "Clear learned RAG aliases across all owners.",
   "help.playerengine.rag-inspect.short": "Print the merged tool document for a tool id.",
   "help.playerengine.rag-inspect.long": "Shows all fields of the merged tool document for the executing player's index; keywords and examples added by an overlay are marked with [+].",
   "help.playerengine.rag-inspect.arg.toolId": "The tool id to inspect.",
@@ -172,9 +166,6 @@
   "message.playerengine.rag.reload_failed": "RAG reload complete. Global index: FAILED",
   "message.playerengine.rag.not_initialized": "RAG index not initialized.",
   "message.playerengine.rag.inspect_tool_not_found": "No tool found with id '%s'.",
-  "message.playerengine.rag.audit_no_rows": "(no rows)",
-  "message.playerengine.rag.reset_learned_console_error": "Console must use reset_learned --all-owners or specify owner context via player.",
-  "message.playerengine.rag.reset_learned_success": "Reset learned overlays for %1$s%2$s (%3$d owner dir(s) touched).",
 
   "message.playerengine.routing.unknown_task_class": "Unknown task class: %s. Use RETRIEVAL, RERANKING, SUMMARIZATION, PLANNING, or DECISION.",
 

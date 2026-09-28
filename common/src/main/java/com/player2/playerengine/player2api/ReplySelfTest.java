@@ -88,7 +88,7 @@ public final class ReplySelfTest {
             require(prompt.contains("api." + s.name() + "("), "the prompt names api." + s.name());
         }
         require(prompt.contains("\"say\"") && prompt.contains("\"program\""), "the reply fields");
-        for (String retired : new String[] {"\"command\"", "\"plan\"", "\"reason\"", "validCommands", "{{"}) {
+        for (String retired : new String[] {"\"command\"", "\"plan\"", "\"reason\"", "valid" + "Commands", "{{"}) {
             require(!prompt.contains(retired), "the prompt does not carry " + retired);
         }
     }

@@ -3,9 +3,8 @@ package com.player2.playerengine.memory.budget;
 import com.player2.playerengine.player2api.config.Player2ServerRuntimeConfig;
 
 /**
- * Per-billing-key memory-pipeline call ceiling (clone of
- * {@code retrieval.learning.DeepCheckBudgetThresholds}). Independent of and additive to the
- * chat/DeepCheck windowed caps — this is the memory pipeline's OWN hard ceiling, the worst-case
+ * Per-billing-key memory-pipeline call ceiling. Independent of and additive to the chat caps —
+ * this is the memory pipeline's OWN hard ceiling, the worst-case
  * spend lever from the Phase D cost model ({@code memoryCallsPerWindow} completions per owner
  * per {@code memoryWindowMinutes}).
  */

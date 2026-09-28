@@ -82,22 +82,25 @@ tasks.register('lintPrograms', JavaExec) {
 // only the retired paths had; a hit anywhere in the sources fails the build's test gate.
 def checkCutover = tasks.register('checkCutover') {
     group = 'verification'
-    description = 'Fails when a retired command-era reader or consumer is back in the sources.'
+    description = 'Fails when a retired command-era reader, consumer, the @ grammar or the RAG learning layer is back in the sources.'
     def dir = file('src/main/java')
     inputs.dir(dir)
     doLast {
         def retired = [
             ~/getStringJsonSafely\(\s*\w+\s*,\s*"(?:command|plan|reason|message)"\s*\)/,
             ~/\.get\("(?:command|plan)"\)/,
-            ~/onCommandListGenerated/,
-            ~/RepeatedCommandFailureGuard/,
-            ~/isRedundantAssistantAfterInfo/,
-            ~/maybePostDecisionRetry/,
-            ~/maybeModelRequestedDeepSearch/,
-            ~/RagDeepSearchCommands/,
+            ~/\bonCommandListGenerated\b/,
+            ~/\bRepeatedCommandFailureGuard\b/,
+            ~/\bisRedundantAssistantAfterInfo\b/,
+            ~/\bmaybePostDecisionRetry\b/,
+            ~/\bmaybeModelRequestedDeepSearch\b/,
+            ~/\bRagDeepSearchCommands\b/,
             ~/\?\s*"bodylang greeting"|ONLY USE COMMAND/,
-            ~/PlanParser|PlanCoordinator|PlanStore/,
-            ~/validCommands/,
+            ~/\bPlanParser\b|\bPlanCoordinator\b|\bPlanStore\b/,
+            ~/\bvalidCommands\b/,
+            // The @ command grammar (R15) and the RAG learning layer the command path fed.
+            ~/\bexecuteWithPrefix\b|\bisClientCommand\b|\bCommandLines\b|\bfromLine\b|\bLineArgs\b/,
+            ~/retrieval\.learning|\bAliasLearning\w*|\bDeepCheck(?:Budget|Rephrase|Response|Prompt|JsonParser|Attempt)\w*/,
         ]
         int files = 0
         dir.eachFileRecurse { File f ->

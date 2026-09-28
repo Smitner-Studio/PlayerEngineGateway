@@ -23,11 +23,6 @@ abstract class Base implements Primitive {
     }
 
     @Override
-    public LineArgs fromLine(String argsText, Context ctx) {
-        return null;
-    }
-
-    @Override
     public ActionError admit(Map<String, Object> args, Context ctx) {
         return null;
     }

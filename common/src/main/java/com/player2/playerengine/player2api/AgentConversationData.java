@@ -25,6 +25,7 @@ import com.player2.playerengine.player2api.status.AgentStatus;
 import com.player2.playerengine.player2api.status.StatusUtils;
 import com.player2.playerengine.player2api.status.WorldStatus;
 import com.player2.playerengine.program.Job;
+import com.player2.playerengine.program.JobResults;
 import com.player2.playerengine.program.Linter;
 import com.player2.playerengine.seam.ActionError;
 import com.player2.playerengine.tasks.LookAtOwnerTask;
@@ -164,6 +165,9 @@ public class AgentConversationData {
      * that does not lint ends the attempt; a player's next line clears it.
      */
     private volatile boolean lintRepairOpen;
+    /** Results turns (the loop) since the last player line; see {@link #feedResults}. */
+    static final int MAX_FOLLOW_UPS = 2;
+    private volatile int followUpsThisAsk;
     /** What happened to the last reply's program, for the smoke harness and the log. */
     private volatile String lastProgramVerdict = "";
     /** Said instead of calling the model when a turn cap is reached ({@link TurnCaps}). */
@@ -320,6 +324,7 @@ public class AgentConversationData {
         turnCurrentMood = Optional.empty();
         repairs.reset();
         lintRepairOpen = false;
+        followUpsThisAsk = 0;
         consecutiveParseFailures = 0;
         consecutivePeerReplies = 0;
         peerLinesAnsweredSinceHuman.set(0);
@@ -1106,13 +1111,36 @@ public class AgentConversationData {
         }
     }
 
-    /** What the jobs report, turned into lines and model notes. No model call except for a repair. */
+    /**
+     * The results loop: an ended job's findings, report and error come back to the model as the next
+     * turn, so it can answer from what the world showed or carry the ask on. At most
+     * {@link #MAX_FOLLOW_UPS} such turns per player line; past that the results wait, as context, for
+     * the next real turn. Each turn is a model turn like any other, so the R17 caps charge it.
+     */
+    private void feedResults(Job job) {
+        String results = "Results: " + JobResults.render(job);
+        if (followUpsThisAsk < MAX_FOLLOW_UPS) {
+            followUpsThisAsk++;
+            LOGGER.info("[Job] bot={} results turn {}/{} for job {}", getName(), followUpsThisAsk, MAX_FOLLOW_UPS,
+                    job.id());
+            addEventToQueue(new InfoMessage(results + " Answer or carry on from these; say nothing more if the ask is"
+                    + " done."));
+        } else {
+            LOGGER.info("[Job] bot={} results for job {} kept as context: follow-up limit reached", getName(), job.id());
+            deferInfo(new InfoMessage(cut(results, MAX_DEFERRED_INFO_MESSAGE_LENGTH)));
+        }
+    }
+
+    /** What the jobs report, turned into lines and model notes. */
     private final class JobReports implements ProgramJobs.Listener {
         @Override
         public void done(Job job, String report) {
             repairs.forget(job.goal());
             LOGGER.info("[Job] bot={} job {} done: {}", getName(), job.id(), report);
-            speakTemplate(report, playerName(job.initiator()));
+            if (!JobResults.queryOnly(job)) {
+                speakTemplate(report, playerName(job.initiator()));
+            }
+            feedResults(job);
             if (mod.getModSettings().isEnableLookAtOwnerIdle()) {
                 mod.runIdleUserTask(new LookAtOwnerTask());
             }
@@ -1125,8 +1153,8 @@ public class AgentConversationData {
             LOGGER.info("[Job] bot={} job {} paused for repair: {}", getName(), job.id(), what);
             if (repairs.record(job.goal(), what) == RepairLimit.Decision.REPAIR) {
                 addEventToQueue(new InfoMessage("Job \"" + job.goal() + "\" paused: " + what + ". So far: "
-                        + job.report() + " Send a program that finishes the job from where it stands, or no"
-                        + " program and tell the player what went wrong."));
+                        + job.report() + " " + JobResults.render(job) + " Send a program that finishes the job"
+                        + " from where it stands, or no program and tell the player what went wrong."));
                 return;
             }
             jobs.stop();
@@ -1143,9 +1171,7 @@ public class AgentConversationData {
             String why = error == null ? "a limit was reached" : error.message();
             LOGGER.info("[Job] bot={} job {} failed: {}", getName(), job.id(), error == null ? why : error.toLine());
             speakTemplate(cut("I had to stop " + job.goal() + ": " + why + ".", 200), playerName(job.initiator()));
-            deferInfo(new InfoMessage(cut("The job \"" + job.goal() + "\" stopped: "
-                    + (error == null ? why : error.toLine()) + ". So far: " + job.report()
-                    + " Do not claim more than that.", MAX_DEFERRED_INFO_MESSAGE_LENGTH)));
+            feedResults(job);
         }
 
         @Override
@@ -1168,6 +1194,7 @@ public class AgentConversationData {
         if (event instanceof Event.UserMessage um) {
             peerLinesAnsweredSinceHuman.set(0);
             lintRepairOpen = false;
+            followUpsThisAsk = 0;
             if (handleJobLine(um)) {
                 return;
             }

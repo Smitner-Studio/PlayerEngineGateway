@@ -357,7 +357,17 @@ final class Parser {
             return new ForOf(id, decl.is("const"), name, iterable, body(), t.line(), t.col());
         }
         if (peek(2).is("in")) {
-            throw unsupported(peek(2));
+            // for (const k in obj) is a loop over Object.keys(obj): an object's field names in order,
+            // an array's indices.
+            take();
+            Token nameTok = peek();
+            String name = ident("the loop variable");
+            take();
+            Expr object = expression();
+            expect(")", "to close the for");
+            Expr keys = new Call(new Ident("Object.keys", nameTok.line(), nameTok.col()), List.of(object),
+                    nameTok.line(), nameTok.col());
+            return new ForOf(id, decl.is("const"), name, keys, body(), t.line(), t.col());
         }
         Let init = let();
         if (init.init() == null) {
@@ -493,7 +503,12 @@ final class Parser {
                     throw error(name, "expected a field name after '.'");
                 }
                 take();
-                e = new Member(e, name.text(), t.line(), t.col());
+                if (e instanceof Ident ns && Builtins.NAMESPACES.contains(ns.name())) {
+                    // Object.keys, JSON.stringify, Math.floor: one built-in name each.
+                    e = new Ident(ns.name() + "." + name.text(), ns.line(), ns.col());
+                } else {
+                    e = new Member(e, name.text(), t.line(), t.col());
+                }
             } else if (t.is("[")) {
                 take();
                 Expr idx = expression();
@@ -577,6 +592,7 @@ final class Parser {
         }
         if (t.is("{")) {
             List<String> keys = new ArrayList<>();
+            List<Expr> computed = new ArrayList<>();
             List<Expr> values = new ArrayList<>();
             if (!peek().is("}")) {
                 do {
@@ -584,6 +600,7 @@ final class Parser {
                         break;
                     }
                     Token k = take();
+                    Expr key = null;
                     if (k.kind() == Kind.IDENT || k.kind() == Kind.STRING || k.kind() == Kind.KEYWORD) {
                         keys.add(k.text());
                     } else if (k.kind() == Kind.NUMBER) {
@@ -591,10 +608,16 @@ final class Parser {
                     } else if (k.is("...")) {
                         throw error(k, "spread is not supported; copy the fields one by one");
                     } else if (k.is("[")) {
-                        throw error(k, "computed keys are not supported");
+                        key = expression();
+                        expect("]", "to close the computed key");
+                        keys.add("");
+                        if (!peek().is(":")) {
+                            throw error(peek(), "expected ':' after the computed key");
+                        }
                     } else {
                         throw error(k, "expected a field name, found " + describe(k));
                     }
+                    computed.add(key);
                     if (accept(":")) {
                         values.add(expression());
                     } else if (k.kind() == Kind.IDENT && (peek().is(",") || peek().is("}"))) {
@@ -607,7 +630,7 @@ final class Parser {
                 } while (accept(","));
             }
             expect("}", "to close the object");
-            return new ObjectLit(keys, values, t.line(), t.col());
+            return new ObjectLit(keys, computed, values, t.line(), t.col());
         }
         if (t.is("/")) {
             throw error(t, "regular expressions are not supported; use includes or ===");

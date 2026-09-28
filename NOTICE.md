@@ -551,3 +551,31 @@ program's `api.mine` and `api.get` run those same task bodies.
 | `common/src/main/java/com/player2/playerengine/commands/BlockScanner.java` | player-placed blocks are never candidates |
 | `common/src/main/java/com/player2/playerengine/smoke/SmokeHarness.java` | `xray`: a nearer player-placed sponge is never the one mined; digs wait for their job to end |
 | `common/src/main/java/com/player2/playerengine/smoke/EvalHarness.java` | mock asks go to a program build as `SMOKE-PROGRAM:` programs; the status line is read either way |
+
+**Programs: habitual forms, a results loop, bounded edits (ruled 2026-09-28).** The language takes
+what models write by habit: `for (const k in obj)`, `Object.keys/values/entries`, `JSON.stringify`,
+`Math.*`, computed keys and `arr.join`, and `i < arr.length` as a loop bound; the whole-statement
+call rule and the caps are unchanged. When a job ends, its query values, return value, report and
+error come back to the model as the next turn, at most 2 per player line and charged to the turn
+caps, so a companion can answer from what it found. The 48-block job region is fixed when the job
+is created, persists in `job.json`, and bounds world edits only (`excavate`, `fill`, `place`, and
+`mine`, `get`, `craft` must start inside it); `goto` and `follow_owner` are unbounded. The `@`
+command-line grammar is gone: the settings' idle command runs its registered command directly, and
+`CommandLines`, `Seam.run` and the primitives' line forms are removed, as is the RAG alias-learning
+and deep-check layer (`retrieval/learning`, `/playerengine rag audit tail`, `rag reset_learned`).
+`checkCutover`'s word-boundary patterns held backspace characters and so never matched; they are
+fixed and now fail on a retired name (red witness run).
+
+| File | Change |
+|---|---|
+| `common/src/main/java/com/player2/playerengine/program/Parser.java`, `Ast.java`, `Builtins.java`, `Linter.java`, `Machine.java`, `Program.java` | for-in, `Object.*`, `JSON.stringify`, `Math.*`, computed keys, `join`, `.length` bounds |
+| `common/src/main/java/com/player2/playerengine/program/JobResults.java` | new: an ended job's results for the model |
+| `common/src/main/java/com/player2/playerengine/program/Job.java` | the region, fixed at creation and persisted |
+| `common/src/main/java/com/player2/playerengine/program/ProgramSelfTest.java` | habitual forms, region fixity, results text |
+| `common/src/main/java/com/player2/playerengine/player2api/AgentConversationData.java`, `ProgramJobs.java` | the results loop; the job's own region |
+| `common/src/main/java/com/player2/playerengine/seam/*Primitive*.java`, `MotionBounds.java`, `primitives/Calls.java` | edits bounded, movement not; line forms removed |
+| `common/src/main/java/com/player2/playerengine/seam/Seam.java`, `CommandLines.java`, `Primitive.java`, `commands/base/CommandExecutor.java`, `chains/UserTaskChain.java`, `PlayerEngineController.java` | the command-line grammar removed; `runIdle` |
+| `common/src/main/java/com/player2/playerengine/retrieval/learning/*`, `MCCommands.java`, `lang/*.json` | the learning layer and its op commands removed |
+| `common/build.gradle` | `checkCutover` patterns fixed and extended |
+| `common/src/main/resources/playerengine/program/system-prompt.txt` | the new forms, the results loop, a query example |
+| `common/src/main/java/com/player2/playerengine/smoke/SmokeHarness.java` | `far-owner`: a goto outside the region still runs |

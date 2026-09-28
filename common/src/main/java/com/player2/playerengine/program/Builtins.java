@@ -12,19 +12,33 @@ import java.util.Set;
  */
 final class Builtins {
     /** Name to {min, max} argument count; max -1 is variadic. */
-    static final Map<String, int[]> ARITY = Map.of(
-            "pos", new int[] {3, 3},
-            "offset", new int[] {4, 4},
-            "box", new int[] {2, 2},
-            "box_rel", new int[] {5, 5},
-            "dist", new int[] {2, 2},
-            "min", new int[] {1, -1},
-            "max", new int[] {1, -1},
-            "abs", new int[] {1, 1},
-            "floor", new int[] {1, 1},
-            "assert", new int[] {1, 2});
+    static final Map<String, int[]> ARITY = Map.ofEntries(
+            Map.entry("pos", new int[] {3, 3}),
+            Map.entry("offset", new int[] {4, 4}),
+            Map.entry("box", new int[] {2, 2}),
+            Map.entry("box_rel", new int[] {5, 5}),
+            Map.entry("dist", new int[] {2, 2}),
+            Map.entry("min", new int[] {1, -1}),
+            Map.entry("max", new int[] {1, -1}),
+            Map.entry("abs", new int[] {1, 1}),
+            Map.entry("floor", new int[] {1, 1}),
+            Map.entry("assert", new int[] {1, 2}),
+            // What models write by habit (the stage-4 replays): pure, so fine inside expressions.
+            Map.entry("Object.keys", new int[] {1, 1}),
+            Map.entry("Object.values", new int[] {1, 1}),
+            Map.entry("Object.entries", new int[] {1, 1}),
+            Map.entry("JSON.stringify", new int[] {1, 1}),
+            Map.entry("Math.abs", new int[] {1, 1}),
+            Map.entry("Math.floor", new int[] {1, 1}),
+            Map.entry("Math.ceil", new int[] {1, 1}),
+            Map.entry("Math.round", new int[] {1, 1}),
+            Map.entry("Math.min", new int[] {1, -1}),
+            Map.entry("Math.max", new int[] {1, -1}));
 
-    static final Set<String> METHODS = Set.of("push", "slice", "includes");
+    /** The globals whose members are built-ins ({@code Object.keys}); the parser names them as one. */
+    static final Set<String> NAMESPACES = Set.of("Object", "JSON", "Math");
+
+    static final Set<String> METHODS = Set.of("push", "slice", "includes", "join");
 
     private Builtins() {
     }
@@ -60,8 +74,16 @@ final class Builtins {
                 }
                 yield r;
             }
-            case "abs" -> Math.abs(num(a.get(0), at));
-            case "floor" -> Math.floor(num(a.get(0), at));
+            case "abs", "Math.abs" -> Math.abs(num(a.get(0), at));
+            case "floor", "Math.floor" -> Math.floor(num(a.get(0), at));
+            case "Math.ceil" -> Math.ceil(num(a.get(0), at));
+            case "Math.round" -> (double) Math.round(num(a.get(0), at));
+            case "Math.min", "Math.max" -> call(name.substring(5), a, at);
+            case "Object.keys", "Object.values", "Object.entries" -> fields(name.substring(7), a.get(0), at);
+            case "JSON.stringify" -> {
+                String s = Values.display(a.get(0));
+                yield s.length() <= Caps.STRING_LENGTH ? s : s.substring(0, Caps.STRING_LENGTH);
+            }
             case "assert" -> {
                 if (!Values.truthy(a.get(0))) {
                     String msg = a.size() > 1 ? Values.display(a.get(1)) : "assertion failed";
@@ -75,7 +97,34 @@ final class Builtins {
         };
     }
 
-    /** {@code arr.push(x)}, {@code arr.slice(a, b)}, {@code arr.includes(x)}, and the string forms. */
+    /** An object's field names, values or [name, value] pairs, in order; an array's indices, items or pairs. */
+    private static List<Object> fields(String which, Object target, Ast.Node at) {
+        List<Object> out = new ArrayList<>();
+        if (target instanceof Map<?, ?> m) {
+            m.forEach((k, v) -> out.add(switch (which) {
+                case "keys" -> String.valueOf(k);
+                case "values" -> v;
+                default -> new ArrayList<>(List.of(String.valueOf(k), v == null ? "null" : v));
+            }));
+        } else if (target instanceof List<?> l) {
+            for (int i = 0; i < l.size(); i++) {
+                Object v = l.get(i);
+                out.add(switch (which) {
+                    case "keys" -> String.valueOf(i);
+                    case "values" -> v;
+                    default -> new ArrayList<>(List.of(String.valueOf(i), v == null ? "null" : v));
+                });
+            }
+        } else {
+            throw Fault.bad(at, "Object." + which + " needs an object or an array, not " + Values.typeName(target));
+        }
+        if (out.size() > Caps.ARRAY_LENGTH) {
+            throw Fault.budget("array length", Caps.ARRAY_LENGTH, Map.of("length", out.size()));
+        }
+        return out;
+    }
+
+    /** {@code arr.push(x)}, {@code arr.slice(a, b)}, {@code arr.includes(x)}, {@code arr.join(sep)}, and the string forms. */
     static Object method(Object target, String name, List<Object> a, Ast.Node at) {
         if (target instanceof List<?> raw) {
             @SuppressWarnings("unchecked")
@@ -101,6 +150,17 @@ final class Builtins {
                     }
                     return false;
                 }
+                case "join" -> {
+                    String sep = a.isEmpty() || a.get(0) == null ? "," : Values.display(a.get(0));
+                    StringBuilder sb = new StringBuilder();
+                    for (int i = 0; i < l.size(); i++) {
+                        sb.append(i == 0 ? "" : sep).append(l.get(i) == null ? "" : Values.display(l.get(i)));
+                        if (sb.length() > Caps.STRING_LENGTH) {
+                            return sb.substring(0, Caps.STRING_LENGTH);
+                        }
+                    }
+                    return sb.toString();
+                }
                 default -> {
                 }
             }
@@ -117,8 +177,8 @@ final class Builtins {
                 }
             }
         }
-        throw Fault.bad(at, Values.typeName(target) + " has no method " + name + "; the methods are push, slice"
-                + " and includes on arrays, slice and includes on strings");
+        throw Fault.bad(at, Values.typeName(target) + " has no method " + name + "; the methods are push, slice,"
+                + " includes and join on arrays, slice and includes on strings");
     }
 
     private static int[] range(int size, List<Object> a, Ast.Node at) {
