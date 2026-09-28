@@ -253,3 +253,21 @@ freezing it there).
 | `common/src/main/resources/assets/playerengine/lang/en_us.json` | help text for the smoke command |
 | `common/build.gradle`, `Taskfile.yml` | `planSelfTest` and `smokeGateSelfTest` tasks, run by `task test` |
 | `gradle.properties` | version `1.21.1-1.4.0-gateway.6` |
+
+## Unreleased
+
+**The greeting no longer eats "continue".** Upstream forced the first reply of every fresh
+conversation to `bodylang greeting`, and that turn skipped the plan and owner rules. After a
+restart or re-attach the owner's first "continue" or plan was dropped. A turn is now forced to the
+greeting only when a greeting was actually queued (a first meeting), and never when its batch
+carries a message from the owner: that turn runs normally and greets through the `[bl:greeting]`
+marker. A resume phrase now applies only to the turn it arrived in.
+
+| File | Change |
+|---|---|
+| `common/src/main/java/com/player2/playerengine/player2api/AgentConversationData.java` | greeting armed when queued, decided per batch, never over an owner message |
+| `common/src/main/java/com/player2/playerengine/player2api/AIPersistantData.java` | `returnGreets()`: whether the return event is a greeting |
+| `common/src/main/java/com/player2/playerengine/player2api/plan/PlanCoordinator.java` | `beginTurn()` clears a resume request left by an earlier turn |
+| `common/src/main/java/com/player2/playerengine/player2api/plan/PlanSelfTest.java` | a continue applies only to its own turn |
+| `common/src/main/java/com/player2/playerengine/smoke/SmokeHarness.java` | `resume` scenario: one continue after re-attach resumes the plan |
+| `common/src/main/resources/assets/playerengine/lang/en_us.json` | smoke scenario list |

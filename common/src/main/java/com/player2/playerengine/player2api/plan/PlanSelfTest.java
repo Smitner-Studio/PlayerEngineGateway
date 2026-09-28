@@ -45,6 +45,7 @@ public final class PlanSelfTest {
         failureAsksForRepairAndRepairRuns();
         repairsAreBounded();
         continueResumesPausedPlanWithoutTheField();
+        continueAppliesOnlyToItsOwnTurn();
         stopClearsThePlan();
         malformedPlanLeavesTheReplyAlone();
         supersededStepReportedAsFinishedPausesThePlan();
@@ -266,6 +267,22 @@ public final class PlanSelfTest {
         c.onUserMessage("continue", true);
         require(!c.onModelDecision(new PlanParser.Absent(), "goto 5 5 5", OWNER_TURN),
                 "a model command wins over the phrase fallback");
+    }
+
+    /** A "continue" whose turn never reached a decision (a peer turn) must not resume a later one. */
+    private static void continueAppliesOnlyToItsOwnTurn() {
+        MockHost h = new MockHost();
+        PlanCoordinator c = coordinator(h);
+        c.onModelDecision(planOf("excavate 9 4 9", "pickup_drops"), "", OWNER_TURN);
+        h.last().stopped(PlanCoordinator.StopKind.CANCELLED, null);
+        c.beginTurn();
+        c.onUserMessage("continue", true);
+        c.beginTurn();
+        require(!c.onModelDecision(new PlanParser.Absent(), "", OWNER_TURN),
+                "a continue from an earlier turn does not resume a later decision");
+        require(c.status() == CompanionPlan.Status.PAUSED, "the plan stays paused");
+        c.onUserMessage("continue", true);
+        require(c.onModelDecision(new PlanParser.Absent(), "", OWNER_TURN), "a continue in this turn resumes");
     }
 
     private static void stopClearsThePlan() {

@@ -138,10 +138,11 @@ public final class SmokeHarness {
             case "excavate" -> excavate(level);
             case "protected" -> protectedShell(level);
             case "stop" -> stopMidDig(level);
-            case "plan" -> planWithInterruption(level, 5, true);
+            case "plan" -> planWithInterruption(level, 5, Resume.CONTINUE);
             case "waterlogged" -> waterlogged(level);
             case "stranger" -> stranger(level);
-            case "goto" -> planWithInterruption(level, 6, false);
+            case "resume" -> planWithInterruption(level, 8, Resume.REATTACH);
+            case "goto" -> planWithInterruption(level, 6, Resume.NONE);
             case "restart" -> restart(level);
             default -> {
                 fail(name, "unknown scenario");
@@ -265,13 +266,26 @@ public final class SmokeHarness {
                                 ? "idle after the stop" : "!settings changed again after the stop"));
     }
 
+    /** What follows the paused plan in {@link #planWithInterruption}. */
+    private enum Resume {
+        /** Leave it paused on disk for the restart scenario. */
+        NONE,
+        /** The owner's "continue" finishes it. */
+        CONTINUE,
+        /**
+         * The companion gets a fresh conversation, as after a restart or re-attach, with its return
+         * event queued, and the owner's "continue" lands in that first batch. The first turn of a
+         * fresh conversation used to be forced to a greeting, which dropped the "continue".
+         */
+        REATTACH
+    }
+
     /**
-     * Checklist 2 ({@code resume}) and 7: a 2-step plan starts, a direct {@code goto} from the model
-     * mid-step pauses it (the CommandExecutor dispatch bump), and with {@code resume} the owner's
-     * "continue" finishes both steps. Without {@code resume} the plan is left paused on disk for the
-     * restart scenario.
+     * Checklist 2 ({@code plan}), 7 ({@code goto}) and {@code resume}: a 2-step plan starts, a direct
+     * {@code goto} from the model mid-step pauses it (the CommandExecutor dispatch bump), then
+     * {@link Resume} decides what follows.
      */
-    private static List<Stage> planWithInterruption(ServerLevel level, int slot, boolean resume) {
+    private static List<Stage> planWithInterruption(ServerLevel level, int slot, Resume resume) {
         requireCompanion();
         BlockPos site = arena(level, slot);
         BlockPos a1 = site.offset(2, 1, -4);
@@ -301,9 +315,22 @@ public final class SmokeHarness {
                                 : null,
                         30, () -> "plan not paused by the goto: plan='" + mod().getPlanStatusLine() + "' seq "
                                 + seq[0] + "->" + mod().getCommandDispatchSeq())));
-        if (resume) {
+        if (resume == Resume.CONTINUE) {
             stages.add(act(() -> say(OWNER_ID, OWNER_NAME, "continue")));
             stages.add(bothCleared(level, a1, b1, a2, b2, "continue resumed it; both boxes cleared"));
+        } else if (resume == Resume.REATTACH) {
+            stages.add(act(() -> {
+                PlayerEngineController m = mod();
+                ConversationManager.despwnCompanion(m.getPlayer().getUUID());
+                ConversationManager.getOrCreateEventQueueData(m);
+                ConversationManager.sendReturnMessage(m, character, OWNER_NAME);
+                say(OWNER_ID, OWNER_NAME, "continue");
+            }));
+            stages.add(waitFor(() -> mod().getPlanStatusLine().contains("running")
+                            ? "one continue resumed it in the fresh conversation's first turn" : null,
+                    30, () -> "plan not resumed by the first continue after re-attach: plan='"
+                            + mod().getPlanStatusLine() + "'"));
+            stages.add(bothCleared(level, a1, b1, a2, b2, "both boxes cleared"));
         }
         return stages;
     }

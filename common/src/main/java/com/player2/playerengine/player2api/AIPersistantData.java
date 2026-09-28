@@ -193,6 +193,11 @@ public class AIPersistantData {
         }
     }
 
+    /** Whether {@link #getReturnEvent} is a greeting: a first-ever meeting greets, even on a RETURNING reason. */
+    public boolean returnGreets() {
+        return !conversationHistory.isLoadedFromFile();
+    }
+
     /**
      * Builds the FIRST_MEETING/RETURNING model event: a true greeting when this is the first-ever
      * spawn for this per-world history (no history file yet), otherwise a "&lt;owner&gt; has respawned
@@ -207,8 +212,7 @@ public class AIPersistantData {
      * only FIRST_MEETING/RETURNING reach {@code sendReturnMessage} -> here.
      */
     public Event getReturnEvent(String ownerName) {
-        // First-ever meeting still greets (true greeting), even on a RETURNING reason.
-        if (!conversationHistory.isLoadedFromFile()) {
+        if (returnGreets()) {
             return getGreetingEvent(); // greetingInfo + greeting bodylang suffix
         }
         String who = (ownerName == null || ownerName.isBlank()) ? "Your owner" : ownerName;

@@ -79,8 +79,17 @@ public class AgentConversationData {
     private long activeTurnTicket = NO_ACTIVE_TURN;
     private boolean enabled = true;
 
-    // seperating these to be safe:
-    private boolean isGreetingResponse = true;
+    /**
+     * A greeting event sits in the queue ({@link #onGreeting}, or a first-meeting {@link #onReturn}).
+     * The next batch consumes it: {@link #isGreetingResponse} is decided per batch from it.
+     */
+    private boolean greetingQueued = false;
+    /**
+     * This turn answers a greeting and is forced to {@code bodylang greeting}. Never true for a batch
+     * that carries an owner message: forcing that turn would drop the owner's order (a "continue"
+     * after a restart), so it runs normally and greets through the {@code [bl:greeting]} marker.
+     */
+    private boolean isGreetingResponse = false;
     private boolean shouldIgnoreGreetingDance = true;
 
     private MessageBuffer playerEngineMsgBuffer = new MessageBuffer(10);
@@ -378,6 +387,11 @@ public class AgentConversationData {
         }
         chainInitiatorUsername = null;
         chainInitiatorIsOwner = false;
+        synchronized (this) {
+            // The greeting event went with the queue; the flag must not force a later turn.
+            greetingQueued = false;
+            isGreetingResponse = false;
+        }
         if (dropPlan) {
             planCoordinator.cancel("reset");
         }
@@ -477,16 +491,27 @@ public class AgentConversationData {
 
         String lastUserInBatch = null;
         Boolean lastUserIsOwner = null;
+        boolean ownerInBatch = false;
+        planCoordinator.beginTurn();
         for (Event e : eventQueue) {
             if (e instanceof Event.UserMessage um) {
                 lastUserInBatch = um.userName();
                 boolean owner = isAuthenticatedOwner(um);
                 lastUserIsOwner = owner;
                 if (owner) {
+                    ownerInBatch = true;
                     mod.markOwnerMessage(System.currentTimeMillis());
                 }
                 planCoordinator.onUserMessage(um.message(), owner);
             }
+        }
+        synchronized (this) {
+            isGreetingResponse = greetingQueued && !ownerInBatch;
+            if (greetingQueued && ownerInBatch) {
+                LOGGER.info("[Greeting] owner message in the greeting batch; running the turn normally for bot={}",
+                        getName());
+            }
+            greetingQueued = false;
         }
         if (lastUserInBatch != null) {
             chainInitiatorUsername = lastUserInBatch;
@@ -1758,12 +1783,20 @@ public class AgentConversationData {
     }
 
     public void onGreeting() {
-        // queue up greeting
+        synchronized (this) {
+            greetingQueued = true;
+        }
         addEventToQueue(mod.getAIPersistantData().getGreetingEvent());
     }
 
     public void onReturn(String ownerName) {
-        addEventToQueue(mod.getAIPersistantData().getReturnEvent(ownerName));
+        AIPersistantData data = mod.getAIPersistantData();
+        if (data.returnGreets()) {
+            synchronized (this) {
+                greetingQueued = true;
+            }
+        }
+        addEventToQueue(data.getReturnEvent(ownerName));
     }
 
     public void onDeathRevival(String deathCause) {
